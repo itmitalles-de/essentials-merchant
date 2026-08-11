@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import type { FormEvent } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { api } from "../api";
+import { api, openInvoicePdf } from "../api";
 import { useLanguage } from "../contexts/LanguageContext";
 import { invoiceStatusLabel } from "../invoiceStatus";
 import type { Customer, Invoice, InvoiceLineItem, LineItemInput, VatRate } from "../types";
@@ -290,6 +290,14 @@ export function InvoiceDetail() {
       {error && <div style={{ color: "var(--danger)" }}>{error}</div>}
 
       <div style={{ display: "flex", gap: "0.6rem" }}>
+        {invoice.status !== "draft" && (
+          <button
+            className="secondary"
+            onClick={() => openInvoicePdf(invoice.id, invoice.invoice_number ?? invoice.id)}
+          >
+            {t("invoiceDetail.downloadPdf")}
+          </button>
+        )}
         {invoice.status === "draft" && (
           <button onClick={() => transition("sent")} disabled={busy || invoice.line_items.length === 0}>
             {t("invoiceDetail.send")}

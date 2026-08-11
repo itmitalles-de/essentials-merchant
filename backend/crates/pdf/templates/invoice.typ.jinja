@@ -1,0 +1,132 @@
+#set page(paper: "a4", margin: (top: 2.5cm, bottom: 2.5cm, left: 2.5cm, right: 2.5cm))
+#set text(size: 10pt, lang: "de")
+
+#let company_name = {{ company.company_name | tstr }}
+#let owner_name = {{ company.owner_name | tstr }}
+#let company_address1 = {{ company.address_line1 | tstr }}
+#let company_address2 = {{ company.address_line2 | tstr }}
+#let company_zip = {{ company.zip | tstr }}
+#let company_city = {{ company.city | tstr }}
+#let company_tax_id = {{ company.tax_id | tstr }}
+#let company_vat_id = {{ company.vat_id | tstr }}
+#let company_iban = {{ company.iban | tstr }}
+#let company_bic = {{ company.bic | tstr }}
+#let company_bank_name = {{ company.bank_name | tstr }}
+#let company_footer_note = {{ company.invoice_footer_note | tstr }}
+
+#let customer_name = {{ customer.name | tstr }}
+#let customer_contact = {{ customer.contact_person | tstr }}
+#let customer_address1 = {{ customer.address_line1 | tstr }}
+#let customer_address2 = {{ customer.address_line2 | tstr }}
+#let customer_zip = {{ customer.zip | tstr }}
+#let customer_city = {{ customer.city | tstr }}
+
+#let invoice_number = {{ invoice_number | tstr }}
+#let issue_date = {{ issue_date | tstr }}
+#let due_date = {{ due_date | tstr }}
+#let notes = {{ notes | tstr }}
+
+#let net_total = {{ net_total | tstr }}
+#let vat_total = {{ vat_total | tstr }}
+#let gross_total = {{ gross_total | tstr }}
+
+#let line_items = (
+{% for item in line_items %}
+  (desc: {{ item.description | tstr }}, qty: {{ item.quantity | tstr }}, unit: {{ item.unit | tstr }}, price: {{ item.unit_price_net | tstr }}, rate: {{ item.vat_rate_percent | tstr }}, net: {{ item.net_amount | tstr }}, gross: {{ item.gross_amount | tstr }}),
+{% endfor %}
+)
+
+#let vat_rows = (
+{% for row in vat_breakdown %}
+  (rate: {{ row.rate_percent | tstr }}, net: {{ row.net_total | tstr }}, vat: {{ row.vat_total | tstr }}, gross: {{ row.gross_total | tstr }}),
+{% endfor %}
+)
+
+#grid(
+  columns: (1fr, 1fr),
+  align(left)[
+    #text(weight: "bold")[#company_name] \
+    #company_address1 \
+    #if company_address2 != "" [#company_address2 \ ]
+    #company_zip #company_city
+  ],
+  align(right)[
+    #text(size: 18pt, weight: "bold")[Rechnung]\
+    #invoice_number
+  ]
+)
+
+#v(1cm)
+
+#text(size: 8pt)[#company_name · #company_address1 · #company_zip #company_city]
+#v(0.2cm)
+#customer_name \
+#if customer_contact != "" [#customer_contact \ ]
+#customer_address1 \
+#if customer_address2 != "" [#customer_address2 \ ]
+#customer_zip #customer_city
+
+#v(1cm)
+
+#grid(
+  columns: (auto, auto, auto),
+  gutter: 2cm,
+  [*Rechnungsdatum*\ #issue_date],
+  [*Fällig am*\ #due_date],
+  [*Rechnungsnummer*\ #invoice_number],
+)
+
+#v(0.8cm)
+
+#table(
+  columns: (2fr, auto, auto, auto, auto, auto),
+  align: (left, right, right, right, right, right),
+  stroke: (bottom: 0.5pt),
+  [*Beschreibung*], [*Menge*], [*Einzelpreis*], [*USt*], [*Netto*], [*Brutto*],
+  ..line_items.map(item => (
+    item.desc, [#item.qty #item.unit], [#item.price €], [#item.rate %], [#item.net €], [#item.gross €]
+  )).flatten()
+)
+
+#v(0.5cm)
+
+#align(right)[
+  #table(
+    columns: (auto, auto),
+    stroke: none,
+    [Netto-Summe:], [#net_total €],
+    [USt-Summe:], [#vat_total €],
+    [*Gesamtsumme:*], [*#gross_total €*],
+  )
+]
+
+#v(0.5cm)
+
+#if vat_rows.len() > 0 [
+  #text(size: 9pt)[
+    #table(
+      columns: (auto, auto, auto, auto),
+      stroke: 0.5pt,
+      [*USt-Satz*], [*Netto*], [*USt*], [*Brutto*],
+      ..vat_rows.map(row => (
+        [#row.rate %], [#row.net €], [#row.vat €], [#row.gross €]
+      )).flatten()
+    )
+  ]
+]
+
+#v(1cm)
+
+#if notes != "" [
+  #notes
+  #v(0.5cm)
+]
+
+#line(length: 100%, stroke: 0.5pt)
+#v(0.3cm)
+#text(size: 8pt)[
+  #owner_name · #company_name \
+  IBAN: #company_iban #if company_bic != "" [· BIC: #company_bic] #if company_bank_name != "" [· #company_bank_name] \
+  #if company_tax_id != "" [Steuernummer: #company_tax_id] #if company_vat_id != "" [· USt-IdNr.: #company_vat_id] \
+  #if company_footer_note != "" [#company_footer_note]
+]

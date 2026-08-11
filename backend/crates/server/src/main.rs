@@ -1,6 +1,7 @@
 mod auth;
 mod bootstrap;
 mod config;
+mod pdf_gen;
 mod routes;
 mod state;
 
@@ -23,9 +24,12 @@ async fn main() -> anyhow::Result<()> {
     db::migrate(&pool).await?;
     bootstrap::seed_admin(&pool, &config).await?;
 
+    std::fs::create_dir_all(&config.pdf_storage_dir)?;
+
     let state = AppState {
         pool,
         jwt_secret: config.jwt_secret,
+        pdf_storage_dir: config.pdf_storage_dir,
     };
 
     let api = Router::new()

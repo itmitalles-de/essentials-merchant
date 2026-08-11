@@ -4,4 +4,5 @@ use sqlx::PgPool;
 pub struct AppState {
     pub pool: PgPool,
     pub jwt_secret: String,
+    pub pdf_storage_dir: String,
 }

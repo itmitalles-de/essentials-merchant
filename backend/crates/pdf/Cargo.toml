@@ -7,3 +7,10 @@ publish.workspace = true
 
 [dependencies]
 thiserror.workspace = true
+rust_decimal.workspace = true
+chrono.workspace = true
+uuid.workspace = true
+minijinja = "2"
+
+[dev-dependencies]
+rust_decimal_macros = "1"

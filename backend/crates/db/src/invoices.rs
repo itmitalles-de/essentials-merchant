@@ -157,6 +157,17 @@ pub async fn update(
     .await
 }
 
+pub async fn set_pdf_path(pool: &PgPool, id: Uuid, pdf_path: &str) -> Result<(), sqlx::Error> {
+    sqlx::query!(
+        "UPDATE invoices SET pdf_path = $2 WHERE id = $1",
+        id,
+        pdf_path
+    )
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
 /// Only drafts may be deleted.
 pub async fn delete(pool: &PgPool, id: Uuid) -> Result<bool, sqlx::Error> {
     let result = sqlx::query!(

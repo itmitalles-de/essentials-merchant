@@ -1,5 +1,7 @@
+use axum::body::Body;
 use axum::extract::{Path, State};
-use axum::http::StatusCode;
+use axum::http::{header, StatusCode};
+use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::{Json, Router};
 use domain::invoice_status::InvoiceStatus;
@@ -7,6 +9,7 @@ use serde::Deserialize;
 use uuid::Uuid;
 
 use crate::auth::AuthUser;
+use crate::pdf_gen;
 use crate::state::AppState;
 use db::invoices::{Invoice, InvoiceInput, InvoiceListItem, InvoiceWithLineItems, LineItemInput};
 
@@ -15,6 +18,7 @@ pub fn router() -> Router<AppState> {
         .route("/", get(list).post(create))
         .route("/{id}", get(get_one).put(update).delete(delete_one))
         .route("/{id}/status", post(transition))
+        .route("/{id}/pdf", get(download_pdf))
         .route("/{id}/line-items", post(add_line_item))
         .route(
             "/{id}/line-items/{line_item_id}",
@@ -117,6 +121,63 @@ async fn transition(
             db::invoices::TransitionError::InvalidTransition { .. } => StatusCode::CONFLICT,
             db::invoices::TransitionError::Sqlx(_) => StatusCode::INTERNAL_SERVER_ERROR,
         })
+}
+
+/// PDFs are generated lazily on first download rather than during the `sent`
+/// transition: it decouples the (fast, reliable) status change from PDF
+/// rendering, and if rendering ever fails, the next download attempt just
+/// tries again instead of leaving the invoice stuck with no recovery path.
+async fn download_pdf(
+    State(state): State<AppState>,
+    AuthUser(_user): AuthUser,
+    Path(id): Path<Uuid>,
+) -> Result<Response, StatusCode> {
+    let invoice = db::invoices::get_bare(&state.pool, id)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+        .ok_or(StatusCode::NOT_FOUND)?;
+
+    if invoice.status == "draft" {
+        return Err(StatusCode::CONFLICT);
+    }
+
+    let existing_path = invoice
+        .pdf_path
+        .as_deref()
+        .filter(|p| std::path::Path::new(p).exists());
+    let path = match existing_path {
+        Some(p) => p.to_string(),
+        None => {
+            pdf_gen::generate_and_store(&state, id)
+                .await
+                .map_err(|err| {
+                    tracing::error!(?err, invoice_id = %id, "pdf generation failed");
+                    StatusCode::INTERNAL_SERVER_ERROR
+                })?;
+            db::invoices::get_bare(&state.pool, id)
+                .await
+                .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+                .and_then(|inv| inv.pdf_path)
+                .ok_or(StatusCode::INTERNAL_SERVER_ERROR)?
+        }
+    };
+
+    let bytes = tokio::fs::read(&path)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let filename = invoice.invoice_number.unwrap_or_else(|| "rechnung".into());
+
+    Ok((
+        [
+            (header::CONTENT_TYPE, "application/pdf".to_string()),
+            (
+                header::CONTENT_DISPOSITION,
+                format!("attachment; filename=\"{filename}.pdf\""),
+            ),
+        ],
+        Body::from(bytes),
+    )
+        .into_response())
 }
 
 async fn require_draft(state: &AppState, invoice_id: Uuid) -> Result<(), StatusCode> {

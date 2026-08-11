@@ -111,6 +111,7 @@ const en = {
   "invoiceDetail.send": "Send (finalize)",
   "invoiceDetail.markPaid": "Mark as paid",
   "invoiceDetail.cancel": "Cancel invoice",
+  "invoiceDetail.downloadPdf": "Download PDF",
   "invoiceDetail.error": "Action failed",
 };
 
@@ -227,6 +228,7 @@ const de: Record<keyof typeof en, string> = {
   "invoiceDetail.send": "Senden (abschließen)",
   "invoiceDetail.markPaid": "Als bezahlt markieren",
   "invoiceDetail.cancel": "Rechnung stornieren",
+  "invoiceDetail.downloadPdf": "PDF herunterladen",
   "invoiceDetail.error": "Aktion fehlgeschlagen",
 };
 

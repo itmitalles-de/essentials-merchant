@@ -65,4 +65,20 @@ export async function getHealth(): Promise<{ status: string }> {
   return res.json();
 }
 
+export async function openInvoicePdf(invoiceId: string, invoiceNumber: string) {
+  const token = getToken();
+  const res = await fetch(`${API_BASE}/invoices/${invoiceId}/pdf`, {
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  });
+  if (!res.ok) throw new ApiError(res.status, "PDF could not be loaded");
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.target = "_blank";
+  a.download = `${invoiceNumber}.pdf`;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 30000);
+}
+
 export { ApiError };
