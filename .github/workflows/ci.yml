@@ -1,0 +1,84 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: erplite
+          POSTGRES_PASSWORD: erplite
+          POSTGRES_DB: erplite
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U erplite"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgres://erplite:erplite@localhost:5432/erplite
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: backend
+
+      - name: Format check
+        working-directory: backend
+        run: cargo fmt --check
+
+      - name: Clippy
+        working-directory: backend
+        run: cargo clippy --all-targets -- -D warnings
+
+      - name: Test
+        working-directory: backend
+        run: cargo test
+
+  frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - working-directory: frontend
+        run: npm ci
+
+      - name: Typecheck + build
+        working-directory: frontend
+        run: npm run build
+
+      - name: Lint
+        working-directory: frontend
+        run: npm run lint
+
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Catches breakage in the Dockerfiles/compose config the other jobs can't see
+      # (e.g. a missing base image or a broken multi-stage build).
+      - name: Build all compose images
+        run: docker compose build
+        env:
+          POSTGRES_PASSWORD: ci-placeholder
+          JWT_SECRET: ci-placeholder
+          ADMIN_PASSWORD: ci-placeholder

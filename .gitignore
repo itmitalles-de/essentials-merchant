@@ -1,0 +1,14 @@
+# env / secrets
+.env
+
+# Rust
+backend/target/
+
+# Node
+node_modules/
+frontend/dist/
+frontend/tsconfig.tsbuildinfo
+
+# misc
+.DS_Store
+*.log

@@ -1,0 +1,162 @@
+:root {
+  --bg: #f5f6f8;
+  --bg-elevated: #ffffff;
+  --fg: #1a1d21;
+  --fg-muted: #5a6270;
+  --border: #d8dbe0;
+  --accent: #2f6fed;
+  --accent-fg: #ffffff;
+  --danger: #d64545;
+  --success: #2f9e5c;
+  --warning: #c98a1f;
+  --shadow: rgba(0, 0, 0, 0.08);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #14161a;
+    --bg-elevated: #1e2126;
+    --fg: #eceef1;
+    --fg-muted: #9aa1ac;
+    --border: #33373f;
+    --accent: #5b8dff;
+    --accent-fg: #0c1220;
+    --danger: #ef6a6a;
+    --success: #4cc783;
+    --warning: #e0a83f;
+    --shadow: rgba(0, 0, 0, 0.4);
+  }
+}
+
+:root[data-theme="dark"] {
+  --bg: #14161a;
+  --bg-elevated: #1e2126;
+  --fg: #eceef1;
+  --fg-muted: #9aa1ac;
+  --border: #33373f;
+  --accent: #5b8dff;
+  --accent-fg: #0c1220;
+  --danger: #ef6a6a;
+  --success: #4cc783;
+  --warning: #e0a83f;
+  --shadow: rgba(0, 0, 0, 0.4);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--fg);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+a {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+a.btn {
+  display: inline-flex;
+  align-items: center;
+  background: transparent;
+  color: var(--fg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0.5rem 0.9rem;
+  font-weight: 600;
+  transition: background-color 0.15s ease, border-color 0.15s ease;
+}
+
+a.btn:hover {
+  background: color-mix(in srgb, var(--fg) 8%, transparent);
+  border-color: var(--accent);
+}
+
+a.btn.btn-sm {
+  padding: 0.25rem 0.6rem;
+  font-size: 0.85rem;
+}
+
+button, input, select, textarea {
+  font-family: inherit;
+  font-size: 0.95rem;
+}
+
+input, select, textarea {
+  background: var(--bg-elevated);
+  color: var(--fg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0.5rem 0.6rem;
+}
+
+button {
+  background: var(--accent);
+  color: var(--accent-fg);
+  border: none;
+  border-radius: 6px;
+  padding: 0.5rem 0.9rem;
+  cursor: pointer;
+  font-weight: 600;
+}
+
+button.secondary {
+  background: transparent;
+  color: var(--fg);
+  border: 1px solid var(--border);
+}
+
+button.danger {
+  background: var(--danger);
+  color: #fff;
+}
+
+button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.card {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 1px 3px var(--shadow);
+  padding: 1.25rem;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+th, td {
+  text-align: left;
+  padding: 0.5rem 0.6rem;
+  border-bottom: 1px solid var(--border);
+}
+
+th {
+  color: var(--fg-muted);
+  font-weight: 600;
+  font-size: 0.85rem;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+
+.badge {
+  display: inline-block;
+  padding: 0.15rem 0.55rem;
+  border-radius: 999px;
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+
+.badge.draft { background: var(--border); color: var(--fg); }
+.badge.sent { background: var(--accent); color: var(--accent-fg); }
+.badge.overdue { background: var(--danger); color: #fff; }
+.badge.paid { background: var(--success); color: #06210f; }
+.badge.cancelled { background: var(--fg-muted); color: #fff; }

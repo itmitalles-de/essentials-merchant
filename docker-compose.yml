@@ -1,0 +1,50 @@
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: erplite
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}
+      POSTGRES_DB: erplite
+    volumes:
+      - erplite_db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U erplite"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  backend:
+    build: ./backend
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://erplite:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}@db:5432/erplite
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET must be set}
+      ADMIN_USERNAME: ${ADMIN_USERNAME:-admin}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:?ADMIN_PASSWORD must be set}
+      RUST_LOG: ${RUST_LOG:-info}
+    volumes:
+      - erplite_invoices:/data/invoices
+
+  frontend:
+    build: ./frontend
+    restart: unless-stopped
+    depends_on:
+      - backend
+    ports:
+      - "${FRONTEND_PORT:-8090}:80"
+    networks:
+      - default
+      - proxy_net
+
+volumes:
+  erplite_db_data:
+  erplite_invoices:
+
+networks:
+  default:
+  proxy_net:
+    external: true
