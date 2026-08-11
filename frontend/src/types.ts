@@ -147,3 +147,38 @@ export interface LineItemInput {
   unit_price_net: string;
   vat_rate_code: string;
 }
+
+export interface Article {
+  id: string;
+  sku: string;
+  name: string;
+  unit: string;
+  sales_price_net: string;
+  default_vat_rate_code: string;
+  purchase_price_net: string | null;
+  stock_quantity: string;
+  min_stock_quantity: string | null;
+  active: boolean;
+  created_at: string;
+}
+
+export type ArticleInput = Omit<Article, "id" | "stock_quantity" | "created_at">;
+
+export type StockMovementType = "in" | "out" | "adjustment";
+
+export interface StockMovement {
+  id: string;
+  article_id: string;
+  movement_type: StockMovementType;
+  quantity: string;
+  reference_type: "invoice" | "manual";
+  reference_id: string | null;
+  note: string;
+  created_at: string;
+}
+
+export interface ManualAdjustmentInput {
+  movement_type: StockMovementType;
+  quantity: string;
+  note: string;
+}

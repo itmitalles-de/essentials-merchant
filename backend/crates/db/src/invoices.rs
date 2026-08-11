@@ -422,7 +422,7 @@ pub async fn transition_status(
                 "invoice_footer_note": numbering.invoice_footer_note,
             });
 
-            sqlx::query_as!(
+            let updated = sqlx::query_as!(
                 Invoice,
                 "UPDATE invoices SET
                     status = 'sent', invoice_number = $2, issue_date = $3, due_date = $4,
@@ -437,7 +437,30 @@ pub async fn transition_status(
                 company_snapshot,
             )
             .fetch_one(&mut *tx)
-            .await?
+            .await?;
+
+            // Stock-linked line items ship out once the invoice is finalized.
+            let stocked_items = sqlx::query!(
+                "SELECT article_id AS \"article_id!\", quantity
+                 FROM invoice_line_items
+                 WHERE invoice_id = $1 AND article_id IS NOT NULL",
+                invoice_id
+            )
+            .fetch_all(&mut *tx)
+            .await?;
+            for item in stocked_items {
+                sqlx::query!(
+                    "INSERT INTO stock_movements (article_id, movement_type, quantity, reference_type, reference_id)
+                     VALUES ($1, 'out', $2, 'invoice', $3)",
+                    item.article_id,
+                    -item.quantity.abs(),
+                    invoice_id,
+                )
+                .execute(&mut *tx)
+                .await?;
+            }
+
+            updated
         }
         InvoiceStatus::Paid => {
             sqlx::query_as!(

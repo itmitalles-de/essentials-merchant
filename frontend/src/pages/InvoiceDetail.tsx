@@ -4,7 +4,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import { api, openInvoicePdf } from "../api";
 import { useLanguage } from "../contexts/LanguageContext";
 import { invoiceStatusLabel } from "../invoiceStatus";
-import type { Customer, Invoice, InvoiceLineItem, LineItemInput, VatRate } from "../types";
+import type { Article, Customer, Invoice, InvoiceLineItem, LineItemInput, VatRate } from "../types";
 
 const emptyLineItem: LineItemInput = {
   description: "",
@@ -51,6 +51,7 @@ export function InvoiceDetail() {
   const navigate = useNavigate();
   const [invoice, setInvoice] = useState<Invoice | null>(null);
   const [customers, setCustomers] = useState<Customer[]>([]);
+  const [articles, setArticles] = useState<Article[]>([]);
   const [vatRates, setVatRates] = useState<VatRate[]>([]);
   const [showLineItemForm, setShowLineItemForm] = useState(false);
   const [lineItemForm, setLineItemForm] = useState<LineItemInput>(emptyLineItem);
@@ -67,6 +68,7 @@ export function InvoiceDetail() {
     load();
     api.get<VatRate[]>("/vat-rates").then(setVatRates);
     api.get<Customer[]>("/customers").then(setCustomers);
+    api.get<Article[]>("/articles").then(setArticles);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
 
@@ -109,6 +111,25 @@ export function InvoiceDetail() {
       vat_rate_code: li.vat_rate_code,
     });
     setShowLineItemForm(true);
+  };
+
+  const selectArticle = (articleId: string) => {
+    if (!articleId) {
+      setLineItemForm({ ...lineItemForm, article_id: null });
+      return;
+    }
+
+    const article = articles.find((candidate) => candidate.id === articleId);
+    if (!article) return;
+
+    setLineItemForm({
+      ...lineItemForm,
+      article_id: article.id,
+      description: article.name,
+      unit: article.unit,
+      unit_price_net: article.sales_price_net,
+      vat_rate_code: article.default_vat_rate_code,
+    });
   };
 
   const submitLineItem = (e: FormEvent) => {
@@ -215,6 +236,21 @@ export function InvoiceDetail() {
             </button>
           ) : (
             <form onSubmit={submitLineItem} style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.6rem" }}>
+              <select
+                aria-label={t("invoiceDetail.article")}
+                style={{ gridColumn: "1 / -1" }}
+                value={lineItemForm.article_id ?? ""}
+                onChange={(e) => selectArticle(e.target.value)}
+              >
+                <option value="">{t("invoiceDetail.customLineItem")}</option>
+                {articles
+                  .filter((article) => article.active || article.id === lineItemForm.article_id)
+                  .map((article) => (
+                    <option key={article.id} value={article.id}>
+                      {article.sku} — {article.name}
+                    </option>
+                  ))}
+              </select>
               <input
                 placeholder={t("invoiceDetail.colDescription")}
                 required

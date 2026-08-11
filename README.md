@@ -2,14 +2,14 @@
 
 Schlanke ERP-Lösung für den deutschen Markt — Rechnungen mit korrekter Umsatzsteuer, einfache Lagerverwaltung und Buchhaltung mit DATEV-Export. Kein ERPNext/Frappe-Fork, sondern eine Neuentwicklung, gezielt auf das reduziert, was deutsche KMU tatsächlich brauchen.
 
-**Status**: In aktiver Entwicklung. Aktuell umgesetzt: Scaffolding (Phase 1). Siehe Umsetzungsplan für die weiteren Phasen.
+**Status**: In aktiver Entwicklung. Umgesetzt sind die Grundlagen, Authentifizierung und Firmeneinstellungen, Kunden- und USt-Verwaltung, Rechnungen mit PDF-Erzeugung sowie die einfache Artikel- und Lagerverwaltung.
 
-## Funktionen (geplant)
+## Funktionen
 
 - Kunden verwalten, Rechnungen mit Netto/USt-Satz/Brutto pro Position (19 %/7 %/0 %), USt-Aufschlüsselung nach §14 UStG
 - Rechnungs-PDF-Erzeugung (Typst), fortlaufende Rechnungsnummern, Statusverfolgung (Entwurf/versendet/bezahlt/überfällig/storniert)
 - Einfache Artikel- und Lagerverwaltung (Lagerbestand automatisch bei Rechnungsversand angepasst)
-- Buchhaltung: automatische Buchungssätze bei Rechnungs-/Zahlungsstatus, DATEV-EXTF-CSV-Export für den Steuerberater
+- Buchhaltung: automatische Buchungssätze bei Rechnungs-/Zahlungsstatus, DATEV-EXTF-CSV-Export für den Steuerberater (geplant)
 
 ## Web-Stack
 
