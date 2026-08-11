@@ -1,0 +1,26 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT code, rate_percent FROM vat_rates ORDER BY sort_order",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "code",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 1,
+        "name": "rate_percent",
+        "type_info": "Numeric"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "59a74d5b4eea295a5e5614577d3dcbb31aa37a5963d82987713f63d7098c66d0"
+}

@@ -1,0 +1,112 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT * FROM customers WHERE id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "customer_number",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 2,
+        "name": "name",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "contact_person",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 4,
+        "name": "address_line1",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 5,
+        "name": "address_line2",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 6,
+        "name": "zip",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 7,
+        "name": "city",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 8,
+        "name": "country",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 9,
+        "name": "email",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 10,
+        "name": "phone",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 11,
+        "name": "ust_id",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 12,
+        "name": "default_payment_terms_days",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 13,
+        "name": "notes",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 14,
+        "name": "active",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 15,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "7af29c0b01b12cbed99479856b32196dc1119cd2c7bcd9499471f0be686b21b8"
+}

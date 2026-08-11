@@ -4,6 +4,7 @@ import { useAuth } from "./contexts/AuthContext";
 import { Layout } from "./components/Layout";
 import { Login } from "./pages/Login";
 import { Dashboard } from "./pages/Dashboard";
+import { Customers } from "./pages/Customers";
 import { Settings } from "./pages/Settings";
 
 function RequireAuth({ children }: { children: ReactNode }) {
@@ -26,6 +27,7 @@ export default function App() {
         }
       >
         <Route index element={<Dashboard />} />
+        <Route path="customers" element={<Customers />} />
         <Route path="settings" element={<Settings />} />
       </Route>
     </Routes>

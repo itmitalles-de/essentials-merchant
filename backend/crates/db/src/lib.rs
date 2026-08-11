@@ -1,7 +1,9 @@
 use sqlx::postgres::{PgPool, PgPoolOptions};
 
 pub mod company_settings;
+pub mod customers;
 pub mod users;
+pub mod vat_rates;
 
 pub async fn connect(database_url: &str) -> Result<PgPool, sqlx::Error> {
     PgPoolOptions::new()

@@ -11,6 +11,7 @@ const en = {
   "common.language.de": "German",
 
   "nav.dashboard": "Dashboard",
+  "nav.customers": "Customers",
   "nav.settings": "Settings",
   "nav.logout": "Log out",
 
@@ -46,6 +47,32 @@ const en = {
   "settings.datevMandantNr": "DATEV client number",
   "settings.save": "Save",
   "settings.saved": "Saved",
+
+  "customers.title": "Customers",
+  "customers.cancel": "Cancel",
+  "customers.new": "New customer",
+  "customers.name": "Name",
+  "customers.contactPerson": "Contact person",
+  "customers.address": "Address",
+  "customers.addressLine2": "Address line 2",
+  "customers.zip": "ZIP",
+  "customers.city": "City",
+  "customers.email": "Email",
+  "customers.phone": "Phone",
+  "customers.ustId": "VAT ID (USt-IdNr.)",
+  "customers.paymentTermsDays": "Payment terms (days, empty = company default)",
+  "customers.active": "Active",
+  "customers.notes": "Notes",
+  "customers.save": "Save",
+  "customers.create": "Create",
+  "customers.confirmDelete": "Really delete this customer?",
+  "customers.colContact": "Contact",
+  "customers.colEmail": "Email",
+  "customers.colStatus": "Status",
+  "customers.statusActive": "active",
+  "customers.statusInactive": "inactive",
+  "customers.edit": "Edit",
+  "customers.delete": "Delete",
 };
 
 const de: Record<keyof typeof en, string> = {
@@ -61,6 +88,7 @@ const de: Record<keyof typeof en, string> = {
   "common.language.de": "Deutsch",
 
   "nav.dashboard": "Dashboard",
+  "nav.customers": "Kunden",
   "nav.settings": "Einstellungen",
   "nav.logout": "Abmelden",
 
@@ -96,6 +124,32 @@ const de: Record<keyof typeof en, string> = {
   "settings.datevMandantNr": "DATEV-Mandantennummer",
   "settings.save": "Speichern",
   "settings.saved": "Gespeichert",
+
+  "customers.title": "Kunden",
+  "customers.cancel": "Abbrechen",
+  "customers.new": "Neuer Kunde",
+  "customers.name": "Name",
+  "customers.contactPerson": "Ansprechpartner",
+  "customers.address": "Adresse",
+  "customers.addressLine2": "Adresszusatz",
+  "customers.zip": "PLZ",
+  "customers.city": "Ort",
+  "customers.email": "E-Mail",
+  "customers.phone": "Telefon",
+  "customers.ustId": "USt-IdNr.",
+  "customers.paymentTermsDays": "Zahlungsziel (Tage, leer = Firmenstandard)",
+  "customers.active": "Aktiv",
+  "customers.notes": "Notizen",
+  "customers.save": "Speichern",
+  "customers.create": "Anlegen",
+  "customers.confirmDelete": "Diesen Kunden wirklich löschen?",
+  "customers.colContact": "Ansprechpartner",
+  "customers.colEmail": "E-Mail",
+  "customers.colStatus": "Status",
+  "customers.statusActive": "aktiv",
+  "customers.statusInactive": "inaktiv",
+  "customers.edit": "Bearbeiten",
+  "customers.delete": "Löschen",
 };
 
 export type TranslationKey = keyof typeof en;

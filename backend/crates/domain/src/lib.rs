@@ -1,6 +1,8 @@
 //! Domain logic for ErpLite: VAT math, invoice/booking rules, DATEV formatting.
 //! Deliberately free of DB/HTTP dependencies so it stays unit-testable in isolation.
 
+pub mod vat;
+
 pub fn health() -> &'static str {
     "ok"
 }

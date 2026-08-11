@@ -1,0 +1,20 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE company_settings SET next_customer_number = next_customer_number + 1\n         WHERE id = 1 RETURNING next_customer_number - 1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "?column?",
+        "type_info": "Int4"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "197a12e55f836e6e25c1f174486ce1aca319a03ab7c33cb5918691f3cb969ab9"
+}
