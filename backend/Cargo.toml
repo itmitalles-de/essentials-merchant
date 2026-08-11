@@ -19,6 +19,8 @@ thiserror = "2"
 anyhow = "1"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+argon2 = { version = "0.5", features = ["password-hash"] }
+jsonwebtoken = "9"
 
 domain = { path = "crates/domain" }
 db = { path = "crates/db" }

@@ -1,0 +1,167 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE company_settings SET\n            company_name = $1, owner_name = $2, address_line1 = $3, address_line2 = $4,\n            zip = $5, city = $6, country = $7, email = $8, phone = $9, tax_id = $10,\n            vat_id = $11, iban = $12, bic = $13, bank_name = $14, invoice_number_prefix = $15,\n            invoice_footer_note = $16, default_payment_terms_days = $17, skr = $18,\n            datev_berater_nr = $19, datev_mandant_nr = $20, updated_at = now()\n         WHERE id = 1\n         RETURNING company_name, owner_name, address_line1, address_line2, zip, city, country,\n                   email, phone, tax_id, vat_id, iban, bic, bank_name, invoice_number_prefix,\n                   next_invoice_number, next_customer_number, invoice_footer_note,\n                   default_payment_terms_days, skr, datev_berater_nr, datev_mandant_nr",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "company_name",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 1,
+        "name": "owner_name",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 2,
+        "name": "address_line1",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "address_line2",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 4,
+        "name": "zip",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 5,
+        "name": "city",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 6,
+        "name": "country",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 7,
+        "name": "email",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 8,
+        "name": "phone",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 9,
+        "name": "tax_id",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 10,
+        "name": "vat_id",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 11,
+        "name": "iban",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 12,
+        "name": "bic",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 13,
+        "name": "bank_name",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 14,
+        "name": "invoice_number_prefix",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 15,
+        "name": "next_invoice_number",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 16,
+        "name": "next_customer_number",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 17,
+        "name": "invoice_footer_note",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 18,
+        "name": "default_payment_terms_days",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 19,
+        "name": "skr",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 20,
+        "name": "datev_berater_nr",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 21,
+        "name": "datev_mandant_nr",
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text",
+        "Text",
+        "Text",
+        "Text",
+        "Text",
+        "Text",
+        "Text",
+        "Text",
+        "Text",
+        "Text",
+        "Text",
+        "Text",
+        "Text",
+        "Text",
+        "Text",
+        "Int4",
+        "Text",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "3b012c21973070aeacfe6678c4aeb94c3cc28a0ecbee0a53737054b37a1bcac6"
+}

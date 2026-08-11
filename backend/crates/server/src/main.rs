@@ -1,28 +1,42 @@
+mod auth;
+mod bootstrap;
+mod config;
+mod routes;
+mod state;
+
 use std::net::SocketAddr;
 
 use axum::{routing::get, Json, Router};
 use serde_json::{json, Value};
-use sqlx::PgPool;
+use tower_http::cors::CorsLayer;
 
-#[derive(Clone)]
-struct AppState {
-    #[allow(dead_code)]
-    pool: PgPool,
-}
+use config::Config;
+use state::AppState;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt::init();
 
-    let database_url = std::env::var("DATABASE_URL").expect("DATABASE_URL must be set");
-    let pool = db::connect(&database_url).await?;
+    let config = Config::from_env();
+
+    let pool = db::connect(&config.database_url).await?;
     db::migrate(&pool).await?;
+    bootstrap::seed_admin(&pool, &config).await?;
 
-    let state = AppState { pool };
+    let state = AppState {
+        pool,
+        jwt_secret: config.jwt_secret,
+    };
 
-    let api = Router::new().route("/health", get(health));
+    let api = Router::new()
+        .route("/health", get(health))
+        .nest("/auth", routes::auth::router())
+        .nest("/company-settings", routes::company_settings::router());
 
-    let app = Router::new().nest("/api", api).with_state(state);
+    let app = Router::new()
+        .nest("/api", api)
+        .layer(CorsLayer::permissive())
+        .with_state(state);
 
     let addr = SocketAddr::from(([0, 0, 0, 0], 8000));
     tracing::info!("erplite server listening on {addr}");

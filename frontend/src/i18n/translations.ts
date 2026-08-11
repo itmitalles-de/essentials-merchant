@@ -11,11 +11,41 @@ const en = {
   "common.language.de": "German",
 
   "nav.dashboard": "Dashboard",
+  "nav.settings": "Settings",
+  "nav.logout": "Log out",
+
+  "login.error": "Login failed",
+  "login.username": "Username",
+  "login.password": "Password",
+  "login.submit": "Log in",
 
   "dashboard.title": "Dashboard",
   "dashboard.apiStatus": "API status",
   "dashboard.apiStatusOk": "reachable",
   "dashboard.apiStatusError": "unreachable",
+
+  "settings.title": "Company settings",
+  "settings.companyName": "Company name",
+  "settings.ownerName": "Owner",
+  "settings.addressLine1": "Address",
+  "settings.addressLine2": "Address line 2",
+  "settings.zip": "ZIP",
+  "settings.city": "City",
+  "settings.email": "Email",
+  "settings.phone": "Phone",
+  "settings.taxId": "Tax number (Steuernummer)",
+  "settings.vatId": "VAT ID (USt-IdNr.)",
+  "settings.iban": "IBAN",
+  "settings.bic": "BIC",
+  "settings.bankName": "Bank name",
+  "settings.invoiceNumberPrefix": "Invoice number prefix",
+  "settings.invoiceFooterNote": "Invoice footer note",
+  "settings.paymentTermsDays": "Payment terms (days)",
+  "settings.skr": "Chart of accounts (SKR)",
+  "settings.datevBeraterNr": "DATEV consultant number",
+  "settings.datevMandantNr": "DATEV client number",
+  "settings.save": "Save",
+  "settings.saved": "Saved",
 };
 
 const de: Record<keyof typeof en, string> = {
@@ -31,11 +61,41 @@ const de: Record<keyof typeof en, string> = {
   "common.language.de": "Deutsch",
 
   "nav.dashboard": "Dashboard",
+  "nav.settings": "Einstellungen",
+  "nav.logout": "Abmelden",
+
+  "login.error": "Anmeldung fehlgeschlagen",
+  "login.username": "Benutzername",
+  "login.password": "Passwort",
+  "login.submit": "Anmelden",
 
   "dashboard.title": "Dashboard",
   "dashboard.apiStatus": "API-Status",
   "dashboard.apiStatusOk": "erreichbar",
   "dashboard.apiStatusError": "nicht erreichbar",
+
+  "settings.title": "Firmeneinstellungen",
+  "settings.companyName": "Firmenname",
+  "settings.ownerName": "Inhaber",
+  "settings.addressLine1": "Adresse",
+  "settings.addressLine2": "Adresszusatz",
+  "settings.zip": "PLZ",
+  "settings.city": "Ort",
+  "settings.email": "E-Mail",
+  "settings.phone": "Telefon",
+  "settings.taxId": "Steuernummer",
+  "settings.vatId": "USt-IdNr.",
+  "settings.iban": "IBAN",
+  "settings.bic": "BIC",
+  "settings.bankName": "Bankname",
+  "settings.invoiceNumberPrefix": "Rechnungsnummern-Präfix",
+  "settings.invoiceFooterNote": "Rechnungsfußzeile",
+  "settings.paymentTermsDays": "Zahlungsziel (Tage)",
+  "settings.skr": "Kontenrahmen (SKR)",
+  "settings.datevBeraterNr": "DATEV-Beraternummer",
+  "settings.datevMandantNr": "DATEV-Mandantennummer",
+  "settings.save": "Speichern",
+  "settings.saved": "Gespeichert",
 };
 
 export type TranslationKey = keyof typeof en;

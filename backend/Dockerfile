@@ -3,7 +3,8 @@ WORKDIR /app
 
 ENV SQLX_OFFLINE=true
 
-COPY Cargo.toml ./
+COPY Cargo.toml Cargo.lock ./
+COPY .sqlx ./.sqlx
 COPY crates ./crates
 RUN cargo build --release --bin server
 
