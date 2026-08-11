@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM invoice_line_items WHERE id = $1 AND invoice_id = $2",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "f9aadbce29ee2605be9a88abbc0945540753ae08d8db0ab6618c89614abe3809"
+}

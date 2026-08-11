@@ -2,7 +2,7 @@ use rust_decimal::{Decimal, RoundingStrategy};
 
 /// Rounds to 2 decimal places using kaufmännisches Runden (round-half-away-from-zero),
 /// the rounding convention German invoicing/accounting expects.
-fn round_money(value: Decimal) -> Decimal {
+pub fn round_money(value: Decimal) -> Decimal {
     value.round_dp_with_strategy(2, RoundingStrategy::MidpointAwayFromZero)
 }
 

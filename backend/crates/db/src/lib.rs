@@ -2,6 +2,7 @@ use sqlx::postgres::{PgPool, PgPoolOptions};
 
 pub mod company_settings;
 pub mod customers;
+pub mod invoices;
 pub mod users;
 pub mod vat_rates;
 

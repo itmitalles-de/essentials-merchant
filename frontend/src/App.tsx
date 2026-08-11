@@ -5,6 +5,8 @@ import { Layout } from "./components/Layout";
 import { Login } from "./pages/Login";
 import { Dashboard } from "./pages/Dashboard";
 import { Customers } from "./pages/Customers";
+import { Invoices } from "./pages/Invoices";
+import { InvoiceDetail } from "./pages/InvoiceDetail";
 import { Settings } from "./pages/Settings";
 
 function RequireAuth({ children }: { children: ReactNode }) {
@@ -28,6 +30,8 @@ export default function App() {
       >
         <Route index element={<Dashboard />} />
         <Route path="customers" element={<Customers />} />
+        <Route path="invoices" element={<Invoices />} />
+        <Route path="invoices/:id" element={<InvoiceDetail />} />
         <Route path="settings" element={<Settings />} />
       </Route>
     </Routes>

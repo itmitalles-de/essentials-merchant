@@ -1,0 +1,105 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE invoice_line_items SET\n            description = $3, article_id = $4, quantity = $5, unit = $6, unit_price_net = $7,\n            vat_rate_code = $8, vat_rate_percent = $9, net_amount = $10, vat_amount = $11, gross_amount = $12\n         WHERE id = $1 AND invoice_id = $2\n         RETURNING *",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "invoice_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 2,
+        "name": "position",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 3,
+        "name": "description",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 4,
+        "name": "article_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 5,
+        "name": "quantity",
+        "type_info": "Numeric"
+      },
+      {
+        "ordinal": 6,
+        "name": "unit",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 7,
+        "name": "unit_price_net",
+        "type_info": "Numeric"
+      },
+      {
+        "ordinal": 8,
+        "name": "vat_rate_code",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 9,
+        "name": "vat_rate_percent",
+        "type_info": "Numeric"
+      },
+      {
+        "ordinal": 10,
+        "name": "net_amount",
+        "type_info": "Numeric"
+      },
+      {
+        "ordinal": 11,
+        "name": "vat_amount",
+        "type_info": "Numeric"
+      },
+      {
+        "ordinal": 12,
+        "name": "gross_amount",
+        "type_info": "Numeric"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Text",
+        "Uuid",
+        "Numeric",
+        "Text",
+        "Numeric",
+        "Text",
+        "Numeric",
+        "Numeric",
+        "Numeric",
+        "Numeric"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      true,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "2ba6cd179da5f9372ab03f310e48603559d7fe17cc30090904c2c1d610497675"
+}

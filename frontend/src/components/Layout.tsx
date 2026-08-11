@@ -24,6 +24,7 @@ export function Layout() {
         <div style={{ fontWeight: 700, marginBottom: "1rem" }}>{t("app.title")}</div>
         <NavItem to="/">{t("nav.dashboard")}</NavItem>
         <NavItem to="/customers">{t("nav.customers")}</NavItem>
+        <NavItem to="/invoices">{t("nav.invoices")}</NavItem>
         <NavItem to="/settings">{t("nav.settings")}</NavItem>
         <div style={{ flex: 1 }} />
         <div style={{ fontSize: "0.85rem", color: "var(--fg-muted)" }}>{username}</div>

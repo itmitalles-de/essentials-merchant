@@ -1,0 +1,116 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE company_settings SET next_invoice_number = next_invoice_number + 1\n                   WHERE id = 1\n                   RETURNING company_name, owner_name, address_line1, address_line2, zip, city,\n                             country, email, phone, tax_id, vat_id, iban, bic, bank_name,\n                             invoice_footer_note,\n                             invoice_number_prefix || '-' || to_char(now(), 'YYYY') || '-' ||\n                                 lpad((next_invoice_number - 1)::text, 4, '0') AS \"invoice_number!\",\n                             default_payment_terms_days",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "company_name",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 1,
+        "name": "owner_name",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 2,
+        "name": "address_line1",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "address_line2",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 4,
+        "name": "zip",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 5,
+        "name": "city",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 6,
+        "name": "country",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 7,
+        "name": "email",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 8,
+        "name": "phone",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 9,
+        "name": "tax_id",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 10,
+        "name": "vat_id",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 11,
+        "name": "iban",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 12,
+        "name": "bic",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 13,
+        "name": "bank_name",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 14,
+        "name": "invoice_footer_note",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 15,
+        "name": "invoice_number!",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 16,
+        "name": "default_payment_terms_days",
+        "type_info": "Int4"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      null,
+      false
+    ]
+  },
+  "hash": "7d2c10b165a92b71be2cc4c9c7e895d992b64d9a79d5ea071fe8995c258f3905"
+}

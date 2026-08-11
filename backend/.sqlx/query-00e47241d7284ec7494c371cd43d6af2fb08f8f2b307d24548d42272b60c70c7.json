@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE invoices SET\n            net_total = COALESCE((SELECT SUM(net_amount) FROM invoice_line_items WHERE invoice_id = $1), 0),\n            vat_total = COALESCE((SELECT SUM(vat_amount) FROM invoice_line_items WHERE invoice_id = $1), 0),\n            gross_total = COALESCE((SELECT SUM(gross_amount) FROM invoice_line_items WHERE invoice_id = $1), 0)\n         WHERE id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "00e47241d7284ec7494c371cd43d6af2fb08f8f2b307d24548d42272b60c70c7"
+}
