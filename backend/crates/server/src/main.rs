@@ -39,6 +39,7 @@ async fn main() -> anyhow::Result<()> {
         .nest("/company-settings", routes::company_settings::router())
         .nest("/customers", routes::customers::router())
         .nest("/invoices", routes::invoices::router())
+        .nest("/sales-orders", routes::sales_orders::router())
         .nest("/vat-rates", routes::vat_rates::router());
 
     let app = Router::new()

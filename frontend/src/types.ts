@@ -182,3 +182,37 @@ export interface ManualAdjustmentInput {
   quantity: string;
   note: string;
 }
+
+export type SalesChannel = "manual" | "woocommerce" | "amazon" | "ebay";
+export type ShippingCarrier = "dhl" | "hermes" | "dpd";
+
+export interface SalesOrder {
+  id: string;
+  order_number: number;
+  customer_id: string;
+  customer_name: string;
+  source: SalesChannel;
+  external_order_id: string | null;
+  status: "open" | "fulfilled" | "cancelled";
+  shipping_carrier: ShippingCarrier | null;
+  tracking_number: string;
+  notes: string;
+  created_at: string;
+}
+
+export interface SalesOrderItemInput {
+  article_id: string | null;
+  description: string;
+  quantity: string;
+  unit: string;
+}
+
+export interface CreateSalesOrderInput {
+  customer_id: string;
+  source: SalesChannel;
+  external_order_id: string | null;
+  shipping_carrier: ShippingCarrier | null;
+  tracking_number: string;
+  notes: string;
+  items: SalesOrderItemInput[];
+}

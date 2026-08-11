@@ -9,6 +9,7 @@ import { Invoices } from "./pages/Invoices";
 import { InvoiceDetail } from "./pages/InvoiceDetail";
 import { ArticleDetail } from "./pages/ArticleDetail";
 import { Articles } from "./pages/Articles";
+import { SalesOrders } from "./pages/SalesOrders";
 import { Settings } from "./pages/Settings";
 
 function RequireAuth({ children }: { children: ReactNode }) {
@@ -36,6 +37,7 @@ export default function App() {
         <Route path="invoices/:id" element={<InvoiceDetail />} />
         <Route path="articles" element={<Articles />} />
         <Route path="articles/:id" element={<ArticleDetail />} />
+        <Route path="sales-orders" element={<SalesOrders />} />
         <Route path="settings" element={<Settings />} />
       </Route>
     </Routes>
