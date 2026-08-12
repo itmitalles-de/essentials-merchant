@@ -171,7 +171,7 @@ export interface StockMovement {
   article_id: string;
   movement_type: StockMovementType;
   quantity: string;
-  reference_type: "invoice" | "manual";
+  reference_type: "invoice" | "sales_order" | "manual";
   reference_id: string | null;
   note: string;
   created_at: string;
@@ -197,7 +197,22 @@ export interface SalesOrder {
   shipping_carrier: ShippingCarrier | null;
   tracking_number: string;
   notes: string;
+  fulfilled_at: string | null;
   created_at: string;
+}
+
+export interface SalesOrderItem {
+  id: string;
+  sales_order_id: string;
+  position: number;
+  article_id: string | null;
+  description: string;
+  quantity: string;
+  unit: string;
+}
+
+export interface SalesOrderWithItems extends SalesOrder {
+  items: SalesOrderItem[];
 }
 
 export interface SalesOrderItemInput {
@@ -215,4 +230,9 @@ export interface CreateSalesOrderInput {
   tracking_number: string;
   notes: string;
   items: SalesOrderItemInput[];
+}
+
+export interface FulfillSalesOrderInput {
+  shipping_carrier: ShippingCarrier | null;
+  tracking_number: string;
 }

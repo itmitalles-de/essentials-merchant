@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "INSERT INTO sales_orders (customer_id, source, external_order_id, shipping_carrier, tracking_number, notes)\n           SELECT $1, $2, $3, $4, $5, $6\n           FROM customers WHERE id = $1\n           RETURNING id, order_number, customer_id,\n             (SELECT name FROM customers WHERE id = $1) AS \"customer_name!\", source, external_order_id,\n             status, shipping_carrier, tracking_number, notes, created_at",
+  "query": "SELECT o.id, o.order_number, o.customer_id, c.name AS customer_name, o.source,\n                  o.external_order_id, o.status, o.shipping_carrier, o.tracking_number,\n                  o.notes, o.fulfilled_at, o.created_at\n           FROM sales_orders o JOIN customers c ON c.id = o.customer_id\n           ORDER BY o.created_at DESC",
   "describe": {
     "columns": [
       {
@@ -20,7 +20,7 @@
       },
       {
         "ordinal": 3,
-        "name": "customer_name!",
+        "name": "customer_name",
         "type_info": "Text"
       },
       {
@@ -55,33 +55,32 @@
       },
       {
         "ordinal": 10,
+        "name": "fulfilled_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 11,
         "name": "created_at",
         "type_info": "Timestamptz"
       }
     ],
     "parameters": {
-      "Left": [
-        "Uuid",
-        "Text",
-        "Text",
-        "Text",
-        "Text",
-        "Text"
-      ]
+      "Left": []
     },
     "nullable": [
       false,
       false,
       false,
-      null,
+      false,
       false,
       true,
       false,
       true,
       false,
       false,
+      true,
       false
     ]
   },
-  "hash": "c02eabef4256be905d7cb82318143bdf93d53e020913e676b9e0c3795b6c82f5"
+  "hash": "1839bb77b9ce5e8509ba8397c0776ee8010696e155ca3ba28bb353913628dbe0"
 }

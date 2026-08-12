@@ -9,7 +9,7 @@ Schlanke ERP-Lösung für den deutschen Markt — Rechnungen mit korrekter Umsat
 - Kunden verwalten, Rechnungen mit Netto/USt-Satz/Brutto pro Position (19 %/7 %/0 %), USt-Aufschlüsselung nach §14 UStG
 - Rechnungs-PDF-Erzeugung (Typst), fortlaufende Rechnungsnummern, Statusverfolgung (Entwurf/versendet/bezahlt/überfällig/storniert)
 - Einfache Artikel- und Lagerverwaltung (Lagerbestand automatisch bei Rechnungsversand angepasst)
-- Aufträge mit Artikelpositionen, Herkunftskanal (manuell, WooCommerce, Amazon, eBay) sowie vorbereiteten Versanddienstleister- und Tracking-Feldern; API-Anbindungen und Label-Erzeugung sind noch nicht implementiert
+- Aufträge mit Artikelpositionen, Herkunftskanal (manuell, WooCommerce, Amazon, eBay) sowie manueller Versandbestätigung: verknüpfte Artikel werden dabei einmalig ausgebucht, Versanddienstleister und Sendungsnummer nachvollziehbar gespeichert. API-Anbindungen und Label-Erzeugung sind noch nicht implementiert
 - Buchhaltung: automatische Buchungssätze bei Rechnungs-/Zahlungsstatus, DATEV-EXTF-CSV-Export für den Steuerberater (geplant)
 
 ## Web-Stack

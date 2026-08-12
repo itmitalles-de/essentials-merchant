@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import type { FormEvent } from "react";
+import { Link } from "react-router-dom";
 import { api } from "../api";
 import { useLanguage } from "../contexts/LanguageContext";
 import type { Article, CreateSalesOrderInput, Customer, SalesChannel, SalesOrder, ShippingCarrier } from "../types";
@@ -78,7 +79,7 @@ export function SalesOrders() {
       <button type="submit" disabled={busy} style={{ gridColumn: "1 / -1" }}>{t("orders.create")}</button>
     </form>}
     <table className="card"><thead><tr><th>{t("orders.colNumber")}</th><th>{t("orders.colCustomer")}</th><th>{t("orders.colSource")}</th><th>{t("orders.colCarrier")}</th><th>{t("orders.colStatus")}</th></tr></thead>
-      <tbody>{orders.map((order) => <tr key={order.id}><td>{order.order_number}</td><td>{order.customer_name}</td><td>{channelLabel(order.source)}</td><td>{order.shipping_carrier?.toUpperCase() ?? "—"}</td><td>{order.status}</td></tr>)}</tbody>
+      <tbody>{orders.map((order) => <tr key={order.id}><td><Link className="btn btn-sm" to={`/sales-orders/${order.id}`}>{order.order_number}</Link></td><td>{order.customer_name}</td><td>{channelLabel(order.source)}</td><td>{order.shipping_carrier?.toUpperCase() ?? "—"}</td><td>{t(`orders.status.${order.status}`)}</td></tr>)}</tbody>
     </table>
   </div>;
 }

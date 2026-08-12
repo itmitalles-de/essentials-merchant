@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT o.id, o.order_number, o.customer_id, c.name AS customer_name, o.source,\n                  o.external_order_id, o.status, o.shipping_carrier, o.tracking_number,\n                  o.notes, o.created_at\n           FROM sales_orders o JOIN customers c ON c.id = o.customer_id WHERE o.id = $1",
+  "query": "SELECT o.id, o.order_number, o.customer_id, c.name AS customer_name, o.source,\n                  o.external_order_id, o.status, o.shipping_carrier, o.tracking_number,\n                  o.notes, o.fulfilled_at, o.created_at\n           FROM sales_orders o JOIN customers c ON c.id = o.customer_id WHERE o.id = $1",
   "describe": {
     "columns": [
       {
@@ -55,6 +55,11 @@
       },
       {
         "ordinal": 10,
+        "name": "fulfilled_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 11,
         "name": "created_at",
         "type_info": "Timestamptz"
       }
@@ -75,8 +80,9 @@
       true,
       false,
       false,
+      true,
       false
     ]
   },
-  "hash": "17e47f9cadad7ee4b48843d0f5b99842b1380c0b18b1d0dce71fd51e83fbbfe2"
+  "hash": "c065ee9eff657aa9226915f1360473e34d3bf11a119fbe16a9e326c78ee3510b"
 }
