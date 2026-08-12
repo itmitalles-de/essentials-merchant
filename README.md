@@ -1,8 +1,8 @@
-# Shop Suite
+# ErpLite
 
-Shop Suite ist das integrierte Warenwirtschafts- und Commerce-System für kleine deutsche Produktunternehmen: Rechnungen mit Umsatzsteuer, Artikel und Bestand, Auftragsabwicklung und künftig ein Vendure-basierter Headless-Shop. Kein ERPNext/Frappe-Fork, sondern eine fokussierte Neuentwicklung.
+Schlanke ERP-Lösung für den deutschen Markt — Rechnungen mit korrekter Umsatzsteuer, einfache Lagerverwaltung und Buchhaltung mit DATEV-Export. Kein ERPNext/Frappe-Fork, sondern eine Neuentwicklung, gezielt auf das reduziert, was deutsche KMU tatsächlich brauchen.
 
-**Hauptprojekt 2 von 3. Status (2026-08-12):** Umgesetzt sind Authentifizierung, Firmeneinstellungen, Kunden/USt, Rechnungen und Typst-PDFs, Artikel/Lager sowie Aufträge mit manueller Versandbestätigung. Vendure, Storefront, Zahlungen, Versandlabel und DATEV-Export sind noch nicht implementiert. Die Docker- und Frontend-CI ist grün; der Backend-Job scheitert aktuell, weil SQLx beim Clippy-Lauf gegen eine noch nicht migrierte CI-Datenbank kompiliert.
+**Status**: In aktiver Entwicklung. Umgesetzt sind die Grundlagen, Authentifizierung und Firmeneinstellungen, Kunden- und USt-Verwaltung, Rechnungen mit PDF-Erzeugung, einfache Artikel- und Lagerverwaltung sowie ein Auftragskern für manuelle und künftige Marktplatzbestellungen.
 
 ## Funktionen
 
@@ -50,14 +50,3 @@ npm run dev
 - Gesendete Rechnungen sind unveränderlich; Korrekturen erfolgen künftig über eine Stornorechnung (noch nicht implementiert)
 - DATEV-Export ist ein isolierter Baustein (Buchungssätze → EXTF-CSV), entkoppelt vom Buchhaltungs-Domain-Modell — Format muss vor Produktivnutzung gegen die aktuelle DATEV-Formatbeschreibung verifiziert werden
 - Kontenrahmen: SKR03-Subset als Standard (Company-Setting), SKR04 nicht im MVP
-
-
-## Zielarchitektur mit Vendure
-
-- **Shop Suite Core (dieses Rust-System)** ist führend für SKU, Bestand, Auftrag, Rechnung und Buchhaltung.
-- **Vendure 3.7.x** übernimmt kundenorientierten Katalog, Variantenprojektion, Warenkorb, Checkout, Aktionen, Zahlung und Shop-API.
-- **Next.js Storefront** spricht ausschließlich mit der Vendure Shop API.
-- Die Systeme teilen keine Datenbank. Synchronisation erfolgt über versionierte Adapter, stabile externe IDs, idempotente Events/Webhooks und eine Outbox.
-- Artikel und Bestand werden vom Core nach Vendure publiziert; abgeschlossene Vendure-Bestellungen werden genau einmal in den Core importiert; Versandstatus läuft kontrolliert zurück.
-
-Interne technische Namen wie Datenbank, Compose-Volumes und Rust-Crate-Pfade dürfen vorerst `erplite` heißen. Eine mechanische Umbenennung ohne Datenmigrationsplan ist ausdrücklich nicht Teil des Produkt-Rebrandings.
