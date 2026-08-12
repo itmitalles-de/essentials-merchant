@@ -48,7 +48,7 @@ async fn main() -> anyhow::Result<()> {
         .with_state(state);
 
     let addr = SocketAddr::from(([0, 0, 0, 0], 8000));
-    tracing::info!("erplite server listening on {addr}");
+    tracing::info!("Shop Suite server listening on {addr}");
     let listener = tokio::net::TcpListener::bind(addr).await?;
     axum::serve(listener, app).await?;
 
