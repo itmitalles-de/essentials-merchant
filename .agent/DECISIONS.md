@@ -1,105 +1,109 @@
 # Decisions
 
-Record only durable choices that future agents might otherwise undo or reopen.
-Implementation and operational detail remains authoritative in `README.md` and
-the referenced source files.
+Record only durable choices that future work might otherwise undo. Implementation and operations
+remain authoritative in the linked source and documentation.
 
-## 2026-08-12 - Keep Core and Vendure as separate systems of record
+## 2026-08-12 — Keep Core and Vendure as separate systems of record
 
-**Decision:** Merchant Core owns SKU, ERP master data, available stock,
-imported orders, invoices, and accounting. Vendure owns merchandising, cart,
-checkout, promotions, payment, and Shop/Admin APIs. Each uses its own database.
+**Decision:** Core owns SKU/master data, available stock, imported orders, invoices, immutable
+accounting, modules, diagnostics, and Marketplace Intelligence. Vendure owns merchandising, cart,
+checkout, promotions, payment/fulfillment runtime, and Shop/Admin APIs. Each keeps its PostgreSQL
+database.
 
-**Reason:** ERP/accounting integrity and commerce concerns have different
-lifecycles; sharing tables would couple upgrades and make ownership ambiguous.
+**Reason:** ERP/accounting integrity and commerce have different lifecycles. Shared tables or
+moving Core authority into Vendure would make upgrades and failure ownership ambiguous.
 
-**Alternatives considered:** Moving ERP responsibility into Vendure or sharing a
-single PostgreSQL schema.
+**Consequences:** Cross-system work uses explicit at-least-once events, mappings, monotonic
+projections, idempotent consumers, and recovery tests; there is no distributed transaction.
 
-**Consequences:** Integrations exchange explicit events/projections. The
-Storefront uses only the Vendure Shop API and never queries Core directly.
+## 2026-08-13 — Exact visible brand, stable internal compatibility names
 
-## 2026-08-12 - Preserve internal erplite compatibility names
+**Decision:** The visible name is exactly `Essentials+ Merchant`. Existing `erplite`, crate,
+database, volume, migration, mapping, token-storage, and `shop-suite-*` identifiers stay unchanged.
 
-**Decision:** Use `Merchant` under the Essentials Plus working brand for visible product naming while retaining
-existing `erplite` database, volume, crate, token-storage, and migration names.
+**Reason:** Presentation branding must not break deployed persistence, APIs, or imports.
 
-**Reason:** Mechanical renaming would break deployed persistence and clients.
+**Consequences:** Any future internal rename is a separate versioned migration with backup,
+rollback, and compatibility planning. The repository slug and license are unchanged.
 
-**Alternatives considered:** Renaming every internal identifier with the brand.
+## 2026-08-13 — Durable delivery plus signed internal requests
 
-**Consequences:** Any future internal rename is a separately planned data and
-compatibility migration with backup, rollback, and deployment coordination.
+**Decision:** Local transactions enqueue outbox intent; consumers are idempotent and use persisted
+leases, attempts, capped exponential backoff, dead state, and controlled requeue. Core/Vendure HTTP
+requests use HMAC-SHA-256 over method, path, timestamp, nonce, and body hash with persisted nonce
+replay protection and current/previous-key overlap.
 
-## 2026-08-13 - Use transactional outboxes and idempotent consumers
+**Reason:** Process, network, and database failures are normal boundaries, while a static shared
+header neither authenticates request contents nor prevents replay.
 
-**Decision:** Cross-system intent is written to an outbox in the owning local
-database transaction and delivered at least once. Inbox/event uniqueness,
-mapping uniqueness, leases, retries, and monotonic sequences protect consumers.
+**Consequences:** Payload and mapping uniqueness, not delivery count, protects business effects.
+Production still needs TLS/private networking and synchronized clocks. Diagnostics and logs are
+redacted; the test environment alone may shorten timing and trigger process failpoints.
 
-**Reason:** Core and Vendure cannot share a database transaction, and process or
-network failures must not lose events or double-book stock.
+## 2026-08-13 — Persist the module contract inside this repository
 
-**Alternatives considered:** Synchronous dual writes and claims of distributed
-exactly-once delivery.
+**Decision:** Essentials+ module manifests and state are implemented directly in Core without a
+shared runtime library or control plane. Administrators see the full catalog; ordinary users and
+APIs require enabled state plus permission. Dependencies, conflicts, configuration health, and
+transitions are checked transactionally and audited.
 
-**Consequences:** Every consumer must be replay-safe. Recovery and worker-restart
-tests are required; duplicates and delays are normal operating conditions.
+**Reason:** Product-specific ownership and failure behavior belong next to this product's APIs,
+jobs, webhooks, and persistence.
 
-## 2026-08-11 - Preserve invoice and money invariants
+**Consequences:** Required Core modules cannot be disabled. Disabling an optional module stops its
+navigation, APIs, jobs, and webhooks but retains all data/history. DHL, DPD, payment, shipping, and
+Marketplace connectors are independent modules.
 
-**Decision:** Monetary values use decimals or integer minor units. Only draft
-invoices are editable; issuing assigns a unique number and snapshots customer/
-company data. Paid/cancelled states are terminal under the implemented lifecycle.
+## 2026-08-13 — Preserve invoice and accounting immutability
 
-**Reason:** Later master-data changes or floating-point behavior must not alter
-issued financial documents.
+**Decision:** Money is Decimal/integer minor units. Issued invoices are immutable snapshots;
+corrections are separate numbered documents with an explicit source reference and reversed
+snapshotted entries. Accounting exports derive only from immutable entries.
 
-**Alternatives considered:** Live joins for issued invoice data or editable sent
-invoices.
+**Reason:** Later master-data changes, float behavior, or retries must not rewrite issued financial
+history or create duplicate corrections/bookings.
 
-**Consequences:** Corrections require an explicit correction document/flow.
-DATEV exports must derive from immutable accounting entries and be reference-tested.
+**Consequences:** A full correction is one-per-source and request-idempotent and never books stock.
+DATEV rendering remains disabled behind external checker/test-client validation; no tax/legal or
+DATEV-compatibility claim is made.
 
-## 2026-08-13 - Pin commerce runtime and use explicit migrations
+## 2026-08-13 — Marketplace Intelligence stays deterministic and Amazon-read-only
 
-**Decision:** Pin Vendure and Node-compatible dependencies, keep TypeORM
-`synchronize: false`, and commit explicit reviewed migrations. SQLx checked
-queries use the committed offline cache in CI.
+**Decision:** `marketplace.amazon_intelligence` uses LWA OAuth and Reports API `v2021-06-30`, no
+IAM/SigV4 and no Amazon write operation. It stores exact transport bytes, decoded bytes and hashes,
+versioned normalized snapshots, and deterministic rule analyses. No external LLM provider is part
+of this implementation.
 
-**Reason:** Automatic schema changes and uncoordinated dependency drift risk both
-databases and make builds unreproducible.
+**Reason:** The feature must work offline with synthetic fixtures and must not send raw reports or
+buyer PII to another provider. Different parser/granularity/period keys are not silently compared.
 
-**Alternatives considered:** Runtime schema synchronization and floating Vendure
-versions.
+**Consequences:** Sales & Traffic JSON v2 and Inventory Planning TSV v1 are analysable; Returns and
+Settlement V2 are raw-only. Unknown types never become successfully analysed. A real seller/role/
+marketplace acceptance remains an explicit external gate.
 
-**Consequences:** Refresh `backend/.sqlx` after relevant Core schema/query changes,
-generate Vendure migrations only against disposable databases, and test upgrades
-on restored copies before production.
+## 2026-08-13 — Stripe and DHL are candidates; ports/fakes are the verified scope
 
-## 2026-08-13 - Keep providers out of the first vertical slice
+**Decision:** Stripe Payment Intents is the payment candidate and DHL Parcel Germany the shipping
+candidate, based on official APIs, European small-merchant fit, sandbox/authentication,
+idempotency/webhook/reconciliation capabilities, and operating burden. DPD remains a separate
+disabled connector module. Real adapters are not claimed without account-specific sandbox
+contracts.
 
-**Decision:** The implemented flow uses a clearly labeled test payment and manual
-fulfillment until failure recovery is covered.
+**Reason:** Public documentation establishes direction but cannot prove enabled products,
+credentials, callback configuration, negotiated fields, or account behavior.
 
-**Reason:** Reliability of the ownership and event model is the prerequisite for
-safe provider integration.
+**Consequences:** Provider-neutral ports, complete local fake providers, signed callback/replay
+checks, status mapping, retries, reconciliation, money/order checks, carrier/tracking, and audit are
+implemented and tested. Stripe/DHL production adapters and sandbox acceptance remain external work.
 
-**Alternatives considered:** Adding multiple production providers during the
-initial Vendure integration.
+## 2026-08-13 — Pin Vendure and rehearse schema/backup changes
 
-**Consequences:** Test payment must never be exposed as production payment. Add
-one payment and one shipping provider only after recovery coverage is complete.
+**Decision:** Vendure packages remain pinned together at 3.7.2, TypeORM `synchronize` remains
+false, SQLx offline metadata is committed, and migrations/upgrades run only against disposable or
+restored non-production data. Backups quiesce both writers and restore only into an empty project.
 
-## 2026-08-13 - Marketplace Intelligence is an optional read-only Essentials Plus module
+**Reason:** Automatic schema drift, forced dependency downgrades, or partial two-store backups are
+not reproducible recovery strategies.
 
-**Decision:** Marketplace Intelligence uses a persistent Core-side job and archive model, Amazon
-Reports API v2021-06-30 with LWA OAuth, and deterministic analysis before an optional provider.
-It is disabled by default and makes no Amazon write operation.
-
-**Reason:** Amazon access, report roles, and data quality vary by seller. The system must remain
-demonstrable with fixtures and safe when disabled or unavailable.
-
-**Consequences:** Admins see the full module catalog; normal users need an enabled module and a
-grant. Disabling stops worker claims and API actions but retains audits, raw documents, snapshots,
-and analyses. Amazon secrets remain environment-owned and are referred to only by logical keys.
+**Consequences:** The incompatible npm forced fix is prohibited. Every change to persistence must
+rerun SQLx/migrations, the two-database recovery flow, and checksum-backed restore rehearsal.

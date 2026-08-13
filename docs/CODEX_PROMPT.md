@@ -1,13 +1,19 @@
-# Historical Codex prompt: Merchant / Essentials Plus including Vendure
+# Historical Codex prompt: Essentials+ Merchant including Vendure
 
 This is the original, completed Vendure brief. Current work must follow `AGENTS.md`,
 `.agent/STATE.md`, and `.agent/TODO.md`; do not repeat its completed CI or Vendure steps.
-The current visible product is **Merchant**, under the working brand **Essentials Plus**.
+The current visible product is **Essentials+ Merchant**. The repository slug and all existing
+`erplite` compatibility identifiers remain unchanged.
+
+The reliability, module-contract, correction-invoice, deterministic Marketplace Intelligence,
+backup/restore, provider-port, and guarded DATEV export work that followed this historical brief is
+documented in `README.md`, `docs/FAILURE_MATRIX.md`, `docs/VERIFICATION_MATRIX.md`, and
+`.agent/STATE.md`. Do not repeat completed Vendure or SQLx work from this prompt.
 The repository slug and internal compatibility identifiers remain `erplite`.
 
 ## Ziel
 
-Erzeuge einen belastbaren vertikalen Commerce-Kern: Ein Artikel aus Merchant wird in Vendure angeboten, eine Testbestellung wird genau einmal in Merchant importiert, Bestand und Auftragsstatus bleiben konsistent und der Versandstatus kann zurückgespielt werden.
+Erzeuge einen belastbaren vertikalen Commerce-Kern: Ein Artikel aus Essentials+ Merchant wird in Vendure angeboten, eine Testbestellung wird genau einmal in Essentials+ Merchant importiert, Bestand und Auftragsstatus bleiben konsistent und der Versandstatus kann zurückgespielt werden.
 
 ## Reihenfolge
 
@@ -19,7 +25,7 @@ Erzeuge einen belastbaren vertikalen Commerce-Kern: Ein Artikel aus Merchant wir
 
 ### 2. Produktname konsolidieren
 
-- Sichtbare Bezeichnungen müssen `Merchant` heißen; die Arbeitsmarke ist `Essentials Plus`.
+- Sichtbare Bezeichnungen müssen `Essentials+ Merchant` heißen.
 - Interne DB-, Volume-, Crate- und Migrationsnamen `erplite` nicht mechanisch ändern. Das wäre eine getrennte Datenmigration.
 - Aktualisiere Dokumentation und Beispiele ohne bestehende Deployments zu brechen.
 
@@ -35,7 +41,7 @@ Erzeuge einen belastbaren vertikalen Commerce-Kern: Ein Artikel aus Merchant wir
 
 Verantwortlichkeiten:
 
-- Merchant Core: SKU, ERP-relevante Stammdaten, verfügbarer Bestand, importierter Auftrag, Rechnung, Buchhaltung.
+- Essentials+ Merchant Core: SKU, ERP-relevante Stammdaten, verfügbarer Bestand, importierter Auftrag, Rechnung, Buchhaltung.
 - Vendure: Merchandising, Kategorien/Facetten, Warenkorb, Checkout, Aktionen, Zahlung, Shop API.
 - Storefront: ausschließlich Vendure Shop API.
 

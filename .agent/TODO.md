@@ -1,57 +1,39 @@
 # TODO
 
-This file is the authoritative repository task handoff. Do not recreate a
-competing root task list. GitHub issues may track execution, but unfinished work
-must be summarized here for session continuation.
+This file is the authoritative unfinished-work handoff. Do not create a competing root task list.
 
-## Now
+## Now — external acceptance gates
 
-- [ ] Perform the documented manual Amazon staging gate with an approved seller,
-  assigned Report roles, marketplace IDs, LWA secret reference, rate-limit
-  handling, and a real non-restricted report. Do not log credentials or claim
-  live validation before this gate.
-- [ ] Extend `commerce/test/vertical.mjs` and CI with deliberate Core and Vendure
-  outages plus Vendure-worker restart cases.
-- [ ] Assert persisted lease expiry/reclaim, replay safety, retry/backoff behavior,
-  and eventual recovery without duplicate order or stock booking.
-- [ ] Review available compatible Vendure 3.7.x patches for the advisories in
-  `README.md`; do not accept npm's incompatible forced downgrade, and rerun the
-  complete vertical test for any upgrade.
+- [ ] Run one approved live Amazon staging request for a non-restricted report with the correct
+  seller, region, marketplace participation, Report role, and server-side LWA secret reference.
+  Record rate-limit/freshness evidence without tokens, raw buyer data, or credentials.
+- [ ] Validate generated EXTF-v13 fixtures with the DATEV checking program and an approved empty
+  test client. Keep `export.datev` disabled and make no compatibility claim until this passes.
+- [ ] Obtain Stripe and DHL sandbox/account contracts, implement their real adapters behind the
+  tested provider ports, and run official signed-webhook/reconciliation acceptance tests.
+- [ ] Monitor the 12 current transitive Commerce advisories and adopt only a compatible reviewed
+  Vendure 3.7.x/upstream remediation; never apply npm's proposed forced 2.0.10 downgrade.
 
-## Next
+## Next — operational acceptance
 
-- [ ] Select and implement one production payment provider with signed webhooks,
-  idempotency, reconciliation, and failure tests.
-- [ ] Select and implement one production shipping provider with fulfillment,
-  tracking, signed callbacks where applicable, and reconciliation.
-- [ ] Implement cancellation/correction invoices while preserving issued invoice
-  snapshots, numbering, and immutable accounting history.
-- [ ] Implement DHL and DPD only as independent connector modules with real
-  configuration validation, health checks, webhook-disable behaviour, and their
-  own idempotency/recovery tests; do not couple them to Marketplace Intelligence.
-
-## Later
-
-- [ ] Implement DATEV EXTF from immutable accounting entries and validate it
-  against an authoritative format reference; make no compatibility claim before that.
-- [ ] Consider shipping labels, marketplace adapters, and B2B price lists/channels
-  only after the reliability, provider, and correction-invoice work above.
-
-## Blocked
-
-- [ ] Removing the recorded Vendure dependency advisories is blocked on a
-  compatible upstream patch or a separately reviewed safe remediation.
+- [ ] Run backup/restore with production-like data volume in an approved non-production
+  environment; define external encrypted retention plus measured RPO/RTO.
+- [ ] Exercise coordinated HMAC rotation and rollback in staging behind TLS/private networking.
+- [ ] Validate the Admin-Center accessibility and browser matrix with automated browser tests if a
+  project-standard browser harness is introduced; do not substitute manual UI acceptance.
 
 ## Recently completed
 
-- [x] Fixed SQLx offline and Typst CI prerequisites; current `main` CI is green.
-- [x] Added separate Vendure server/worker/database, Dashboard, and Storefront.
-- [x] Added product/price/stock projection, idempotent paid-order import, and
-  fulfillment/tracking projection with a passing vertical CI flow.
-- [x] Replaced the generic root handoff with this persistent task source.
-- [x] Added the optional read-only Marketplace Intelligence module with persistent
-  report runs, raw archives, JSON/TSV fixtures/parsers, snapshots, deterministic
-  analysis, an optional provider seam, and an Essentials Plus Admin-Center.
-- [x] Validated the Marketplace slice with a disposable PostgreSQL database,
-  refreshed SQLx offline metadata, frontend/commerce builds, and an isolated
-  healthy Compose stack including the synthetic report flow.
+- [x] Added and twice repeated the automated Core/Vendure outage, lease, replay, stale-event,
+  dead-letter/requeue, database, and complete-stack recovery matrix.
+- [x] Added protected redacted integration diagnostics and audited idempotent requeue.
+- [x] Implemented the Essentials+ module contract and themed Admin-Center with server-side guards.
+- [x] Implemented immutable correction invoices and accounting entries without stock side effects.
+- [x] Implemented deterministic read-only Marketplace Intelligence with JSON/TSV parsers, exact raw
+  archive, scheduler, snapshot comparison, fake SP-API, PII filter, and no external LLM.
+- [x] Implemented payment/shipping ports, fake providers, signed callbacks, reconciliation tests,
+  and module-aware synthetic payment/manual shipping.
+- [x] Implemented deterministic gated EXTF rendering from immutable entries.
+- [x] Implemented and passed empty-environment backup/restore plus schema v10-to-v14 rehearsal.
+- [x] Updated visible branding to `Essentials+ Merchant` while preserving compatibility names.
+- [x] Documented all deliberately deferred functionality in `docs/NICE_TO_HAVE.md` without stubs.

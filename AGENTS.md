@@ -2,9 +2,9 @@
 
 ## Product boundary
 
-This repository is Merchant, an Essentials Plus product. It combines a focused Rust ERP/inventory Core
-with a separate Vendure commerce subsystem. The repository is persistent
-project memory; the current chat or agent session is temporary working memory.
+This repository is Essentials+ Merchant, an Essentials+ product. It combines a focused Rust
+ERP/inventory Core with a separate Vendure commerce subsystem. The repository is persistent project
+memory; the current chat or agent session is temporary working memory.
 
 Freelancer time tracking belongs in `Freelancer`. Files, mail, office, and team
 communication belong in `Workspace Suite`. Do not turn this project into a
@@ -25,7 +25,7 @@ steps there are historical requirements, not current tasks.
 
 ## Source-of-truth boundaries
 
-- Merchant Core owns SKU, ERP master data, available stock, imported orders,
+- Essentials+ Merchant Core owns SKU, ERP master data, available stock, imported orders,
   invoices, and accounting data.
 - Vendure owns merchandising, facets/categories, cart, checkout, promotions,
   payment state, and Shop/Admin APIs.
@@ -34,7 +34,7 @@ steps there are historical requirements, not current tasks.
 - Preserve internal `erplite` database, volume, crate, token-storage, and
   migration names; renaming them requires an explicit compatibility migration.
 
-## Essentials Plus module contract
+## Essentials+ module contract
 
 - The Admin-Center groups the module catalog by product area. Administrators see
   the complete catalog; normal users see only enabled modules with an explicit

@@ -1,141 +1,191 @@
-# Merchant · Essentials Plus
+# Essentials+ Merchant
 
-Merchant is an Essentials Plus commerce and ERP core for German small businesses. The existing Rust
-application remains the system of record for SKU, ERP master data, available stock, imported
-orders, invoices, and accounting. Vendure is a deliberately separate commerce subsystem for
-merchandising, cart, checkout, promotions, payments, and the Shop API.
+Essentials+ Merchant is a compact ERP and commerce system for German small businesses. The Rust
+Core remains authoritative for SKUs, ERP master data, available stock, imported orders, invoices,
+and immutable accounting entries. Vendure is a separate commerce subsystem for merchandising,
+cart, checkout, promotions, payments, and Shop/Admin APIs.
 
-Status: active development. Authentication, company settings, customers, VAT, invoices and PDF
-generation, articles and inventory, sales orders, and the first Vendure commerce adapter are
-implemented. DATEV EXTF, correction invoices, production payment/shipping providers, labels,
-marketplaces, and B2B price lists are not implemented yet.
+Status: active development. The repository has automated synthetic coverage for the Core↔Vendure
+vertical flow, restart and failure recovery, correction invoices, deterministic read-only Amazon
+report intelligence, and backup/restore. It is not a claim of production readiness, legal or tax
+compliance, DATEV import compatibility, or live provider verification.
+
+The repository slug and existing internal names remain `erplite`. Crates, migrations, PostgreSQL
+databases, Docker volumes, token storage, and mapping tables are compatibility contracts and are
+not presentation branding.
 
 ## Architecture
 
-| Component | Responsibility | Database |
+| Component | Responsibility | Persistence |
 | --- | --- | --- |
-| Merchant Core (`backend`, `frontend`) | SKU, ERP data, available stock, imported orders, invoices, accounting | Existing `erplite` PostgreSQL database |
-| Vendure 3.7.2 server and worker (`commerce/server`) | Products exposed to the shop, categories/facets, cart, checkout, test payment, Shop/Admin APIs | Separate `vendure` PostgreSQL database |
-| Next.js storefront (`commerce/storefront`) | German example shop and test checkout | No database; Vendure Shop API only |
+| Rust/Axum Core and React admin (`backend`, `frontend`) | ERP, inventory, imported orders, immutable invoices/accounting, modules, diagnostics, Marketplace Intelligence | `erplite` PostgreSQL and `erplite_invoices` |
+| Vendure 3.7.2 server and worker (`commerce/server`) | Commerce catalog projection, cart, checkout, synthetic test payment, Shop/Admin APIs | Separate `vendure` PostgreSQL and `vendure_assets` |
+| Next.js Storefront (`commerce/storefront`) | German synthetic storefront | Vendure Shop API only |
 
-The existing `erplite` database, volume, Rust crate, and migration names are intentionally
-unchanged. Renaming them would be a separate data migration and would break existing deployments.
+Core and Vendure never share a database or distributed transaction. Durable outboxes, an inbox,
+stable idempotency keys, leases, retries, and monotonic product sequences provide at-least-once
+delivery with replay-safe consumers. See [.agent/ARCHITECTURE.md](.agent/ARCHITECTURE.md).
 
-## Essentials Plus Admin-Center and modules
+## Essentials+ module contract
 
-The React administration is the Essentials Plus Admin-Center. Its catalog is grouped by product
-area. Administrators can see every module; normal users receive only explicitly granted, enabled
-modules. Disabling a module removes its navigation and stops its jobs and webhooks without deleting
-historical data.
+The React administration is the thematically grouped Essentials+ Merchant Admin-Center.
+Administrators see the complete catalog; normal users see only enabled modules for which they have
+an explicit grant. Canonical module states are `not_installed`, `needs_configuration`, `disabled`,
+`enabled`, and `degraded`.
 
-- `core_operations` is the enabled Merchant Core module.
-- `marketplace_intelligence` is an optional, read-only Amazon Reports module.
-- `connector_dhl` and `connector_dpd` are separate connector catalog entries. Their configuration
-  check reports whether the required secret reference exists; it deliberately does not create a
-  shipping order or perform a carrier-side write.
+Core modules are required. Optional modules and connectors declare version, group, type,
+dependencies, conflicts, compatibility, configuration and secret requirements, API/navigation
+boundaries, jobs, webhooks, healthcheck, data ownership, and backup/restore behavior. State changes
+are transactional, idempotent, and audited. Disabling a module blocks its API and navigation and
+stops its worker claims, jobs, or webhooks without deleting configuration, mappings, reports, or
+history.
 
-### Marketplace Intelligence
+Implemented catalog IDs include:
 
-Marketplace Intelligence uses Amazon Selling Partner API Reports API `v2021-06-30` with Login
-with Amazon OAuth. The live client obtains an access token from a refresh token through LWA; it
-does not implement obsolete IAM/SigV4 signing. A connection stores only a logical `secret_ref`,
-seller ID, region, granted roles, and marketplace IDs. The backing secret is read at runtime from
-the environment variable derived as `AMAZON_SECRET_<SECRET_REF>` and must be JSON with
-`refresh_token`, `client_id`, and `client_secret`. No token or secret is persisted, logged, or sent
-to the frontend.
+- `core.catalog`, `core.inventory`, `core.orders`
+- `commerce.vendure`, `commerce.storefront`
+- `payment.test`, `shipping.manual`, plus separately disabled `shipping.dhl` and `shipping.dpd`
+- `accounting.invoices`, `accounting.corrections`, `export.datev`
+- `marketplace.amazon_intelligence`, `intelligence.rules`, and `custom.catalog`
 
-The persistent job flow is shared by manual and scheduled runs: request, poll with exponential
-backoff, document URL lookup/download/decompression, immutable raw archive with SHA-256, parsing,
-normalized snapshot, then deterministic analysis. A run is idempotent while it is in flight, has
-lease-reclaim recovery, and stores its complete status history. HTTP 429 and expired pre-signed URLs
-are retried; `CANCELLED` and `FATAL` are terminal. The MVP only calls Reports endpoints and is
-read-only towards Amazon.
+Connector activation requires server-side configuration health. The synthetic payment and manual
+shipping modules are for local tests only. DHL and DPD are separate catalog modules and never part
+of Marketplace Intelligence.
 
-The registry currently includes:
+## Integration reliability and diagnostics
 
-| Report type | Format | Role | MVP handling |
-| --- | --- | --- | --- |
-| `GET_SALES_AND_TRAFFIC_REPORT` | JSON | Brand Analytics | Sales, units, traffic, conversion; requestable and schedulable |
-| `GET_FBA_INVENTORY_PLANNING_DATA` | TSV | Amazon Fulfillment | Inventory, 30-day shipments, stock cover; requestable |
-| `GET_FBA_FULFILLMENT_CUSTOMER_RETURNS_DATA` | TSV | Pricing or Amazon Fulfillment | Raw archive only; possible PII fields are not analysed or sent to AI |
-| `GET_V2_SETTLEMENT_REPORT_DATA_FLAT_FILE_V2` | TSV | Finance and Accounting | Raw archive only; replaces old settlement types scheduled for removal |
+Core↔Vendure service requests use HMAC-SHA-256 over method, path, timestamp, nonce, and body hash.
+Core persists used nonces, rejects replayed or expired requests, accepts a current and an optional
+previous key during coordinated rotation, and limits adapter request bodies to 256 KiB. Tokens and
+payloads are absent from diagnostics.
 
-The parser accepts unknown fields, reports missing required fields, uses `Decimal` for money and
-metrics, and persists parser version and import failures. The synthetic fixture client provides a
-Sales & Traffic JSON report and an Inventory Planning TSV report, including an unknown TSV column,
-so the UI can be demonstrated without Amazon credentials.
+The administrator-only integration view shows Core and Vendure queue counts, oldest open event,
+last success, sanitized error, lease state, mappings, health/readiness, and an audit trail. Manual
+requeue accepts only dead events, requires an idempotency key, and never exposes full payloads.
 
-Deterministic analysis always runs first. It compares only identical report type, granularity, and
-period length; incompatible periods remain explicitly unanalysed. An optional OpenAI-compatible
-provider can be enabled with `AI_PROVIDER_ENDPOINT`, `AI_PROVIDER_MODEL`, and optionally
-`AI_PROVIDER_API_KEY`. It receives only an allowlist of aggregated metrics. Invalid or failed
-provider responses cannot overwrite the deterministic result. Every result keeps the strategy,
-model (if any), prompt version, payload hash, and timestamp.
+Production defaults remain a five-minute lease, exponential retries capped at one hour, and dead
+state after 20 attempts. Automated recovery tests override these values only in `APP_ENV=test`.
+The tested outage and restart cases are listed in [docs/FAILURE_MATRIX.md](docs/FAILURE_MATRIX.md).
 
-The adapter uses two durable outboxes rather than pretending to provide a distributed
-transaction:
+## Correction invoices and accounting export
 
-1. A Core article insert/update or stock movement writes a `vendure.product.project` event in the
-   same PostgreSQL transaction. The Vendure worker applies SKU, net price, VAT category, and
-   available stock, then records the Core UUID ↔ Vendure ID mapping.
-2. A Vendure Authorized/Settled payment event is written to Vendure's own outbox. The worker sends
-   it to the Core with a stable event key. Core inbox and external-order uniqueness make duplicate
-   and late payment events safe and book stock once.
-3. Fulfilling an imported order in Core writes a `vendure.fulfillment.project` event in the same
-   transaction. The worker creates a Vendure fulfillment and moves it through `Pending` to
-   `Shipped` with carrier and tracking number.
+An issued invoice is an immutable snapshot. A full correction:
 
-Claims use row locks, a five-minute processing lease, exponential retry (up to one hour), and a
-dead state after 20 attempts. Product projections carry a monotonic sequence, so a delayed event
-cannot overwrite a newer price or stock value. This is at-least-once delivery with idempotent
-consumers, not globally exactly-once messaging.
+- receives a unique `KR-YYYY-NNNN` number and an explicit reference to the original;
+- copies lines, tax amounts, customer/company snapshots, and totals with reversed decimal signs;
+- is idempotent and limited to one full correction per original invoice;
+- creates no stock movement and never mutates the original;
+- renders a PDF with the correction reference and records immutable audit history.
+
+Migration `0014_accounting_export_model.sql` derives immutable accounting entries from issued
+invoices and corrections. The guarded `POST /api/exports/datev` endpoint creates deterministic,
+byte-identical UTF-8-with-BOM EXTF Buchungsstapel files with CRLF, semicolon fields, header 700,
+format version 13, decimal commas, explicit S/H signs, account/tax mappings, and correction
+references. Export batches, parameters, entry IDs, hashes, and creator are immutable.
+
+The renderer follows the public DATEV Developer Portal format description and local tests, but its
+output has not been accepted by the DATEV checking program or imported into a real DATEV sandbox.
+`export.datev` therefore stays disabled and carries an explicit external-validation gate. No legal,
+tax, or DATEV-compatibility claim is made.
+
+Authoritative format references: [DATEV format structure](https://developer.datev.de/de/file-format/details/datev-format/getting-started),
+[booking batch fields](https://developer.datev.de/de/file-format/details/datev-format/format-description/booking-batch),
+[character sets](https://developer.datev.de/de/file-format/details/datev-format/character-set), and
+[DATEV validation tools](https://developer.datev.de/de/file-format/details/datev-format/tools).
+
+## Marketplace Intelligence
+
+`marketplace.amazon_intelligence` is disabled by default and read-only toward Amazon. The live
+transport uses Reports API `v2021-06-30` with Login with Amazon OAuth. AWS IAM/SigV4 is not
+implemented. A connection persists seller ID, region (`na`, `eu`, `fe`), marketplace IDs, granted
+roles, mode, and a logical secret reference only. Refresh token, client secret, and access token
+never enter the database, logs, or frontend. The current report registry requests no RDT.
+
+Manual and scheduled retrieval use the same persistent job path: `createReport`, exponential
+`getReport` polling, terminal `DONE`/`CANCELLED`/`FATAL`, immediate `getReportDocument`, pre-signed
+download, optional GZIP decompression, transport and decoded SHA-256, immutable raw archive,
+versioned parsing, normalized metrics, compatible snapshot, and deterministic analysis. Claims,
+leases, retries, expired URLs, partial downloads, and uniqueness constraints make the flow safe
+across duplicate triggers and worker restarts.
+
+| Report type | Official shape and role | Essentials+ Merchant handling |
+| --- | --- | --- |
+| `GET_SALES_AND_TRAFFIC_REPORT` | JSON; Brand Analytics; requestable/schedulable | JSON parser v2, explicit date/ASIN granularity, sales/units/traffic/conversion, analysis |
+| `GET_FBA_INVENTORY_PLANNING_DATA` | Tab-delimited; Amazon Fulfillment; request-only | TSV parser v1, inventory, 30-day shipments, stock cover, analysis; marketplace availability must be checked |
+| `GET_FBA_FULFILLMENT_CUSTOMER_RETURNS_DATA` | Tab-delimited; Pricing or Amazon Fulfillment; request-only | Immutable raw archive only because order IDs/comments can contain sensitive data |
+| `GET_V2_SETTLEMENT_REPORT_DATA_FLAT_FILE_V2` | Tab-delimited settlement report; Finance and Accounting | Immutable raw archive only; no deprecated predecessor is implemented |
+
+The parsers tolerate unknown fields and column order, reject duplicate dimensions and malformed
+encoding, report missing required fields, and use `Decimal` rather than binary floats. Snapshot
+comparison requires identical report type, parser version, marketplace, date/ASIN granularity, and
+period length. Incompatible snapshots are reported as missing comparison data.
+
+Analysis is deterministic and rule-based. Results contain facts, delta, overall trend, anomalies,
+hypotheses, two-to-five possible actions, expected impact, effort, risk, evidence references,
+uncertainty, and missing data. Exports are allowlist-based aggregates and strip buyer/customer,
+address, email, order-ID, comment, and phone fields. No external LLM provider is implemented, and
+the software never changes Amazon prices, ads, listings, inventory, or orders.
+
+The local fixture client and fake SP-API server use fully synthetic documents and exercise OAuth,
+Reports endpoints, polling, rate limits, terminal states, compressed and partial documents,
+parser errors, retries, restart safety, raw-only types, and PII filtering. They are not a production
+Amazon acceptance.
+
+Authoritative references: [Reports API v2021-06-30](https://developer-docs.amazon.com/sp-api/docs/reports-api),
+[official Sales & Traffic schema](https://github.com/amzn/selling-partner-api-models/blob/main/schemas/reports/sellerSalesAndTrafficReport.json),
+[FBA report types](https://developer-docs.amazon.com/sp-api/docs/report-type-values-fba),
+[LWA authorization](https://developer-docs.amazon.com/sp-api/docs/authorizing-selling-partner-api-applications),
+[removal of the SigV4 requirement](https://developer-docs.amazon.com/sp-api/changelog/sp-api-will-no-longer-require-aws-iam-or-aws-signature-version-4),
+and [Settlement predecessor removal](https://developer-docs.amazon.com/sp-api/changelog/update-removal-of-xml-settlement-report-and-flat-file-settlement-report-date-changed-to-november-11-2026).
+
+## Payment and shipping provider boundary
+
+Provider-neutral TypeScript ports define payment authorization/capture/failure/refund and shipping
+creation/in-transit/delivery/failure states, idempotency, amount/currency/order checks,
+reconciliation, audit, timeout, retryable errors, carrier, and tracking. A complete in-memory fake
+provider and signed callback verifier cover these contracts without credentials.
+
+Stripe Payment Intents and DHL Parcel Germany are the documented production candidates. No live
+adapter is enabled: account-specific contracts, secrets, webhook setup, sandbox credentials, and
+provider acceptance are external gates. `payment.test` fails closed when its Core module is disabled
+or unavailable; `shipping.manual` is protected at the Core fulfillment API.
+
+Candidate evaluation uses Stripe's official [idempotent request](https://docs.stripe.com/api/idempotent_requests)
+and [webhook](https://docs.stripe.com/webhooks) contracts plus DHL's official
+[Post & Parcel Germany authentication API](https://developer.dhl.com/api-reference/authentication-api-post-paket-deutschland?lang=de).
 
 ## Docker Compose
 
-Copy the example environment and fill every empty secret or credential. In particular, use
-independently generated values for the Core JWT secret, integration secret, Vendure cookie secret,
-database password, and Superadmin credentials. The repository has no working default Superadmin
-login.
+Create a local environment from `.env.example`; never reuse production credentials or data.
 
 ```bash
 cp .env.example .env
 docker network inspect proxy_net >/dev/null 2>&1 || docker network create proxy_net
-docker compose up -d --build
+docker compose up -d --build --wait
 docker compose ps
 ```
 
-Default local endpoints:
+Default endpoints are the Essentials+ Merchant admin on `http://localhost:8090`, Vendure Shop API on
+`http://localhost:3000/shop-api`, Vendure Dashboard on `http://localhost:3000/dashboard`, and the
+Storefront on `http://localhost:3001`.
 
-- Merchant administration: `http://localhost:8090`
-- Vendure Shop API: `http://localhost:3000/shop-api`
-- Vendure Dashboard: `http://localhost:3000/dashboard`
-- Storefront: `http://localhost:3001`
+The first Vendure start runs committed TypeORM migrations and populates only synthetic
+infrastructure data. Products continue to originate in Core. The test payment must not be exposed
+as a production method.
 
-The first Vendure server start runs committed TypeORM migrations and populates only infrastructure
-data: Germany, 19/7/0 percent tax rates, standard shipping, and an automatically settled dummy
-payment named `Testzahlung`. Products still originate exclusively in Core and are projected by the
-worker. The dummy payment must never be used as a production payment method.
+## Automated checks
 
-Backup and restore the Core and Vendure databases independently. Keep their matching application
-versions and the `vendure_assets` volume with a backup. Run upgrades in a staging copy first;
-never point migration generation or SQLx preparation at production.
-
-## Local checks
-
-### Core
+Core checks require a disposable PostgreSQL URL whose user may create temporary databases:
 
 ```bash
 cd backend
 cargo fmt --check
-SQLX_OFFLINE=true cargo clippy --all-targets -- -D warnings
-SQLX_OFFLINE=true cargo test
+SQLX_OFFLINE=true cargo clippy --workspace --all-targets -- -D warnings
+DATABASE_URL=postgres://USER:PASSWORD@HOST/DISPOSABLE_DB SQLX_OFFLINE=true cargo test --workspace
+cargo sqlx prepare --workspace --check -- --all-targets
 ```
 
-For `cargo test`, `DATABASE_URL` must point to a disposable PostgreSQL database whose user can
-create temporary databases; `#[sqlx::test]` creates and migrates an isolated database per
-integration test. Offline mode controls compile-time query metadata, not those runtime tests.
-
-### Administration frontend and commerce
+Frontend and commerce checks:
 
 ```bash
 cd frontend
@@ -150,85 +200,63 @@ npm test
 npm run build
 ```
 
-### Reproducible vertical test
+The clean Compose vertical test is `npm run test:vertical`. The deliberate outage matrix is
+`npm run test:recovery` and requires the synthetic test-only variables documented in
+[docs/FAILURE_MATRIX.md](docs/FAILURE_MATRIX.md). Both tests retain data for diagnosis and must run
+only against a disposable Compose project.
 
-Start the complete Compose stack, then pass the local Core administrator credentials only through
-the process environment:
-
-```bash
-cd commerce
-CORE_API_URL=http://localhost:8090/api \
-STOREFRONT_API_URL=http://localhost:3001/api/shop \
-CORE_ADMIN_USERNAME="$ADMIN_USERNAME" \
-CORE_ADMIN_PASSWORD="$ADMIN_PASSWORD" \
-npm run test:vertical
-```
-
-The test creates a unique Core SKU, receives ten units, waits for projection to the Storefront,
-checks out two units with Vendure's test payment, proves one Core order and one sales stock
-movement, and verifies the returned `Shipped` tracking status. Test data is deliberately retained
-for diagnosis; use only a disposable installation or staging copy.
-
-## SQLx offline cache
-
-CI and the backend image compile against the committed `backend/.sqlx` cache, so compilation does
-not depend on an already migrated CI database. After every Core migration or checked-query change,
-refresh and commit the cache against a disposable, fully migrated database:
+Backup/restore and upgrade rehearsals create and delete isolated, randomly named synthetic stacks:
 
 ```bash
-cd backend
-cargo install sqlx-cli --no-default-features --features rustls,postgres
-cargo sqlx migrate run --source crates/db/migrations
-cargo sqlx prepare --workspace -- --all-targets
-cargo sqlx prepare --workspace --check -- --all-targets
+ops/test-backup-restore.sh
+ops/test-upgrade-rehearsal.sh
 ```
 
-`DATABASE_URL` must point to that disposable database. The explicit migration path matters because
-the migrations belong to the `db` crate, not the Cargo workspace root.
+The verification status of every layer is recorded in
+[docs/VERIFICATION_MATRIX.md](docs/VERIFICATION_MATRIX.md).
 
-## Vendure schema changes
+## Backup and restore
 
-Vendure migrations live in `commerce/server/src/migrations`. With a disposable Vendure database
-and all required environment variables set:
+`ops/backup.sh` quiesces both application writers, creates separate logical PostgreSQL dumps,
+archives Core documents and Vendure assets, exports module configuration without secrets, and
+writes a manifest with SHA-256 checksums, UTC timestamp, Git revision, app/schema versions, every
+store, and redacted Compose metadata. The stack is resumed even if the backup fails.
 
-```bash
-cd commerce/server
-npx vendure migrate --generate DescriptiveName \
-  --output-dir "$PWD/src/migrations" \
-  --config "$PWD/src/vendure-config.ts"
-npx vendure migrate --run --config "$PWD/src/vendure-config.ts"
-```
+`ops/restore.sh` verifies every checksum and refuses a project that already has containers or any
+declared volume. It restores only into a completely empty, explicitly named Compose project. The
+rehearsal then reruns the complete SKU-to-fulfillment test. See
+[docs/OPERATIONS.md](docs/OPERATIONS.md).
 
-Review generated SQL, run it against a copy of existing data, then commit it. Runtime uses
-`synchronize: false`; schema changes must be explicit migrations.
+## SQLx and Vendure migrations
 
-## Known limits and risks
+Core migrations live in `backend/crates/db/migrations`; Vendure migrations live in
+`commerce/server/src/migrations`. Runtime schema synchronization is disabled. Generate migrations
+and SQLx offline metadata only against disposable databases, review the result, and run
+`ops/test-upgrade-rehearsal.sh` before deployment. Never generate or test migrations against
+production.
 
-- The Core migration adds columns and integration tables without renaming or deleting existing
-  data. It also enqueues a projection for every existing article; plan worker capacity before a
-  large upgrade. Rollback after live commerce traffic requires retaining mappings, inbox/outbox,
-  and imported order snapshots.
-- The adapter supports one default Vendure channel and integer saleable stock. Fractional Core
-  quantities are rounded down for Vendure availability.
-- Integration authorization is a shared secret over HTTP headers. Use TLS and private service
-  networking outside local Compose; secret rotation is currently coordinated rather than dual-key.
-- Vendure 3.7.2 currently brings upstream production dependency advisories reported by
-  `npm audit` (Apollo Server, file/image parsing, lodash, sharp, uuid, and ws). npm's proposed
-  automatic fixes downgrade Vendure and are not safe. Asset uploads should remain restricted and
-  the pinned Vendure patch line should be updated as soon as an upstream compatible release fixes
-  them.
-- There are no claims of legal or DATEV compatibility. DATEV EXTF remains unimplemented and must
-  be validated against an authoritative format reference before production use.
-- Marketplace Intelligence has no live Amazon-account acceptance in this repository. Configure
-  approved LWA credentials and perform a manual seller/role/marketplace gate in a staging account
-  before relying on the live transport. Never use restricted report types unless their selected
-  registry entry explicitly requires an RDT; the current MVP registry does not request RDTs.
+## Current external risks
+
+- Vendure packages are already pinned together at 3.7.2, the current 3.7.x patch verified on
+  2026-08-13. The [official 3.7.2 release](https://github.com/vendurehq/vendure/releases/tag/v3.7.2)
+  fixes four Vendure advisories and needs no migration. `npm audit
+  --omit=dev` still reports 12 transitive production advisories (six high, six moderate); its
+  proposed automatic remedy is an incompatible downgrade, so no forced audit fix is applied.
+- No Amazon seller/role/marketplace/RDT acceptance, Stripe sandbox, DHL sandbox, DATEV checker, or
+  production integration was used. Local fakes prove contracts and recovery, not provider behavior.
+- One default Vendure channel and integer saleable stock are supported. Fractional Core quantities
+  are rounded down for shop availability.
+- HMAC protects message authenticity/replay, but production traffic still requires TLS and private
+  service networking.
+- Shipping labels, multi-warehouse, B2B channels, other providers/marketplaces, external AI,
+  automation, multi-tenancy, and Kubernetes are deliberately deferred in
+  [docs/NICE_TO_HAVE.md](docs/NICE_TO_HAVE.md).
 
 ## Next three steps
 
-1. Extend the CI vertical test with deliberate Core/Vendure outages and worker restarts, and assert
-   recovery from each persisted processing lease.
-2. Replace the dummy payment and manual fulfillment handler with one production payment provider
-   and one shipping provider, including signed webhooks and reconciliation.
-3. Implement cancellation/correction invoices and only then build and reference-test DATEV EXTF
-   from immutable accounting entries.
+1. Run the documented Amazon staging gate with an approved synthetic-safe seller context and one
+   non-restricted report, then record marketplace/role/rate-limit evidence without credentials.
+2. Complete Stripe and DHL account onboarding, implement the real adapters behind the tested
+   ports, and run their official sandbox and webhook/reconciliation acceptance suites.
+3. Validate generated EXTF fixtures with the DATEV checking program and an approved empty test
+   client before enabling `export.datev` anywhere outside development.

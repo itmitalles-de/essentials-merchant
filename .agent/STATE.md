@@ -1,125 +1,98 @@
 # Current State
 
-## Project goal
+## Product and branch
 
-Provide a compact ERP/inventory and commerce suite for German small businesses,
-with Merchant Core (Essentials Plus) remaining authoritative for operational and accounting data
-while Vendure supplies a separately owned commerce experience.
+- Visible product name: **Essentials+ Merchant**.
+- Repository and compatibility identifiers remain `erplite`; crate, database, volume, migration,
+  token-storage, mapping, and `shop-suite-*` identifiers were not renamed.
+- Active branch: `agent/essentials-merchant-autonomous`, based on `c7563f4`.
+- This is active development, not a production, legal, tax, DATEV, Amazon, payment, or carrier
+  certification.
 
-## Current status
+## Implemented and working
 
-- Default branch: `main`; Marketplace Intelligence is locally complete and awaits its
-  focused commit/push at this handoff.
-- The first Core-to-Vendure vertical commerce slice is implemented and merged.
-- GitHub Actions run `31671308497` for `7d243b6` completed successfully on
-  2026-08-13. The earlier SQLx/Typst CI failures described in the historical prompt are
-  resolved on current `main`; there is no current CI failure to reproduce.
-- No open GitHub issues or pull requests were present when this handoff was written.
-- The project is active development, not a claim of production, legal, or DATEV
-  compatibility.
+- The existing Rust Core↔Vendure vertical remains the ownership boundary: Core owns ERP,
+  inventory, imported orders, immutable invoices/accounting, modules, diagnostics, and Marketplace
+  Intelligence; Vendure owns commerce and has a separate PostgreSQL database.
+- Core and Vendure delivery now has signed HMAC requests, persistent nonces/replay protection,
+  current/previous key rotation, request limits, sanitized errors, configurable leases/backoff, and
+  deterministic test-only process failpoints.
+- Administrator-only integration diagnostics expose queue counts, oldest open events, last
+  success/error, leases, mappings, readiness, and audit without payloads, credentials, or buyer
+  data. Dead-event requeue is protected, idempotent, and audited.
+- The Essentials+ module contract is persisted and enforced server-side. Required Core modules,
+  dependencies/conflicts, connector configuration health, user grants, thematic navigation, jobs,
+  webhooks, and data-preserving disable behavior are represented. Direct disabled Marketplace,
+  DATEV, payment, and shipping calls are tested.
+- Issued invoices are immutable. Full correction invoices have separate numbering, source
+  reference, reversed Decimal lines/taxes/totals, immutable history/PDF, one-per-source and request
+  idempotency, and no inventory side effect.
+- Migration `0014_accounting_export_model.sql` provides immutable accounting entries and stored
+  export batches. The deterministic EXTF-v13 renderer stays behind the disabled `export.datev`
+  external-validation gate.
+- `marketplace.amazon_intelligence` is disabled by default and Amazon-read-only. LWA/Reports
+  `v2021-06-30`, fixture and local fake transports, persistent/restart-safe jobs, exact raw archive,
+  versioned Sales & Traffic JSON v2 and Inventory Planning TSV parsers, compatible snapshots,
+  deterministic analysis, scheduler, UI, and PII-minimized export are implemented. Returns and
+  Settlement V2 remain raw-only.
+- Provider-neutral payment/shipping ports, complete synthetic providers, signed callback replay
+  protection, reconciliation/status/idempotency contracts, and module-aware test payment/manual
+  shipping are implemented. Stripe Payment Intents and DHL Parcel Germany are candidates only;
+  real adapters remain externally gated.
+- Coordinated backup, checksum verification, empty-project restore, and v10-to-v14 upgrade
+  rehearsal cover both databases, Core documents, Vendure assets, module configuration without
+  secrets, integration state, and Marketplace data.
 
-## Working
+## Verified locally on 2026-08-13
 
-- Rust/Axum Core with PostgreSQL migrations for authentication, company settings,
-  customers, VAT, invoices/PDFs, articles/inventory, and sales orders/fulfillment.
-- React/Vite administration frontend for the implemented Core workflows.
-- Vendure 3.7.2 server, worker, current Dashboard, separate PostgreSQL database,
-  and Next.js Storefront.
-- Product/net-price/VAT/stock projection from Core to Vendure.
-- Idempotent paid-order import into Core with one stock booking.
-- Fulfillment/carrier/tracking projection from Core back to Vendure.
-- Durable mapping, inbox, and outbox records with leases, backoff, dead state,
-  stale-projection protection, and explicit TypeORM/SQLx migrations.
-- CI covers Core, frontend, commerce, image builds, a healthy clean Compose stack,
-  and the vertical SKU-to-fulfillment flow.
-- Additive migration `0009_marketplace_intelligence.sql` introduces the Essentials
-  Plus module catalog/permissions, connector health records, and a persistent,
-  read-only Amazon Reports job/archive/snapshot/analysis model.
-- Marketplace Intelligence is disabled by default. It has a fixture client and
-  parsers for Sales & Traffic JSON plus Inventory Planning TSV; Returns and
-  Settlement V2 are raw-archive-only registry entries. It uses LWA OAuth in the
-  live client, not IAM/SigV4, and the UI offers a synthetic demo connection.
-- Deterministic analyses work without an AI provider. An optional OpenAI-compatible
-  endpoint receives only allowlisted aggregate metrics and cannot overwrite the
-  deterministic result if its JSON is invalid or the provider fails.
+- Rust: formatting, offline Clippy with `-D warnings`, SQLx prepare/check, offline build, and 55
+  tests pass against disposable PostgreSQL 16.
+- Frontend: build and lint pass; three pre-existing Fast Refresh warnings remain non-failing.
+- Commerce: lint/typecheck, 10 server tests, 2 Storefront tests, Vendure Dashboard/server build,
+  and Next.js build pass.
+- Upgrade rehearsal: synthetic schema v10 data migrates losslessly through migration 14.
+- Recovery Compose matrix: passed twice consecutively with different synthetic IDs, including
+  service/DB/full-stack restarts, active/expired leases, failpoints, backoff/dead/requeue, stale
+  events, exactly one order/stock/payment, no invoice, and HMAC rotation/replay checks.
+- Backup/restore rehearsal: six checksums, both databases and both document stores verified; the
+  full SKU-to-fulfillment flow passed before and after restore.
+- `npm audit --omit=dev` still reports 12 transitive production findings (6 moderate, 6 high). Its
+  proposed force fix downgrades Vendure incompatibly and was not applied.
 
-## Active work
+See `docs/VERIFICATION_MATRIX.md` for evidence layers and limits.
 
-Marketplace Intelligence has passed its local database, SQLx, frontend, commerce,
-and isolated Compose acceptance checks. Commit and push the focused change next;
-then the pre-existing focus remains failure-recovery coverage for Core/Vendure
-outages and worker restarts. Do not repeat completed Vendure work.
+## External gates and known risks
 
-## Recently completed
+- No real Amazon seller/role/marketplace/RDT request was made. Marketplace availability and roles
+  must be verified per selected seller and marketplace before enabling live mode.
+- No Stripe or DHL sandbox/account contract was configured; only local ports and fake providers
+  are verified. DPD is cataloged as a separate disabled connector, not implemented as a live
+  adapter.
+- No DATEV checking-program or test-client import was performed, so `export.datev` remains disabled
+  and no compatibility claim is made.
+- No production-sized backup, external encrypted retention, RPO/RTO, live upgrade, or production
+  verification was performed.
+- Vendure is pinned consistently at 3.7.2. Current transitive npm advisories require upstream or a
+  separately reviewed compatible remediation.
 
-- Consolidated visible branding as Merchant / Essentials Plus while preserving internal
-  compatibility names.
-- Fixed SQLx offline CI and pinned Typst 0.12.0 in CI for PDF tests.
-- Added the Vendure vertical slice and made the full main-branch CI pass.
-- Replaced the generic root handoff with the persistent `.agent/` workflow.
+## Next three steps
 
-## Known issues
+1. Run the documented Amazon staging gate for one approved non-restricted report and record
+   marketplace/role/rate-limit evidence without credentials or buyer PII.
+2. Complete Stripe and DHL onboarding, implement real adapters behind the tested ports, and pass
+   their official sandbox webhook/reconciliation contracts.
+3. Validate EXTF output with the DATEV checking program and an approved empty test client before
+   enabling `export.datev` outside development.
 
-- The vertical test covers duplicate payment delivery and the happy-path flow,
-  but not deliberate Core/Vendure outages, expired leases, or worker restarts.
-- Vendure 3.7.2 carries upstream production dependency advisories recorded in
-  `README.md`. npm's proposed forced downgrade is incompatible and must not be
-  applied; update only to a compatible patch and rerun the whole vertical test.
-- The integration uses one shared HTTP-header secret. Outside local Compose it
-  requires TLS/private networking; rotation is coordinated rather than dual-key.
-- Only one default Vendure channel and integer saleable stock are supported;
-  fractional Core quantities are rounded down for shop availability.
-- Test payment and manual fulfillment are not production providers.
-- Correction invoices and reference-tested DATEV EXTF are not implemented.
-- A live Amazon seller/role/marketplace/RDT gate has not been run. The current
-  registry intentionally avoids RDT-required types in the MVP.
-- Full DB-backed Marketplace tests require a disposable PostgreSQL database; do
-  not use a developer's existing Compose database or inspect local secrets.
+## Authoritative files
 
-## Next recommended tasks
-
-1. Extend vertical CI with deliberate target outages, worker restarts, lease
-   expiry/reclaim, replay, and persisted recovery assertions.
-2. After that reliability work, integrate one production payment provider and
-   one shipping provider with signed webhooks and reconciliation.
-3. Add correction invoices before building DATEV EXTF from immutable entries.
-
-The authoritative prioritized task list is `.agent/TODO.md`.
-
-## Relevant files
-
-- `README.md`: current architecture, setup, validation, and known risks
-- `.github/workflows/ci.yml`: authoritative automated checks
-- `docker-compose.yml`: full local Core/Vendure/Storefront topology
-- `backend/crates/db/src/commerce.rs`: Core integration and idempotent import
-- `backend/crates/db/migrations/0008_commerce_integration.sql`: Core adapter schema
-- `backend/crates/db/src/invoices.rs`: invoice numbering, snapshots, and lifecycle
-- `commerce/server/src/plugins/shop-suite-integration/`: Vendure outbox/worker
-- `commerce/storefront/`: Shop API-only Storefront
-- `commerce/test/vertical.mjs`: end-to-end vertical acceptance flow
-- `backend/crates/server/src/marketplace.rs`: Amazon Reports client, fixture,
-  parsers, worker, deterministic analysis, optional provider seam
-- `backend/crates/db/migrations/0009_marketplace_intelligence.sql`: module and
-  Marketplace Intelligence persistence
-
-## Validation
-
-- Current main-branch CI success was verified through GitHub Actions before the
-  Marketplace work began. On a disposable PostgreSQL 16 database, migrations
-  `0001` through `0009`, `cargo test` (35 tests), `cargo fmt --check`, offline
-  Clippy, `cargo sqlx prepare`, and `cargo sqlx prepare --check` pass.
-- Frontend build/lint and commerce lint, tests, and build pass. Frontend lint
-  retains its three pre-existing Fast Refresh warnings and returns success.
-- An isolated placeholder-backed Compose stack built and became healthy. Its
-  existing vertical commerce acceptance test passed; after enabling the optional
-  module, a synthetic Sales & Traffic request also reached `succeeded` with one
-  stored deterministic analysis.
-- No live Amazon credentials, seller account, live carrier request, or live AI
-  provider has been used. Use the exact scoped and full-flow commands in
-  `README.md` for future changes.
+- `README.md`, `.agent/ARCHITECTURE.md`, `.agent/DECISIONS.md`, `.agent/TODO.md`
+- `docs/FAILURE_MATRIX.md`, `docs/VERIFICATION_MATRIX.md`, `docs/OPERATIONS.md`, `docs/API.md`
+- migrations `0010` through `0014`
+- `commerce/test/recovery.mjs`, `commerce/test/vertical.mjs`, and `ops/`
 
 ## Last handoff
 
-2026-08-13: completed and locally validated the Merchant / Essentials Plus Marketplace
-Intelligence slice; commit and push the focused change, then perform the documented
-live Amazon staging gate when an approved seller context is available.
+2026-08-13: implementation and local synthetic verification complete. Publication details and
+remote CI state are recorded in Git history and the branch pull request rather than duplicated
+here.

@@ -1,152 +1,146 @@
 # Architecture
 
-This document is a concise map of the implemented system. `README.md` remains
-authoritative for setup, data-flow detail, commands, known risks, and current
-feature status.
+This is the concise map of the implemented Essentials+ Merchant system. `README.md` is the
+operational command source of truth. Internal `erplite`, `shop-suite-*`, database, volume, crate,
+migration, and mapping identifiers are compatibility names and must not be renamed as branding.
 
-## Overview
-
-Merchant is an Essentials Plus monorepo with two explicit business systems, a Storefront, and an optional Marketplace Intelligence module:
+## System topology
 
 ```text
-React admin -> Rust/Axum Core -> Core PostgreSQL + invoice files
+React Admin -> Rust/Axum Core -> Core PostgreSQL + immutable document volume
                     |   ^
-       Core outbox  |   | Vendure payment/order events
+       Core outbox  |   | signed Vendure payment/order events
                     v   |
-             Vendure worker -> Vendure PostgreSQL + assets
+             Vendure worker -> separate Vendure PostgreSQL + asset volume
                     ^
 Next.js Storefront -> Vendure Shop API
-                       ^
-Marketplace Intelligence -> Amazon SP-API Reports (read-only)
+
+Core Marketplace module -> Amazon Reports API v2021-06-30 (read-only)
 ```
 
-There is no shared database and no distributed transaction. The adapter is an
-at-least-once projection/import channel with idempotent consumers.
+There is no shared database, distributed transaction, multi-tenancy, Kubernetes control plane, or
+cross-product runtime library.
+
+## Ownership
+
+- Core owns SKU/master data, net prices/VAT category, available inventory, imported sales orders,
+  stock movements, issued/correction invoice snapshots, immutable accounting entries, modules,
+  integration audit, and Marketplace Intelligence.
+- Vendure owns commerce merchandising, cart/checkout, promotions, payment and fulfillment runtime,
+  Shop/Admin APIs, and commerce-side outbox.
+- Storefront owns presentation and session proxy behavior only.
+- Provider modules own their mappings/audit but never move Core accounting or inventory authority.
 
 ## Components
 
 | Component | Location | Responsibility |
 | --- | --- | --- |
-| Domain | `backend/crates/domain/` | VAT calculation and invoice lifecycle rules |
-| Persistence | `backend/crates/db/` | SQLx migrations, repositories, inventory, invoices, orders, integration records |
-| PDF | `backend/crates/pdf/` | Typst/Jinja invoice rendering data and templates |
-| API | `backend/crates/server/` | Axum routes, JWT auth, integration auth, migration/bootstrap |
-| Admin UI | `frontend/` | React/Vite administration client for Core APIs |
-| Marketplace Intelligence | `backend/crates/server/src/marketplace.rs`, `backend/crates/db/src/marketplace.rs` | Optional Amazon Reports v2021-06-30 job, archive, parser, snapshot, and analysis flow |
-| Module catalog | `backend/crates/db/src/modules.rs`, `frontend/src/pages/AdminCenter.tsx` | Essentials Plus module visibility, activation, connector configuration health |
-| Vendure | `commerce/server/` | Vendure server, worker, Dashboard, migrations, integration plugin |
-| Storefront | `commerce/storefront/` | Next.js German example shop using only the Shop API |
-| Vertical test | `commerce/test/vertical.mjs` | Full SKU-to-checkout-to-fulfillment acceptance flow |
+| Domain | `backend/crates/domain` | Decimal VAT and invoice lifecycle rules |
+| Core persistence | `backend/crates/db` | SQLx migrations/repositories, module/integration/accounting/Marketplace data |
+| PDF | `backend/crates/pdf` | Immutable ordinary/correction invoice render data and templates |
+| Core API | `backend/crates/server` | JWT/module auth, HMAC integration routes, workers, deterministic analysis/export |
+| React admin | `frontend` | Module-aware themed workflows, diagnostics, invoices/corrections, Marketplace UI |
+| Vendure | `commerce/server` | Vendure 3.7.2 server/worker, explicit TypeORM migrations, integration plugin |
+| Storefront | `commerce/storefront` | Shop-API-only synthetic storefront |
+| Provider contracts | `commerce/server/src/providers` | Payment/shipping ports, fake adapters, webhook HMAC/replay tests |
+| Reliability | `commerce/test/recovery.mjs` | Destructive disposable failure/restart matrix |
+| Operations | `ops` | Coordinated backup, empty restore, verification, upgrade rehearsal |
 
-## Source-of-truth ownership
+## Essentials+ module contract
 
-- Core: articles/SKUs, net price and VAT category, available stock, imported
-  sales orders, invoices, company/customer snapshots, and accounting state.
-- Vendure: merchandising, facets/categories, cart, checkout, promotions,
-  payments, shop channels, and commerce API state.
-- Storefront: presentation and server-side proxy/session behavior only; no DB.
+`essentials_modules` keeps a stable `module_key` compatibility alias and exposes canonical
+`module_id`. Each manifest includes version, thematic group, core/optional/connector type,
+`required`, dependencies/conflicts, compatibility, configuration/secret requirements,
+API/navigation boundaries, jobs, webhooks, health, ownership, and backup/restore behavior.
 
-The internal `erplite` names are compatibility identifiers, not stale product
-ownership. Do not rename them as presentation cleanup.
+States are `not_installed`, `needs_configuration`, `disabled`, `enabled`, and `degraded`.
+Administrators see the full catalog; normal users require both enabled state and an explicit grant.
+Transitions lock and validate dependencies/conflicts/configuration, mutate atomically, and write an
+immutable audit record keyed by idempotency. Required Core modules cannot be disabled. Disabling
+preserves all data but causes API guards, navigation, worker claims, scheduled jobs, webhooks, and
+synthetic payment/shipping writes to fail closed.
 
-## Essentials Plus modules
+DHL, DPD, Stripe-candidate payment, manual shipping, and Marketplace Intelligence are independent
+modules. No connector is implicitly enabled by another.
 
-`essentials_modules` is an additive module catalog. Administrators see the whole catalog;
-normal users require an enabled module plus a `user_module_permissions` grant. Optional module
-handlers and workers check the enabled state, so disabling removes navigation and stops jobs or
-webhooks without deleting historical rows. DHL and DPD are separate connector catalog modules with
-configuration health records, not Marketplace Intelligence dependencies.
+## Core↔Vendure delivery
 
-Marketplace Intelligence is currently read-only: it uses LWA OAuth and Reports API endpoints only.
-It stores no OAuth tokens. A common persistent state machine covers manual and scheduled requests:
-`queued -> requesting -> polling -> downloading -> parsing -> analysing -> succeeded`; terminal
-states are `cancelled`, `fatal`, `failed`, and raw-only `archived`. A raw document is immutable
-after SHA-256 archive. Snapshot comparisons require identical report type, granularity, and
-comparability key.
+Article/stock transactions enqueue a monotonic `vendure.product.project`. The Vendure worker claims
+with `FOR UPDATE SKIP LOCKED`, writes product/variant/stock and mappings, and acknowledges Core.
+Applied sequence on the variant prevents delayed product/price/stock rollback.
 
-## Data flow
+Vendure Authorized/Settled payment events enter its local outbox. The worker sends a stable event
+and synthetic order snapshot to Core. Core inbox uniqueness and external-order uniqueness protect
+the transaction that creates one order and one stock booking.
 
-### Product, price, and stock: Core to Vendure
+Core fulfillment updates order state and `vendure.fulfillment.project` in one transaction. Vendure
+creates/advances one fulfillment with carrier/tracking.
 
-Article changes and stock movements update Core and enqueue
-`vendure.product.project` in the same PostgreSQL transaction. The Vendure worker
-claims Core events, upserts the SKU and mapping, and records the applied Core
-sequence so a delayed projection cannot overwrite a newer one.
+Both sides use leases, persisted attempts, capped exponential backoff, dead state, and controlled
+audited requeue. Default lease/retry values are production values; `APP_ENV=test` failpoints and
+short timing overrides power deterministic restart tests.
 
-### Paid order: Vendure to Core
+## Integration authentication and diagnostics
 
-Vendure payment state changes enter the Vendure-local integration outbox. The
-worker sends a stable event ID and order snapshot to Core. Core's inbox and
-unique external-order key make replays safe; order import and stock movements
-commit together and stock is booked once.
+Every Core adapter route authenticates HMAC-SHA-256 over uppercase method, exact path, Unix
+timestamp, nonce, and SHA-256 body hash. Nonces persist in Core, timestamp age is bounded, bodies
+are limited to 256 KiB, and current/previous keys support overlap rotation. Vendure signs current
+only. Production still requires TLS/private networking.
 
-### Fulfillment: Core to Vendure
+The administrator diagnostics endpoint aggregates Core queues plus Vendure's signed, sanitized
+remote observations. It returns counts, oldest open time, last success/error, event ID/type/state,
+attempts, lease timestamps, mappings, health/readiness, and audit—never payloads or customer data.
+Vendure requeue uses a signed command queue because Core does not write Vendure's DB.
 
-Fulfilling an imported order locks and updates the Core order and enqueues a
-fulfillment projection in the same transaction. The worker creates or advances
-the Vendure fulfillment and applies carrier/tracking without duplicating a
-completed fulfillment.
+## Accounting
 
-Both outbox implementations use processing leases, exponential retry capped at
-one hour, and a dead state after 20 attempts. Recovery-path CI coverage remains
-the next task.
+Issuing allocates an ordinary number and snapshots mutable customer/company/line/tax data. DB
+triggers prevent later mutation. A full correction is a separate draft document with its own
+number, source reference, reason, reversed Decimal lines/totals, one-per-source uniqueness,
+idempotency, PDF reference, and immutable audit. It never creates inventory movement.
 
-## Persistence and deployment
+Migration 0014 backfills and triggers immutable accounting entries for issued ordinary and
+correction invoices. The DATEV renderer reads only those entries, orders deterministically, and
+stores an immutable export batch with parameter/payload hashes and exact bytes. `export.datev`
+remains disabled until external DATEV checking-program/test-client validation; no compatibility or
+tax/legal claim is made.
 
-`docker-compose.yml` runs:
+## Marketplace Intelligence
 
-- PostgreSQL 16 with `erplite_db_data` for Core
-- Rust backend with `erplite_invoices` for generated PDF files
-- Nginx-served administration frontend
-- separate PostgreSQL 16 with `vendure_db_data`
-- Vendure server and worker sharing `vendure_assets`
-- Next.js Storefront
+Connections persist seller, region, marketplace IDs, roles, mode, and logical secret reference,
+never tokens. The live transport uses LWA OAuth and `v2021-06-30`; no SigV4 or Amazon write API is
+compiled. Manual and scheduled triggers share `amazon_report_runs`, state history, unique in-flight
+identity, lease/retry/backoff, raw transport document, decoded document, hashes, parser version,
+normalized metrics, compatible snapshots, analysis jobs, and deterministic results.
 
-The admin UI and Storefront also join external `proxy_net`. Local defaults expose
-admin on 8090, Vendure on 3000, and Storefront on 3001. Back up and restore the
-two databases, invoices, and assets independently with compatible app versions.
+Sales & Traffic JSON parser v2 follows `reportSpecification` plus separate official ASIN rows and
+records date/ASIN granularity in the comparability key. Inventory Planning TSV parser v1 tolerates
+unknown/optional/reordered columns. Returns and Settlement V2 are raw-only. Parser failures retain
+the immutable raw archive; unknown fixture types never become successfully analysed.
 
-## Authentication and security
+Analysis compares only same report, marketplace, parser, granularity, and period length. It stores
+facts/deltas/trend/anomalies/hypotheses/options/evidence/uncertainty/missing data. Export filters to
+aggregate allowlisted metrics and recursively removes buyer/customer/address/email/order/comment/
+phone fields. There is no external LLM provider and no automatic Amazon mutation.
 
-- Human Core API access uses JWT authentication bootstrapped from environment
-  configuration.
-- Core/Vendure adapter routes use a shared `x-shop-suite-integration-key` secret.
-- Marketplace connections keep only logical environment secret references; LWA refresh/client/
-  access tokens never leave the server or enter logs. The optional AI provider receives allowlisted,
-  aggregated metrics only.
-- Vendure has its own cookie and Superadmin credentials.
-- All credentials come from local `.env`; only placeholders belong in Git.
-- Outside local Compose, protect integration traffic with TLS/private networking.
+## Backup/restore boundary
 
-The current shared-secret rotation model is coordinated, not dual-key.
+A coordinated backup quiesces both application writers and captures separate logical DB dumps,
+Core documents, Vendure assets, module configuration without secrets, redacted Compose metadata,
+checksums, repository revision, app/schema versions, timestamp, and explicit store list. Marketplace
+raw/normalized data and integration mappings/inbox/outbox are in the Core dump.
 
-## Accounting and inventory constraints
+Restore verifies every file and refuses any target Compose project with existing containers or
+declared volumes. The automated rehearsal restores into a random empty project, compares database
+and file invariants, and reruns the vertical flow. This is an implementation proof, not an RPO/RTO
+or external storage guarantee.
 
-- Database and Rust domain rules restrict invoice status transitions.
-- Issuing an invoice allocates its number atomically and snapshots mutable master data.
-- Only drafts can be edited or deleted; sent financial data remains immutable.
-- Stock changes are movements applied atomically to article stock.
-- External order and event uniqueness prevents duplicate stock booking.
-- DATEV EXTF and correction invoices are not implemented.
+## Deployment and testing constraints
 
-## Testing and validation
-
-The command source of truth is `README.md`:
-
-- Rust: format, offline Clippy, SQLx integration tests, Typst PDF tests
-- Admin: TypeScript/Vite build and Oxlint
-- Commerce: TypeScript checks, helper tests, Vendure/Dashboard/Storefront builds
-- Compose: build/start all services and run the vertical acceptance test
-- CI: `.github/workflows/ci.yml`
-
-Generated Storefront build output, `node_modules`, the full Vendure-generated
-migration, and every adapter implementation should not be loaded for routine
-tasks. Start from this map and inspect only the affected paths.
-
-## Important constraints
-
-- Additive Core migrations; explicit Vendure migrations; never schema sync.
-- Never generate migrations or SQLx metadata against production.
-- Do not treat the test payment/manual fulfillment as production integrations.
-- Do not claim legal or DATEV compatibility without authoritative reference tests.
-- Keep current source-of-truth ownership even when adding providers or channels.
+- Additive Core migrations; explicit Vendure migrations; `synchronize: false`.
+- SQLx offline cache is committed and refreshed only against disposable PostgreSQL.
+- Core and Vendure schema/app versions travel together in backup metadata.
+- Synthetic payment/manual shipping and provider fakes are never production claims.
+- Current vendure packages are pinned together at 3.7.2; incompatible forced audit fixes are
+  forbidden.
+- Full coverage layers are recorded in `docs/VERIFICATION_MATRIX.md`.
