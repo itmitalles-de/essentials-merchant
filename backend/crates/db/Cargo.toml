@@ -16,3 +16,4 @@ uuid.workspace = true
 rust_decimal.workspace = true
 chrono.workspace = true
 domain.workspace = true
+sha2.workspace = true

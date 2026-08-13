@@ -5,6 +5,8 @@ pub mod commerce;
 pub mod company_settings;
 pub mod customers;
 pub mod invoices;
+pub mod marketplace;
+pub mod modules;
 pub mod sales_orders;
 pub mod stock_movements;
 pub mod users;

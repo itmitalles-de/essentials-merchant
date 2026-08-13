@@ -236,3 +236,102 @@ export interface FulfillSalesOrderInput {
   shipping_carrier: ShippingCarrier | null;
   tracking_number: string;
 }
+
+export interface EssentialsModule {
+  module_key: string;
+  module_group: string;
+  display_name: string;
+  module_kind: "core" | "optional" | "connector";
+  enabled: boolean;
+  updated_at: string;
+}
+
+export interface ConnectorHealth {
+  module_key: string;
+  configuration_valid: boolean;
+  health_status: "not_configured" | "healthy" | "degraded" | "failed";
+  checked_at: string | null;
+  message: string | null;
+}
+
+export interface AmazonReportDefinition {
+  report_type: string;
+  required_roles: string[];
+  regions: string[];
+  format: string;
+  parser_version: string | null;
+  supported_options: string[];
+  pii_classification: string;
+  analysis_capable: boolean;
+  requires_rdt: boolean;
+  schedule_supported: boolean;
+  deprecation_status: string;
+}
+
+export interface AmazonConnectionSummary {
+  id: string;
+  seller_id: string;
+  region: string;
+  granted_roles: string[];
+  marketplace_ids: string[];
+  mode: "live" | "fixture";
+  enabled: boolean;
+  credential_configured: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AmazonReportSchedule {
+  id: string;
+  connection_id: string;
+  marketplace_id: string;
+  report_type: string;
+  report_options: Record<string, unknown>;
+  interval_seconds: number;
+  enabled: boolean;
+  next_run_at: string;
+  last_enqueued_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AmazonReportRun {
+  id: string;
+  connection_id: string;
+  schedule_id: string | null;
+  marketplace_id: string;
+  report_type: string;
+  data_start_time: string | null;
+  data_end_time: string | null;
+  report_options: Record<string, unknown>;
+  trigger_source: "manual" | "scheduled";
+  status: string;
+  attempts: number;
+  poll_attempts: number;
+  next_attempt_at: string;
+  amazon_report_id: string | null;
+  amazon_report_document_id: string | null;
+  failure_code: string | null;
+  failure_message: string | null;
+  requested_at: string | null;
+  completed_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface MarketplaceOverview {
+  connections: AmazonConnectionSummary[];
+  schedules: AmazonReportSchedule[];
+  recent_runs: AmazonReportRun[];
+  analyses: Array<{ id: string; job_id: string; strategy: string; model_name: string | null; prompt_version: string; payload_sha256: string; result: Record<string, unknown>; created_at: string }>;
+  report_types: AmazonReportDefinition[];
+}
+
+export interface MarketplaceRunDetail {
+  run: AmazonReportRun;
+  events: Array<{ id: number; status: string; message: string | null; created_at: string }>;
+  document: { sha256: string; import_status: string; import_error: string | null; parser_version: string | null; downloaded_at: string } | null;
+  snapshot: { id: string; period_start: string | null; period_end: string | null; granularity: string; comparability_key: string; summary: Record<string, unknown> } | null;
+  metrics: Array<{ id: number; metric_name: string; dimension_type: string; dimension_key: string; value_numeric: string; unit: string; currency_code: string | null }>;
+  analyses: Array<{ id: string; result: Record<string, unknown>; created_at: string }>;
+}

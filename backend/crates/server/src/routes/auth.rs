@@ -52,10 +52,12 @@ async fn login(
 #[derive(Serialize)]
 struct MeResponse {
     username: String,
+    role: String,
 }
 
 async fn me(AuthUser(user): AuthUser) -> Json<MeResponse> {
     Json(MeResponse {
         username: user.username,
+        role: user.role,
     })
 }

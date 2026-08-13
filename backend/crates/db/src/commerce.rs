@@ -82,7 +82,7 @@ pub struct ImportResult {
 pub enum ImportError {
     #[error("Vendure order {0} contains no lines")]
     EmptyOrder(String),
-    #[error("unknown Shop Suite SKU: {0}")]
+    #[error("unknown Merchant SKU: {0}")]
     UnknownSku(String),
     #[error("idempotency record exists without its imported order")]
     InconsistentInbox,

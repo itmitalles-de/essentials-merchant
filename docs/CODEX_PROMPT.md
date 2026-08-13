@@ -1,10 +1,13 @@
-# Codex-Ausführungsprompt: Shop Suite inklusive Vendure
+# Historical Codex prompt: Merchant / Essentials Plus including Vendure
 
-Du arbeitest im privaten Repository `itmitalles-de/erplite`, das als **Shop Suite** weitergeführt und administrativ später in `itmitalles-de/shop-suite` umbenannt wird. Lies zuerst `AGENTS.md`, `README.md`, den CI-Workflow, alle Migrationen und die betroffenen Rust-/React-Dateien. Erhalte bestehende Daten und Funktionen.
+This is the original, completed Vendure brief. Current work must follow `AGENTS.md`,
+`.agent/STATE.md`, and `.agent/TODO.md`; do not repeat its completed CI or Vendure steps.
+The current visible product is **Merchant**, under the working brand **Essentials Plus**.
+The repository slug and internal compatibility identifiers remain `erplite`.
 
 ## Ziel
 
-Erzeuge einen belastbaren vertikalen Commerce-Kern: Ein Artikel aus Shop Suite wird in Vendure angeboten, eine Testbestellung wird genau einmal in Shop Suite importiert, Bestand und Auftragsstatus bleiben konsistent und der Versandstatus kann zurückgespielt werden.
+Erzeuge einen belastbaren vertikalen Commerce-Kern: Ein Artikel aus Merchant wird in Vendure angeboten, eine Testbestellung wird genau einmal in Merchant importiert, Bestand und Auftragsstatus bleiben konsistent und der Versandstatus kann zurückgespielt werden.
 
 ## Reihenfolge
 
@@ -16,7 +19,7 @@ Erzeuge einen belastbaren vertikalen Commerce-Kern: Ein Artikel aus Shop Suite w
 
 ### 2. Produktname konsolidieren
 
-- Sichtbare Bezeichnungen müssen `Shop Suite` heißen.
+- Sichtbare Bezeichnungen müssen `Merchant` heißen; die Arbeitsmarke ist `Essentials Plus`.
 - Interne DB-, Volume-, Crate- und Migrationsnamen `erplite` nicht mechanisch ändern. Das wäre eine getrennte Datenmigration.
 - Aktualisiere Dokumentation und Beispiele ohne bestehende Deployments zu brechen.
 
@@ -32,7 +35,7 @@ Erzeuge einen belastbaren vertikalen Commerce-Kern: Ein Artikel aus Shop Suite w
 
 Verantwortlichkeiten:
 
-- Shop Suite Core: SKU, ERP-relevante Stammdaten, verfügbarer Bestand, importierter Auftrag, Rechnung, Buchhaltung.
+- Merchant Core: SKU, ERP-relevante Stammdaten, verfügbarer Bestand, importierter Auftrag, Rechnung, Buchhaltung.
 - Vendure: Merchandising, Kategorien/Facetten, Warenkorb, Checkout, Aktionen, Zahlung, Shop API.
 - Storefront: ausschließlich Vendure Shop API.
 

@@ -28,3 +28,7 @@ chrono.workspace = true
 uuid.workspace = true
 rust_decimal.workspace = true
 thiserror.workspace = true
+async-trait.workspace = true
+flate2.workspace = true
+reqwest.workspace = true
+sha2.workspace = true

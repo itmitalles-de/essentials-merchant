@@ -6,7 +6,7 @@ feature status.
 
 ## Overview
 
-Shop Suite is a monorepo with two explicit business systems and one Storefront:
+Merchant is an Essentials Plus monorepo with two explicit business systems, a Storefront, and an optional Marketplace Intelligence module:
 
 ```text
 React admin -> Rust/Axum Core -> Core PostgreSQL + invoice files
@@ -16,6 +16,8 @@ React admin -> Rust/Axum Core -> Core PostgreSQL + invoice files
              Vendure worker -> Vendure PostgreSQL + assets
                     ^
 Next.js Storefront -> Vendure Shop API
+                       ^
+Marketplace Intelligence -> Amazon SP-API Reports (read-only)
 ```
 
 There is no shared database and no distributed transaction. The adapter is an
@@ -30,6 +32,8 @@ at-least-once projection/import channel with idempotent consumers.
 | PDF | `backend/crates/pdf/` | Typst/Jinja invoice rendering data and templates |
 | API | `backend/crates/server/` | Axum routes, JWT auth, integration auth, migration/bootstrap |
 | Admin UI | `frontend/` | React/Vite administration client for Core APIs |
+| Marketplace Intelligence | `backend/crates/server/src/marketplace.rs`, `backend/crates/db/src/marketplace.rs` | Optional Amazon Reports v2021-06-30 job, archive, parser, snapshot, and analysis flow |
+| Module catalog | `backend/crates/db/src/modules.rs`, `frontend/src/pages/AdminCenter.tsx` | Essentials Plus module visibility, activation, connector configuration health |
 | Vendure | `commerce/server/` | Vendure server, worker, Dashboard, migrations, integration plugin |
 | Storefront | `commerce/storefront/` | Next.js German example shop using only the Shop API |
 | Vertical test | `commerce/test/vertical.mjs` | Full SKU-to-checkout-to-fulfillment acceptance flow |
@@ -44,6 +48,21 @@ at-least-once projection/import channel with idempotent consumers.
 
 The internal `erplite` names are compatibility identifiers, not stale product
 ownership. Do not rename them as presentation cleanup.
+
+## Essentials Plus modules
+
+`essentials_modules` is an additive module catalog. Administrators see the whole catalog;
+normal users require an enabled module plus a `user_module_permissions` grant. Optional module
+handlers and workers check the enabled state, so disabling removes navigation and stops jobs or
+webhooks without deleting historical rows. DHL and DPD are separate connector catalog modules with
+configuration health records, not Marketplace Intelligence dependencies.
+
+Marketplace Intelligence is currently read-only: it uses LWA OAuth and Reports API endpoints only.
+It stores no OAuth tokens. A common persistent state machine covers manual and scheduled requests:
+`queued -> requesting -> polling -> downloading -> parsing -> analysing -> succeeded`; terminal
+states are `cancelled`, `fatal`, `failed`, and raw-only `archived`. A raw document is immutable
+after SHA-256 archive. Snapshot comparisons require identical report type, granularity, and
+comparability key.
 
 ## Data flow
 
@@ -92,6 +111,9 @@ two databases, invoices, and assets independently with compatible app versions.
 - Human Core API access uses JWT authentication bootstrapped from environment
   configuration.
 - Core/Vendure adapter routes use a shared `x-shop-suite-integration-key` secret.
+- Marketplace connections keep only logical environment secret references; LWA refresh/client/
+  access tokens never leave the server or enter logs. The optional AI provider receives allowlisted,
+  aggregated metrics only.
 - Vendure has its own cookie and Superadmin credentials.
 - All credentials come from local `.env`; only placeholders belong in Git.
 - Outside local Compose, protect integration traffic with TLS/private networking.

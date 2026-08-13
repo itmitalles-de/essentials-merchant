@@ -6,7 +6,7 @@ the referenced source files.
 
 ## 2026-08-12 - Keep Core and Vendure as separate systems of record
 
-**Decision:** Shop Suite Core owns SKU, ERP master data, available stock,
+**Decision:** Merchant Core owns SKU, ERP master data, available stock,
 imported orders, invoices, and accounting. Vendure owns merchandising, cart,
 checkout, promotions, payment, and Shop/Admin APIs. Each uses its own database.
 
@@ -21,7 +21,7 @@ Storefront uses only the Vendure Shop API and never queries Core directly.
 
 ## 2026-08-12 - Preserve internal erplite compatibility names
 
-**Decision:** Use `Shop Suite` for visible product naming while retaining
+**Decision:** Use `Merchant` under the Essentials Plus working brand for visible product naming while retaining
 existing `erplite` database, volume, crate, token-storage, and migration names.
 
 **Reason:** Mechanical renaming would break deployed persistence and clients.
@@ -90,3 +90,16 @@ initial Vendure integration.
 
 **Consequences:** Test payment must never be exposed as production payment. Add
 one payment and one shipping provider only after recovery coverage is complete.
+
+## 2026-08-13 - Marketplace Intelligence is an optional read-only Essentials Plus module
+
+**Decision:** Marketplace Intelligence uses a persistent Core-side job and archive model, Amazon
+Reports API v2021-06-30 with LWA OAuth, and deterministic analysis before an optional provider.
+It is disabled by default and makes no Amazon write operation.
+
+**Reason:** Amazon access, report roles, and data quality vary by seller. The system must remain
+demonstrable with fixtures and safe when disabled or unavailable.
+
+**Consequences:** Admins see the full module catalog; normal users need an enabled module and a
+grant. Disabling stops worker claims and API actions but retains audits, raw documents, snapshots,
+and analyses. Amazon secrets remain environment-owned and are referred to only by logical keys.

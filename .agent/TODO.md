@@ -6,6 +6,10 @@ must be summarized here for session continuation.
 
 ## Now
 
+- [ ] Perform the documented manual Amazon staging gate with an approved seller,
+  assigned Report roles, marketplace IDs, LWA secret reference, rate-limit
+  handling, and a real non-restricted report. Do not log credentials or claim
+  live validation before this gate.
 - [ ] Extend `commerce/test/vertical.mjs` and CI with deliberate Core and Vendure
   outages plus Vendure-worker restart cases.
 - [ ] Assert persisted lease expiry/reclaim, replay safety, retry/backoff behavior,
@@ -22,6 +26,9 @@ must be summarized here for session continuation.
   tracking, signed callbacks where applicable, and reconciliation.
 - [ ] Implement cancellation/correction invoices while preserving issued invoice
   snapshots, numbering, and immutable accounting history.
+- [ ] Implement DHL and DPD only as independent connector modules with real
+  configuration validation, health checks, webhook-disable behaviour, and their
+  own idempotency/recovery tests; do not couple them to Marketplace Intelligence.
 
 ## Later
 
@@ -42,3 +49,9 @@ must be summarized here for session continuation.
 - [x] Added product/price/stock projection, idempotent paid-order import, and
   fulfillment/tracking projection with a passing vertical CI flow.
 - [x] Replaced the generic root handoff with this persistent task source.
+- [x] Added the optional read-only Marketplace Intelligence module with persistent
+  report runs, raw archives, JSON/TSV fixtures/parsers, snapshots, deterministic
+  analysis, an optional provider seam, and an Essentials Plus Admin-Center.
+- [x] Validated the Marketplace slice with a disposable PostgreSQL database,
+  refreshed SQLx offline metadata, frontend/commerce builds, and an isolated
+  healthy Compose stack including the synthetic report flow.

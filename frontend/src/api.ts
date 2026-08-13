@@ -81,4 +81,19 @@ export async function openInvoicePdf(invoiceId: string, invoiceNumber: string) {
   setTimeout(() => URL.revokeObjectURL(url), 30000);
 }
 
+export async function downloadMarketplaceRawReport(runId: string) {
+  const token = getToken();
+  const res = await fetch(`${API_BASE}/marketplace/runs/${runId}/raw`, {
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  });
+  if (!res.ok) throw new ApiError(res.status, "Rohbericht konnte nicht geladen werden");
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `amazon-report-${runId}.raw`;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 30000);
+}
+
 export { ApiError };

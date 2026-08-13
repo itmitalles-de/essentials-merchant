@@ -162,7 +162,7 @@ export function Shop() {
             const paymentError = mutationError(paid.addPaymentToOrder);
             if (paymentError) throw new Error(paymentError);
             setOrder(paid.addPaymentToOrder as Order);
-            setNotice('Testbestellung bezahlt. Der Import in Shop Suite läuft über die Outbox.');
+            setNotice('Testbestellung bezahlt. Der Import in Merchant läuft über die Outbox.');
         } catch (error) {
             setNotice(String(error));
         } finally {
@@ -173,7 +173,7 @@ export function Shop() {
     return (
         <main>
             <header>
-                <span className="eyebrow">Shop Suite · Vendure 3.7</span>
+                <span className="eyebrow">Merchant · Vendure 3.7</span>
                 <h1>Ein kleiner, ehrlicher Testshop.</h1>
                 <p>Artikel, Preise und Bestand kommen aus dem Core. Warenkorb und Testzahlung laufen ausschließlich über Vendure.</p>
             </header>

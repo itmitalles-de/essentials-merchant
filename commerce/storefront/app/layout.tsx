@@ -3,7 +3,7 @@ import type { ReactNode } from 'react';
 import './styles.css';
 
 export const metadata: Metadata = {
-    title: 'Shop Suite – Testshop',
+    title: 'Merchant – Testshop',
     description: 'German test storefront backed exclusively by the Vendure Shop API',
 };
 
