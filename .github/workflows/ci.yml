@@ -24,6 +24,7 @@ jobs:
           --health-retries 10
     env:
       DATABASE_URL: postgres://erplite:erplite@localhost:5432/erplite
+      SQLX_OFFLINE: true
     steps:
       - uses: actions/checkout@v4
 
@@ -69,16 +70,74 @@ jobs:
         working-directory: frontend
         run: npm run lint
 
-  docker:
+  commerce:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
-      # Catches breakage in the Dockerfiles/compose config the other jobs can't see
-      # (e.g. a missing base image or a broken multi-stage build).
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: commerce/package-lock.json
+
+      - working-directory: commerce
+        run: npm ci
+
+      - name: Typecheck and lint
+        working-directory: commerce
+        run: npm run lint
+
+      - name: Test integration helpers
+        working-directory: commerce
+        run: npm test
+
+      - name: Build Vendure, Dashboard, and Storefront
+        working-directory: commerce
+        run: npm run build
+
+  docker:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      POSTGRES_PASSWORD: ci-placeholder
+      JWT_SECRET: ci-placeholder
+      ADMIN_PASSWORD: ci-placeholder
+      INTEGRATION_SECRET: ci-placeholder
+      VENDURE_DB_PASSWORD: ci-placeholder
+      VENDURE_COOKIE_SECRET: ci-placeholder
+      VENDURE_SUPERADMIN_USERNAME: ci-superadmin
+      VENDURE_SUPERADMIN_PASSWORD: ci-placeholder
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
       - name: Build all compose images
         run: docker compose build
+
+      - name: Start complete stack
+        run: |
+          if ! docker network inspect proxy_net >/dev/null 2>&1; then
+            docker network create proxy_net
+          fi
+          docker compose up -d --wait
+
+      - name: Run vertical commerce test
+        working-directory: commerce
         env:
-          POSTGRES_PASSWORD: ci-placeholder
-          JWT_SECRET: ci-placeholder
-          ADMIN_PASSWORD: ci-placeholder
+          CORE_API_URL: http://localhost:8090/api
+          STOREFRONT_API_URL: http://localhost:3001/api/shop
+          CORE_ADMIN_USERNAME: admin
+          CORE_ADMIN_PASSWORD: ci-placeholder
+        run: npm run test:vertical
+
+      - name: Print service logs after failure
+        if: failure()
+        run: docker compose logs --no-color
+
+      - name: Stop test stack
+        if: always()
+        run: docker compose down --volumes

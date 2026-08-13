@@ -1,0 +1,15 @@
+{
+  "name": "shop-suite-commerce",
+  "version": "0.1.0",
+  "private": true,
+  "workspaces": [
+    "server",
+    "storefront"
+  ],
+  "scripts": {
+    "build": "npm run build -w server && npm run build -w storefront",
+    "lint": "npm run lint -w server && npm run lint -w storefront",
+    "test": "npm run test -w server && npm run test -w storefront",
+    "test:vertical": "node test/vertical.mjs"
+  }
+}

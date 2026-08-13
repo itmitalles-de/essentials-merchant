@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT o.id, o.order_number, o.customer_id, c.name AS customer_name, o.source,\n                  o.external_order_id, o.status, o.shipping_carrier, o.tracking_number,\n                  o.notes, o.fulfilled_at, o.created_at\n           FROM sales_orders o JOIN customers c ON c.id = o.customer_id WHERE o.id = $1",
+  "query": "SELECT o.id, o.order_number, o.customer_id, c.name AS customer_name, o.source,\n                  o.external_order_id, o.external_status, o.status, o.shipping_carrier,\n                  o.tracking_number, o.notes, o.fulfilled_at, o.stock_booked_at, o.created_at\n           FROM sales_orders o JOIN customers c ON c.id = o.customer_id WHERE o.id = $1",
   "describe": {
     "columns": [
       {
@@ -35,31 +35,41 @@
       },
       {
         "ordinal": 6,
-        "name": "status",
+        "name": "external_status",
         "type_info": "Text"
       },
       {
         "ordinal": 7,
-        "name": "shipping_carrier",
+        "name": "status",
         "type_info": "Text"
       },
       {
         "ordinal": 8,
-        "name": "tracking_number",
+        "name": "shipping_carrier",
         "type_info": "Text"
       },
       {
         "ordinal": 9,
-        "name": "notes",
+        "name": "tracking_number",
         "type_info": "Text"
       },
       {
         "ordinal": 10,
+        "name": "notes",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 11,
         "name": "fulfilled_at",
         "type_info": "Timestamptz"
       },
       {
-        "ordinal": 11,
+        "ordinal": 12,
+        "name": "stock_booked_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 13,
         "name": "created_at",
         "type_info": "Timestamptz"
       }
@@ -76,13 +86,15 @@
       false,
       false,
       true,
+      true,
       false,
       true,
       false,
       false,
+      true,
       true,
       false
     ]
   },
-  "hash": "c065ee9eff657aa9226915f1360473e34d3bf11a119fbe16a9e326c78ee3510b"
+  "hash": "10e0fc7e66ddc738b1ce119b2855f3f072185f2b779d2fabe0487377d034a6e6"
 }
