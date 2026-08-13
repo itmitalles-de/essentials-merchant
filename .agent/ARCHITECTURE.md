@@ -1,0 +1,130 @@
+# Architecture
+
+This document is a concise map of the implemented system. `README.md` remains
+authoritative for setup, data-flow detail, commands, known risks, and current
+feature status.
+
+## Overview
+
+Shop Suite is a monorepo with two explicit business systems and one Storefront:
+
+```text
+React admin -> Rust/Axum Core -> Core PostgreSQL + invoice files
+                    |   ^
+       Core outbox  |   | Vendure payment/order events
+                    v   |
+             Vendure worker -> Vendure PostgreSQL + assets
+                    ^
+Next.js Storefront -> Vendure Shop API
+```
+
+There is no shared database and no distributed transaction. The adapter is an
+at-least-once projection/import channel with idempotent consumers.
+
+## Components
+
+| Component | Location | Responsibility |
+| --- | --- | --- |
+| Domain | `backend/crates/domain/` | VAT calculation and invoice lifecycle rules |
+| Persistence | `backend/crates/db/` | SQLx migrations, repositories, inventory, invoices, orders, integration records |
+| PDF | `backend/crates/pdf/` | Typst/Jinja invoice rendering data and templates |
+| API | `backend/crates/server/` | Axum routes, JWT auth, integration auth, migration/bootstrap |
+| Admin UI | `frontend/` | React/Vite administration client for Core APIs |
+| Vendure | `commerce/server/` | Vendure server, worker, Dashboard, migrations, integration plugin |
+| Storefront | `commerce/storefront/` | Next.js German example shop using only the Shop API |
+| Vertical test | `commerce/test/vertical.mjs` | Full SKU-to-checkout-to-fulfillment acceptance flow |
+
+## Source-of-truth ownership
+
+- Core: articles/SKUs, net price and VAT category, available stock, imported
+  sales orders, invoices, company/customer snapshots, and accounting state.
+- Vendure: merchandising, facets/categories, cart, checkout, promotions,
+  payments, shop channels, and commerce API state.
+- Storefront: presentation and server-side proxy/session behavior only; no DB.
+
+The internal `erplite` names are compatibility identifiers, not stale product
+ownership. Do not rename them as presentation cleanup.
+
+## Data flow
+
+### Product, price, and stock: Core to Vendure
+
+Article changes and stock movements update Core and enqueue
+`vendure.product.project` in the same PostgreSQL transaction. The Vendure worker
+claims Core events, upserts the SKU and mapping, and records the applied Core
+sequence so a delayed projection cannot overwrite a newer one.
+
+### Paid order: Vendure to Core
+
+Vendure payment state changes enter the Vendure-local integration outbox. The
+worker sends a stable event ID and order snapshot to Core. Core's inbox and
+unique external-order key make replays safe; order import and stock movements
+commit together and stock is booked once.
+
+### Fulfillment: Core to Vendure
+
+Fulfilling an imported order locks and updates the Core order and enqueues a
+fulfillment projection in the same transaction. The worker creates or advances
+the Vendure fulfillment and applies carrier/tracking without duplicating a
+completed fulfillment.
+
+Both outbox implementations use processing leases, exponential retry capped at
+one hour, and a dead state after 20 attempts. Recovery-path CI coverage remains
+the next task.
+
+## Persistence and deployment
+
+`docker-compose.yml` runs:
+
+- PostgreSQL 16 with `erplite_db_data` for Core
+- Rust backend with `erplite_invoices` for generated PDF files
+- Nginx-served administration frontend
+- separate PostgreSQL 16 with `vendure_db_data`
+- Vendure server and worker sharing `vendure_assets`
+- Next.js Storefront
+
+The admin UI and Storefront also join external `proxy_net`. Local defaults expose
+admin on 8090, Vendure on 3000, and Storefront on 3001. Back up and restore the
+two databases, invoices, and assets independently with compatible app versions.
+
+## Authentication and security
+
+- Human Core API access uses JWT authentication bootstrapped from environment
+  configuration.
+- Core/Vendure adapter routes use a shared `x-shop-suite-integration-key` secret.
+- Vendure has its own cookie and Superadmin credentials.
+- All credentials come from local `.env`; only placeholders belong in Git.
+- Outside local Compose, protect integration traffic with TLS/private networking.
+
+The current shared-secret rotation model is coordinated, not dual-key.
+
+## Accounting and inventory constraints
+
+- Database and Rust domain rules restrict invoice status transitions.
+- Issuing an invoice allocates its number atomically and snapshots mutable master data.
+- Only drafts can be edited or deleted; sent financial data remains immutable.
+- Stock changes are movements applied atomically to article stock.
+- External order and event uniqueness prevents duplicate stock booking.
+- DATEV EXTF and correction invoices are not implemented.
+
+## Testing and validation
+
+The command source of truth is `README.md`:
+
+- Rust: format, offline Clippy, SQLx integration tests, Typst PDF tests
+- Admin: TypeScript/Vite build and Oxlint
+- Commerce: TypeScript checks, helper tests, Vendure/Dashboard/Storefront builds
+- Compose: build/start all services and run the vertical acceptance test
+- CI: `.github/workflows/ci.yml`
+
+Generated Storefront build output, `node_modules`, the full Vendure-generated
+migration, and every adapter implementation should not be loaded for routine
+tasks. Start from this map and inspect only the affected paths.
+
+## Important constraints
+
+- Additive Core migrations; explicit Vendure migrations; never schema sync.
+- Never generate migrations or SQLx metadata against production.
+- Do not treat the test payment/manual fulfillment as production integrations.
+- Do not claim legal or DATEV compatibility without authoritative reference tests.
+- Keep current source-of-truth ownership even when adding providers or channels.
