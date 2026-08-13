@@ -4,7 +4,7 @@ use axum::routing::get;
 use axum::{Json, Router};
 use uuid::Uuid;
 
-use crate::auth::AuthUser;
+use crate::auth::{CatalogUser, InventoryUser};
 use crate::state::AppState;
 use db::articles::{Article, ArticleInput};
 use db::stock_movements::{ManualAdjustmentInput, StockMovement};
@@ -21,7 +21,7 @@ pub fn router() -> Router<AppState> {
 
 async fn list(
     State(state): State<AppState>,
-    AuthUser(_user): AuthUser,
+    CatalogUser(_user): CatalogUser,
 ) -> Result<Json<Vec<Article>>, StatusCode> {
     db::articles::list(&state.pool)
         .await
@@ -31,7 +31,7 @@ async fn list(
 
 async fn get_one(
     State(state): State<AppState>,
-    AuthUser(_user): AuthUser,
+    CatalogUser(_user): CatalogUser,
     Path(id): Path<Uuid>,
 ) -> Result<Json<Article>, StatusCode> {
     db::articles::get(&state.pool, id)
@@ -43,7 +43,7 @@ async fn get_one(
 
 async fn create(
     State(state): State<AppState>,
-    AuthUser(_user): AuthUser,
+    CatalogUser(_user): CatalogUser,
     Json(input): Json<ArticleInput>,
 ) -> Result<Json<Article>, StatusCode> {
     db::articles::create(&state.pool, &input)
@@ -54,7 +54,7 @@ async fn create(
 
 async fn update(
     State(state): State<AppState>,
-    AuthUser(_user): AuthUser,
+    CatalogUser(_user): CatalogUser,
     Path(id): Path<Uuid>,
     Json(input): Json<ArticleInput>,
 ) -> Result<Json<Article>, StatusCode> {
@@ -67,7 +67,7 @@ async fn update(
 
 async fn delete_one(
     State(state): State<AppState>,
-    AuthUser(_user): AuthUser,
+    CatalogUser(_user): CatalogUser,
     Path(id): Path<Uuid>,
 ) -> Result<StatusCode, StatusCode> {
     db::articles::delete(&state.pool, id)
@@ -82,7 +82,7 @@ async fn delete_one(
 
 async fn list_stock_movements(
     State(state): State<AppState>,
-    AuthUser(_user): AuthUser,
+    InventoryUser(_user): InventoryUser,
     Path(id): Path<Uuid>,
 ) -> Result<Json<Vec<StockMovement>>, StatusCode> {
     if db::articles::get(&state.pool, id)
@@ -101,7 +101,7 @@ async fn list_stock_movements(
 
 async fn create_adjustment(
     State(state): State<AppState>,
-    AuthUser(_user): AuthUser,
+    InventoryUser(_user): InventoryUser,
     Path(id): Path<Uuid>,
     Json(input): Json<ManualAdjustmentInput>,
 ) -> Result<Json<StockMovement>, StatusCode> {

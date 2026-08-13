@@ -87,6 +87,26 @@
         "ordinal": 16,
         "name": "created_at",
         "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 17,
+        "name": "document_type",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 18,
+        "name": "corrects_invoice_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 19,
+        "name": "correction_reason",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 20,
+        "name": "correction_idempotency_key",
+        "type_info": "Text"
       }
     ],
     "parameters": {
@@ -116,7 +136,11 @@
       true,
       true,
       true,
-      false
+      false,
+      false,
+      true,
+      true,
+      true
     ]
   },
   "hash": "2f7510e2177debbf1b7396e3418e35e5089c5a96fedeed6000b94c1b16706443"

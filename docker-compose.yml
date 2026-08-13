@@ -12,7 +12,8 @@ services:
       test: ["CMD-SHELL", "pg_isready -U erplite"]
       interval: 5s
       timeout: 5s
-      retries: 10
+      retries: 30
+      start_period: 10s
 
   backend:
     build: ./backend
@@ -26,7 +27,17 @@ services:
       ADMIN_USERNAME: ${ADMIN_USERNAME:-admin}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:?ADMIN_PASSWORD must be set}
       INTEGRATION_SECRET: ${INTEGRATION_SECRET:?INTEGRATION_SECRET must be set}
+      INTEGRATION_KEY_ID: ${INTEGRATION_KEY_ID:-current}
+      INTEGRATION_PREVIOUS_KEY_ID: ${INTEGRATION_PREVIOUS_KEY_ID:-}
+      INTEGRATION_PREVIOUS_SECRET: ${INTEGRATION_PREVIOUS_SECRET:-}
+      INTEGRATION_MAX_CLOCK_SKEW_SECONDS: ${INTEGRATION_MAX_CLOCK_SKEW_SECONDS:-300}
+      INTEGRATION_LEASE_SECONDS: ${INTEGRATION_LEASE_SECONDS:-300}
+      INTEGRATION_RETRY_BASE_SECONDS: ${INTEGRATION_RETRY_BASE_SECONDS:-2}
+      INTEGRATION_RETRY_MAX_SECONDS: ${INTEGRATION_RETRY_MAX_SECONDS:-3600}
+      INTEGRATION_MAX_ATTEMPTS: ${INTEGRATION_MAX_ATTEMPTS:-20}
       RUST_LOG: ${RUST_LOG:-info}
+      APP_ENV: ${APP_ENV:-production}
+      INTEGRATION_TEST_FAILPOINTS: ${CORE_INTEGRATION_TEST_FAILPOINTS:-}
     volumes:
       - erplite_invoices:/data/invoices
 
@@ -54,7 +65,8 @@ services:
       test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
       interval: 5s
       timeout: 5s
-      retries: 10
+      retries: 30
+      start_period: 10s
 
   vendure-server:
     build:
@@ -79,9 +91,18 @@ services:
       VENDURE_DB_PASSWORD: ${VENDURE_DB_PASSWORD:?VENDURE_DB_PASSWORD must be set}
       CORE_API_URL: http://backend:8000
       INTEGRATION_SECRET: ${INTEGRATION_SECRET:?INTEGRATION_SECRET must be set}
+      INTEGRATION_KEY_ID: ${INTEGRATION_KEY_ID:-current}
+      INTEGRATION_PREVIOUS_KEY_ID: ${INTEGRATION_PREVIOUS_KEY_ID:-}
+      INTEGRATION_PREVIOUS_SECRET: ${INTEGRATION_PREVIOUS_SECRET:-}
+      INTEGRATION_HTTP_TIMEOUT_MS: ${INTEGRATION_HTTP_TIMEOUT_MS:-10000}
+      INTEGRATION_LEASE_MS: ${INTEGRATION_LEASE_MS:-300000}
+      INTEGRATION_RETRY_BASE_MS: ${INTEGRATION_RETRY_BASE_MS:-2000}
+      INTEGRATION_RETRY_MAX_MS: ${INTEGRATION_RETRY_MAX_MS:-3600000}
+      INTEGRATION_MAX_ATTEMPTS: ${INTEGRATION_MAX_ATTEMPTS:-20}
       STOREFRONT_ORIGIN: ${STOREFRONT_ORIGIN:-http://localhost:3001}
       ASSET_URL_PREFIX: ${VENDURE_ASSET_URL_PREFIX:-http://localhost:3000/assets/}
       VENDURE_DISABLE_TELEMETRY: "true"
+      INTEGRATION_TEST_FAILPOINTS: ${VENDURE_INTEGRATION_TEST_FAILPOINTS:-}
     volumes:
       - vendure_assets:/app/server/static/assets
     ports:
@@ -90,7 +111,8 @@ services:
       test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/shop-api',{method:'POST',headers:{'content-type':'application/json'},body:'{\"query\":\"{ __typename }\"}'}).then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
       interval: 5s
       timeout: 5s
-      retries: 20
+      retries: 60
+      start_period: 10s
 
   vendure-worker:
     build:

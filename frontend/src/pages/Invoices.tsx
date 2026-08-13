@@ -85,6 +85,7 @@ export function Invoices() {
                 <Link to={`/invoices/${inv.id}`} className="btn btn-sm">
                   {inv.invoice_number ?? t("invoices.draft")}
                 </Link>
+                {inv.document_type === "correction" && <div style={{ fontSize: "0.75rem" }}>Korrektur zu {inv.corrected_invoice_number}</div>}
               </td>
               <td>{inv.customer_name}</td>
               <td>{inv.issue_date ?? "—"}</td>

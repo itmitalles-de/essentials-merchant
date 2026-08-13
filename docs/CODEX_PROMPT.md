@@ -1,10 +1,19 @@
-# Codex-Ausführungsprompt: Shop Suite inklusive Vendure
+# Historical Codex prompt: Essentials+ Merchant including Vendure
 
-Du arbeitest im privaten Repository `itmitalles-de/erplite`, das als **Shop Suite** weitergeführt und administrativ später in `itmitalles-de/shop-suite` umbenannt wird. Lies zuerst `AGENTS.md`, `README.md`, den CI-Workflow, alle Migrationen und die betroffenen Rust-/React-Dateien. Erhalte bestehende Daten und Funktionen.
+This is the original, completed Vendure brief. Current work must follow `AGENTS.md`,
+`.agent/STATE.md`, and `.agent/TODO.md`; do not repeat its completed CI or Vendure steps.
+The current visible product is **Essentials+ Merchant**. The repository slug and all existing
+`erplite` compatibility identifiers remain unchanged.
+
+The reliability, module-contract, correction-invoice, deterministic Marketplace Intelligence,
+backup/restore, provider-port, and guarded DATEV export work that followed this historical brief is
+documented in `README.md`, `docs/FAILURE_MATRIX.md`, `docs/VERIFICATION_MATRIX.md`, and
+`.agent/STATE.md`. Do not repeat completed Vendure or SQLx work from this prompt.
+The repository slug and internal compatibility identifiers remain `erplite`.
 
 ## Ziel
 
-Erzeuge einen belastbaren vertikalen Commerce-Kern: Ein Artikel aus Shop Suite wird in Vendure angeboten, eine Testbestellung wird genau einmal in Shop Suite importiert, Bestand und Auftragsstatus bleiben konsistent und der Versandstatus kann zurückgespielt werden.
+Erzeuge einen belastbaren vertikalen Commerce-Kern: Ein Artikel aus Essentials+ Merchant wird in Vendure angeboten, eine Testbestellung wird genau einmal in Essentials+ Merchant importiert, Bestand und Auftragsstatus bleiben konsistent und der Versandstatus kann zurückgespielt werden.
 
 ## Reihenfolge
 
@@ -16,7 +25,7 @@ Erzeuge einen belastbaren vertikalen Commerce-Kern: Ein Artikel aus Shop Suite w
 
 ### 2. Produktname konsolidieren
 
-- Sichtbare Bezeichnungen müssen `Shop Suite` heißen.
+- Sichtbare Bezeichnungen müssen `Essentials+ Merchant` heißen.
 - Interne DB-, Volume-, Crate- und Migrationsnamen `erplite` nicht mechanisch ändern. Das wäre eine getrennte Datenmigration.
 - Aktualisiere Dokumentation und Beispiele ohne bestehende Deployments zu brechen.
 
@@ -32,7 +41,7 @@ Erzeuge einen belastbaren vertikalen Commerce-Kern: Ein Artikel aus Shop Suite w
 
 Verantwortlichkeiten:
 
-- Shop Suite Core: SKU, ERP-relevante Stammdaten, verfügbarer Bestand, importierter Auftrag, Rechnung, Buchhaltung.
+- Essentials+ Merchant Core: SKU, ERP-relevante Stammdaten, verfügbarer Bestand, importierter Auftrag, Rechnung, Buchhaltung.
 - Vendure: Merchandising, Kategorien/Facetten, Warenkorb, Checkout, Aktionen, Zahlung, Shop API.
 - Storefront: ausschließlich Vendure Shop API.
 

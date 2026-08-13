@@ -85,6 +85,9 @@ pub async fn generate_and_store(state: &AppState, invoice_id: Uuid) -> Result<()
 
     let input = pdf::InvoicePdfInput {
         invoice_number: invoice_number.clone(),
+        is_correction: full.invoice.document_type == "correction",
+        corrected_invoice_number: full.corrected_invoice_number.unwrap_or_default(),
+        correction_reason: full.invoice.correction_reason.clone().unwrap_or_default(),
         issue_date,
         due_date,
         company: pdf::CompanyInfo {

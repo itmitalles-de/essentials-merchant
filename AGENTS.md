@@ -2,9 +2,9 @@
 
 ## Product boundary
 
-This repository is Shop Suite. It combines a focused Rust ERP/inventory Core
-with a separate Vendure commerce subsystem. The repository is persistent
-project memory; the current chat or agent session is temporary working memory.
+This repository is Essentials+ Merchant, an Essentials+ product. It combines a focused Rust
+ERP/inventory Core with a separate Vendure commerce subsystem. The repository is persistent project
+memory; the current chat or agent session is temporary working memory.
 
 Freelancer time tracking belongs in `Freelancer`. Files, mail, office, and team
 communication belong in `Workspace Suite`. Do not turn this project into a
@@ -25,7 +25,7 @@ steps there are historical requirements, not current tasks.
 
 ## Source-of-truth boundaries
 
-- Shop Suite Core owns SKU, ERP master data, available stock, imported orders,
+- Essentials+ Merchant Core owns SKU, ERP master data, available stock, imported orders,
   invoices, and accounting data.
 - Vendure owns merchandising, facets/categories, cart, checkout, promotions,
   payment state, and Shop/Admin APIs.
@@ -33,6 +33,20 @@ steps there are historical requirements, not current tasks.
 - Core and Vendure have separate PostgreSQL databases. Never share tables.
 - Preserve internal `erplite` database, volume, crate, token-storage, and
   migration names; renaming them requires an explicit compatibility migration.
+
+## Essentials+ module contract
+
+- The Admin-Center groups the module catalog by product area. Administrators see
+  the complete catalog; normal users see only enabled modules with an explicit
+  permission.
+- Optional modules must check their enabled state at the API boundary and before
+  claiming jobs or accepting webhooks. Disabling a module stops navigation,
+  jobs, and webhooks but never deletes its data.
+- Marketplace Intelligence is an optional read-only module. It must never use
+  Amazon feeds, listings, orders, prices, advertising, or inventory write APIs.
+- DHL, DPD, and future carrier integrations are independent connector modules.
+  They require configuration validation and a healthcheck, and must not be
+  coupled to Marketplace Intelligence.
 
 ## Data and accounting invariants
 

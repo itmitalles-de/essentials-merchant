@@ -8,10 +8,12 @@ use domain::invoice_status::InvoiceStatus;
 use serde::Deserialize;
 use uuid::Uuid;
 
-use crate::auth::AuthUser;
+use crate::auth::{CorrectionsUser, InvoicesUser};
 use crate::pdf_gen;
 use crate::state::AppState;
-use db::invoices::{Invoice, InvoiceInput, InvoiceListItem, InvoiceWithLineItems, LineItemInput};
+use db::invoices::{
+    CorrectionInput, Invoice, InvoiceInput, InvoiceListItem, InvoiceWithLineItems, LineItemInput,
+};
 
 pub fn router() -> Router<AppState> {
     Router::new()
@@ -19,6 +21,7 @@ pub fn router() -> Router<AppState> {
         .route("/{id}", get(get_one).put(update).delete(delete_one))
         .route("/{id}/status", post(transition))
         .route("/{id}/pdf", get(download_pdf))
+        .route("/{id}/corrections", post(create_correction))
         .route("/{id}/line-items", post(add_line_item))
         .route(
             "/{id}/line-items/{line_item_id}",
@@ -26,9 +29,42 @@ pub fn router() -> Router<AppState> {
         )
 }
 
+async fn create_correction(
+    State(state): State<AppState>,
+    CorrectionsUser(user): CorrectionsUser,
+    headers: axum::http::HeaderMap,
+    Path(id): Path<Uuid>,
+    Json(input): Json<CorrectionInput>,
+) -> Result<(StatusCode, Json<db::invoices::CorrectionCreation>), StatusCode> {
+    let idempotency_key = headers
+        .get("idempotency-key")
+        .and_then(|value| value.to_str().ok())
+        .ok_or(StatusCode::BAD_REQUEST)?;
+    db::invoices::create_correction(&state.pool, user.id, id, &input, idempotency_key)
+        .await
+        .map(|result| {
+            (
+                if result.duplicate {
+                    StatusCode::OK
+                } else {
+                    StatusCode::CREATED
+                },
+                Json(result),
+            )
+        })
+        .map_err(|error| match error {
+            db::invoices::CorrectionError::NotFound => StatusCode::NOT_FOUND,
+            db::invoices::CorrectionError::InvalidInput => StatusCode::BAD_REQUEST,
+            db::invoices::CorrectionError::NotIssued
+            | db::invoices::CorrectionError::CorrectionOfCorrection
+            | db::invoices::CorrectionError::AlreadyCorrected => StatusCode::CONFLICT,
+            db::invoices::CorrectionError::Sqlx(_) => StatusCode::INTERNAL_SERVER_ERROR,
+        })
+}
+
 async fn list(
     State(state): State<AppState>,
-    AuthUser(_user): AuthUser,
+    InvoicesUser(_user): InvoicesUser,
 ) -> Result<Json<Vec<InvoiceListItem>>, StatusCode> {
     db::invoices::list(&state.pool)
         .await
@@ -38,7 +74,7 @@ async fn list(
 
 async fn get_one(
     State(state): State<AppState>,
-    AuthUser(_user): AuthUser,
+    InvoicesUser(_user): InvoicesUser,
     Path(id): Path<Uuid>,
 ) -> Result<Json<InvoiceWithLineItems>, StatusCode> {
     db::invoices::get(&state.pool, id)
@@ -50,7 +86,7 @@ async fn get_one(
 
 async fn create(
     State(state): State<AppState>,
-    AuthUser(_user): AuthUser,
+    InvoicesUser(_user): InvoicesUser,
     Json(input): Json<InvoiceInput>,
 ) -> Result<Json<Invoice>, StatusCode> {
     db::invoices::create(&state.pool, &input)
@@ -61,7 +97,7 @@ async fn create(
 
 async fn update(
     State(state): State<AppState>,
-    AuthUser(_user): AuthUser,
+    InvoicesUser(_user): InvoicesUser,
     Path(id): Path<Uuid>,
     Json(input): Json<InvoiceInput>,
 ) -> Result<Json<Invoice>, StatusCode> {
@@ -81,7 +117,7 @@ async fn update(
 
 async fn delete_one(
     State(state): State<AppState>,
-    AuthUser(_user): AuthUser,
+    InvoicesUser(_user): InvoicesUser,
     Path(id): Path<Uuid>,
 ) -> Result<StatusCode, StatusCode> {
     let existing = db::invoices::get_bare(&state.pool, id)
@@ -108,7 +144,7 @@ struct StatusTransitionInput {
 
 async fn transition(
     State(state): State<AppState>,
-    AuthUser(_user): AuthUser,
+    InvoicesUser(_user): InvoicesUser,
     Path(id): Path<Uuid>,
     Json(input): Json<StatusTransitionInput>,
 ) -> Result<Json<Invoice>, StatusCode> {
@@ -129,7 +165,7 @@ async fn transition(
 /// tries again instead of leaving the invoice stuck with no recovery path.
 async fn download_pdf(
     State(state): State<AppState>,
-    AuthUser(_user): AuthUser,
+    InvoicesUser(_user): InvoicesUser,
     Path(id): Path<Uuid>,
 ) -> Result<Response, StatusCode> {
     let invoice = db::invoices::get_bare(&state.pool, id)
@@ -193,7 +229,7 @@ async fn require_draft(state: &AppState, invoice_id: Uuid) -> Result<(), StatusC
 
 async fn add_line_item(
     State(state): State<AppState>,
-    AuthUser(_user): AuthUser,
+    InvoicesUser(_user): InvoicesUser,
     Path(id): Path<Uuid>,
     Json(input): Json<LineItemInput>,
 ) -> Result<Json<db::invoices::InvoiceLineItem>, StatusCode> {
@@ -206,7 +242,7 @@ async fn add_line_item(
 
 async fn update_line_item(
     State(state): State<AppState>,
-    AuthUser(_user): AuthUser,
+    InvoicesUser(_user): InvoicesUser,
     Path((id, line_item_id)): Path<(Uuid, Uuid)>,
     Json(input): Json<LineItemInput>,
 ) -> Result<Json<db::invoices::InvoiceLineItem>, StatusCode> {
@@ -220,7 +256,7 @@ async fn update_line_item(
 
 async fn delete_line_item(
     State(state): State<AppState>,
-    AuthUser(_user): AuthUser,
+    InvoicesUser(_user): InvoicesUser,
     Path((id, line_item_id)): Path<(Uuid, Uuid)>,
 ) -> Result<StatusCode, StatusCode> {
     require_draft(&state, id).await?;

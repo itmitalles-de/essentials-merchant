@@ -111,7 +111,7 @@ jobs:
       POSTGRES_PASSWORD: ci-placeholder
       JWT_SECRET: ci-placeholder
       ADMIN_PASSWORD: ci-placeholder
-      INTEGRATION_SECRET: ci-placeholder
+      INTEGRATION_SECRET: ci-placeholder-integration-key
       VENDURE_DB_PASSWORD: ci-placeholder
       VENDURE_COOKIE_SECRET: ci-placeholder
       VENDURE_SUPERADMIN_USERNAME: ci-superadmin
@@ -141,6 +141,29 @@ jobs:
           CORE_ADMIN_USERNAME: admin
           CORE_ADMIN_PASSWORD: ci-placeholder
         run: npm run test:vertical
+
+      - name: Run restart and failure recovery matrix
+        working-directory: commerce
+        env:
+          COMPOSE_PROJECT_NAME: erplite
+          CORE_API_URL: http://localhost:8090/api
+          STOREFRONT_API_URL: http://localhost:3001/api/shop
+          CORE_ADMIN_USERNAME: admin
+          CORE_ADMIN_PASSWORD: ci-placeholder
+          APP_ENV: test
+          INTEGRATION_KEY_ID: current
+          INTEGRATION_PREVIOUS_KEY_ID: previous
+          INTEGRATION_PREVIOUS_SECRET: ci-placeholder-previous-integration-key
+          INTEGRATION_LEASE_SECONDS: '2'
+          INTEGRATION_RETRY_BASE_SECONDS: '1'
+          INTEGRATION_RETRY_MAX_SECONDS: '2'
+          INTEGRATION_LEASE_MS: '2000'
+          INTEGRATION_RETRY_BASE_MS: '100'
+          INTEGRATION_RETRY_MAX_MS: '500'
+          INTEGRATION_MAX_ATTEMPTS: '5'
+          CORE_INTEGRATION_TEST_FAILPOINTS: before_inbox_commit,after_inbox_commit
+          VENDURE_INTEGRATION_TEST_FAILPOINTS: after_vendure_claim,after_core_claim,before_core_ack
+        run: npm run test:recovery
 
       - name: Print service logs after failure
         if: failure()

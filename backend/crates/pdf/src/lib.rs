@@ -46,6 +46,9 @@ fn render_typst_source(input: &InvoicePdfInput) -> Result<String, PdfError> {
 
     let context = minijinja::context! {
         invoice_number => input.invoice_number,
+        is_correction => if input.is_correction { "true" } else { "false" },
+        corrected_invoice_number => input.corrected_invoice_number,
+        correction_reason => input.correction_reason,
         issue_date => format_date_de(input.issue_date),
         due_date => format_date_de(input.due_date),
         notes => input.notes,
@@ -135,6 +138,9 @@ mod tests {
     fn sample_input() -> InvoicePdfInput {
         InvoicePdfInput {
             invoice_number: "RE-2026-0001".into(),
+            is_correction: false,
+            corrected_invoice_number: String::new(),
+            correction_reason: String::new(),
             issue_date: NaiveDate::from_ymd_opt(2026, 8, 11).unwrap(),
             due_date: NaiveDate::from_ymd_opt(2026, 8, 25).unwrap(),
             company: CompanyInfo {
@@ -192,5 +198,18 @@ mod tests {
             pdf.len() > 1000,
             "PDF should have real content, not just a header"
         );
+    }
+
+    #[test]
+    fn correction_source_contains_an_explicit_original_reference() {
+        let mut input = sample_input();
+        input.invoice_number = "KR-2026-0001".into();
+        input.is_correction = true;
+        input.corrected_invoice_number = "RE-2026-0001".into();
+        input.correction_reason = "Synthetic full reversal".into();
+        let source = render_typst_source(&input).unwrap();
+        assert!(source.contains("Korrekturrechnung"));
+        assert!(source.contains("RE-2026-0001"));
+        assert!(source.contains("Synthetic full reversal"));
     }
 }

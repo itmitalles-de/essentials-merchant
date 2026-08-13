@@ -6,6 +6,10 @@ test('retry delay is exponential and capped', () => {
     assert.equal(retryDelayMs(1), 2_000);
     assert.equal(retryDelayMs(4), 16_000);
     assert.equal(retryDelayMs(99), 1_024_000);
+    assert.equal(
+        retryDelayMs(4, { leaseMs: 500, retryBaseMs: 50, retryMaxMs: 200, maxAttempts: 3 }),
+        200,
+    );
 });
 
 test('temporary target failures remain retryable', () => {

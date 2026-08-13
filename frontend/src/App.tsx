@@ -12,6 +12,9 @@ import { Articles } from "./pages/Articles";
 import { SalesOrders } from "./pages/SalesOrders";
 import { SalesOrderDetail } from "./pages/SalesOrderDetail";
 import { Settings } from "./pages/Settings";
+import { AdminCenter } from "./pages/AdminCenter";
+import { MarketplaceIntelligence } from "./pages/MarketplaceIntelligence";
+import { IntegrationDiagnostics } from "./pages/IntegrationDiagnostics";
 
 function RequireAuth({ children }: { children: ReactNode }) {
   const { isAuthenticated, loading } = useAuth();
@@ -41,6 +44,9 @@ export default function App() {
         <Route path="sales-orders" element={<SalesOrders />} />
         <Route path="sales-orders/:id" element={<SalesOrderDetail />} />
         <Route path="settings" element={<Settings />} />
+        <Route path="admin-center" element={<AdminCenter />} />
+        <Route path="integration-diagnostics" element={<IntegrationDiagnostics />} />
+        <Route path="marketplace" element={<MarketplaceIntelligence />} />
       </Route>
     </Routes>
   );

@@ -5,6 +5,7 @@ import { api, getToken, setToken } from "../api";
 interface AuthContextValue {
   isAuthenticated: boolean;
   username: string | null;
+  role: "administrator" | "user" | null;
   loading: boolean;
   login: (username: string, password: string) => Promise<void>;
   logout: () => void;
@@ -14,6 +15,7 @@ const AuthContext = createContext<AuthContextValue | null>(null);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [username, setUsername] = useState<string | null>(null);
+  const [role, setRole] = useState<"administrator" | "user" | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -22,8 +24,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return;
     }
     api
-      .get<{ username: string }>("/auth/me")
-      .then((me) => setUsername(me.username))
+      .get<{ username: string; role: "administrator" | "user" }>("/auth/me")
+      .then((me) => {
+        setUsername(me.username);
+        setRole(me.role);
+      })
       .catch(() => setToken(null))
       .finally(() => setLoading(false));
   }, []);
@@ -34,17 +39,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       password,
     });
     setToken(res.access_token);
-    setUsername(u);
+    const me = await api.get<{ username: string; role: "administrator" | "user" }>("/auth/me");
+    setUsername(me.username);
+    setRole(me.role);
   };
 
   const logout = () => {
     setToken(null);
     setUsername(null);
+    setRole(null);
   };
 
   return (
     <AuthContext.Provider
-      value={{ isAuthenticated: !!username, username, loading, login, logout }}
+      value={{ isAuthenticated: !!username, username, role, loading, login, logout }}
     >
       {children}
     </AuthContext.Provider>

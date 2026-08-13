@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import type { FormEvent } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import { api, openInvoicePdf } from "../api";
 import { useLanguage } from "../contexts/LanguageContext";
 import { invoiceStatusLabel } from "../invoiceStatus";
@@ -58,6 +58,8 @@ export function InvoiceDetail() {
   const [editingLineItemId, setEditingLineItemId] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [showCorrection, setShowCorrection] = useState(false);
+  const [correctionReason, setCorrectionReason] = useState("");
 
   const load = () => {
     if (!id) return;
@@ -153,6 +155,16 @@ export function InvoiceDetail() {
       load();
     });
 
+  const createCorrection = () =>
+    runAction(async () => {
+      const result = await api.postWithHeaders<{ correction: Invoice; duplicate: boolean }>(
+        `/invoices/${invoice.id}/corrections`,
+        { reason: correctionReason },
+        { "idempotency-key": `correction-${invoice.id}-${crypto.randomUUID()}` },
+      );
+      navigate(`/invoices/${result.correction.id}`);
+    });
+
   const breakdown = computeBreakdown(invoice.line_items);
   const customerName =
     invoice.customer_snapshot?.name ??
@@ -162,7 +174,7 @@ export function InvoiceDetail() {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "1rem", maxWidth: 800 }}>
       <h2 style={{ margin: 0 }}>
-        {t("invoiceDetail.title")} {invoice.invoice_number ?? t("invoices.draft")}
+        {invoice.document_type === "correction" ? "Korrekturrechnung" : t("invoiceDetail.title")} {invoice.invoice_number ?? t("invoices.draft")}
       </h2>
 
       <div className="card" style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
@@ -182,6 +194,19 @@ export function InvoiceDetail() {
         <div>
           <strong>{t("invoiceDetail.total")}</strong> {invoice.gross_total} €
         </div>
+        {invoice.document_type === "correction" && invoice.corrects_invoice_id && (
+          <div>
+            <strong>Korrigiert:</strong>{" "}
+            <Link to={`/invoices/${invoice.corrects_invoice_id}`}>{invoice.corrected_invoice_number ?? invoice.corrects_invoice_id}</Link>
+            {invoice.correction_reason ? ` · ${invoice.correction_reason}` : ""}
+          </div>
+        )}
+        {invoice.correction && (
+          <div>
+            <strong>Korrektur:</strong>{" "}
+            <Link to={`/invoices/${invoice.correction.id}`}>{invoice.correction.invoice_number ?? invoice.correction.id}</Link>
+          </div>
+        )}
       </div>
 
       <table className="card">
@@ -325,6 +350,26 @@ export function InvoiceDetail() {
 
       {error && <div style={{ color: "var(--danger)" }}>{error}</div>}
 
+      {showCorrection && (
+        <div className="card" style={{ display: "grid", gap: "0.6rem" }}>
+          <strong>Vollständige Korrekturrechnung erzeugen</strong>
+          <p style={{ margin: 0 }}>
+            Das Original bleibt unverändert. Die Korrektur übernimmt den Snapshot und kehrt Beträge um; sie erzeugt keine Lagerbuchung.
+          </p>
+          <textarea
+            required
+            maxLength={1000}
+            placeholder="Nachvollziehbarer Korrekturgrund"
+            value={correctionReason}
+            onChange={(event) => setCorrectionReason(event.target.value)}
+          />
+          <div style={{ display: "flex", gap: "0.5rem" }}>
+            <button onClick={createCorrection} disabled={busy || !correctionReason.trim()}>Korrektur erzeugen</button>
+            <button className="secondary" onClick={() => setShowCorrection(false)}>Abbrechen</button>
+          </div>
+        </div>
+      )}
+
       <div style={{ display: "flex", gap: "0.6rem" }}>
         {invoice.status !== "draft" && (
           <button
@@ -337,6 +382,11 @@ export function InvoiceDetail() {
         {invoice.status === "draft" && (
           <button onClick={() => transition("sent")} disabled={busy || invoice.line_items.length === 0}>
             {t("invoiceDetail.send")}
+          </button>
+        )}
+        {invoice.document_type === "invoice" && invoice.status !== "draft" && !invoice.correction && (
+          <button className="secondary" onClick={() => setShowCorrection(true)} disabled={busy}>
+            Korrekturrechnung
           </button>
         )}
         {(invoice.status === "sent" || invoice.status === "overdue") && (

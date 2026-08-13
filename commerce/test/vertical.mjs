@@ -107,9 +107,11 @@ const projected = await eventually('Core product projection', async () => {
             }
         }
     }`, { term: sku });
-    return data.search.items.find(item => item.sku === sku);
+    const product = data.search.items.find(item => item.sku === sku);
+    return (product?.priceWithTax.value ?? product?.priceWithTax.min) === 1190
+        ? product
+        : undefined;
 });
-assert.equal(projected.priceWithTax.value ?? projected.priceWithTax.min, 1190);
 
 const orderFields = `id code state totalWithTax currencyCode
     lines { id quantity linePriceWithTax productVariant { id name sku } }`;
@@ -168,11 +170,13 @@ const imported = await eventually('exactly-once Core order import', async () => 
     assert.ok(matching.length <= 1, `external Vendure order was imported ${matching.length} times`);
     return matching[0];
 });
-// Wait through both Authorized and Settled events, then prove the second delivery stayed idempotent.
-await new Promise(resolve => setTimeout(resolve, 2_000));
-const matchingOrders = (await core('sales-orders', token)).filter(
-    candidate => candidate.external_order_id === order.id,
-);
+const matchingOrders = await eventually('settled payment import remains unique', async () => {
+    const matching = (await core('sales-orders', token)).filter(
+        candidate => candidate.external_order_id === order.id,
+    );
+    assert.ok(matching.length <= 1, `external Vendure order was imported ${matching.length} times`);
+    return matching[0]?.stock_booked_at ? matching : undefined;
+});
 assert.equal(matchingOrders.length, 1);
 assert.equal(imported.stock_booked_at !== null, true);
 
