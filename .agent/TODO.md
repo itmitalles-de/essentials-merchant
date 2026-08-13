@@ -2,6 +2,13 @@
 
 This file is the authoritative unfinished-work handoff. Do not create a competing root task list.
 
+## Paused handoff — 2026-08-13
+
+- [ ] Check the final result of post-merge CI run `31710613289`; backend, frontend, and Commerce
+  were green when work paused, while Docker/Compose was still running.
+- [ ] Confirm `main` remains clean and synchronized after the documentation checkpoint is pushed.
+- [ ] Delete the merged remote/local feature branch only if explicitly requested.
+
 ## Now — external acceptance gates
 
 - [ ] Run one approved live Amazon staging request for a non-restricted report with the correct

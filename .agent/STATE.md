@@ -5,7 +5,7 @@
 - Visible product name: **Essentials+ Merchant**.
 - Repository and compatibility identifiers remain `erplite`; crate, database, volume, migration,
   token-storage, mapping, and `shop-suite-*` identifiers were not renamed.
-- Active branch: `agent/essentials-merchant-autonomous`, based on `c7563f4`.
+- Active branch: `main`; pull request #3 was merged as `78b741f`.
 - This is active development, not a production, legal, tax, DATEV, Amazon, payment, or carrier
   certification.
 
@@ -93,6 +93,23 @@ See `docs/VERIFICATION_MATRIX.md` for evidence layers and limits.
 
 ## Last handoff
 
-2026-08-13: implementation and local synthetic verification complete. Publication details and
-remote CI state are recorded in Git history and the branch pull request rather than duplicated
-here.
+2026-08-13: pull request #3 was merged into `main` as `78b741f`; local `main` and `origin/main`
+were synchronized with a clean worktree. The post-merge CI run `31710613289` had passed backend,
+frontend, and Commerce when work was paused; its Docker/Compose job was still building and its
+final result was deliberately not awaited.
+
+The following work was **not** completed and must not be presented as verified:
+
+- no live Amazon SP-API request, seller-role acceptance, RDT flow, or production rate-limit test;
+- no real Stripe, DHL, DPD, or other provider adapter/sandbox acceptance;
+- no DATEV checking-program or test-client validation;
+- no production-sized backup/restore, external encrypted retention, measured RPO/RTO, or live
+  upgrade rehearsal;
+- no staged HMAC key rotation behind production-like TLS/network controls;
+- no automated browser/accessibility matrix beyond the existing build, lint, and component/admin
+  coverage;
+- no external LLM provider and no automatic marketplace write operations, both intentionally out
+  of scope;
+- no remediation of the 12 transitive Commerce advisories because the available forced npm fix is
+  incompatible; and
+- no deletion of the merged feature branch.
