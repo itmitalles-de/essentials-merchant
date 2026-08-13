@@ -29,6 +29,7 @@ async fn main() -> anyhow::Result<()> {
     let state = AppState {
         pool,
         jwt_secret: config.jwt_secret,
+        integration_secret: config.integration_secret,
         pdf_storage_dir: config.pdf_storage_dir,
     };
 
@@ -40,6 +41,10 @@ async fn main() -> anyhow::Result<()> {
         .nest("/customers", routes::customers::router())
         .nest("/invoices", routes::invoices::router())
         .nest("/sales-orders", routes::sales_orders::router())
+        .nest(
+            "/integrations/vendure",
+            routes::vendure_integration::router(),
+        )
         .nest("/vat-rates", routes::vat_rates::router());
 
     let app = Router::new()

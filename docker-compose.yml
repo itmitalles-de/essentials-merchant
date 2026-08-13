@@ -25,6 +25,7 @@ services:
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET must be set}
       ADMIN_USERNAME: ${ADMIN_USERNAME:-admin}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:?ADMIN_PASSWORD must be set}
+      INTEGRATION_SECRET: ${INTEGRATION_SECRET:?INTEGRATION_SECRET must be set}
       RUST_LOG: ${RUST_LOG:-info}
     volumes:
       - erplite_invoices:/data/invoices
@@ -40,9 +41,93 @@ services:
       - default
       - proxy_net
 
+  vendure-db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${VENDURE_DB_USERNAME:-vendure}
+      POSTGRES_PASSWORD: ${VENDURE_DB_PASSWORD:?VENDURE_DB_PASSWORD must be set}
+      POSTGRES_DB: ${VENDURE_DB_NAME:-vendure}
+    volumes:
+      - vendure_db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  vendure-server:
+    build:
+      context: ./commerce
+      dockerfile: server/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      vendure-db:
+        condition: service_healthy
+      backend:
+        condition: service_started
+    environment: &vendure-environment
+      APP_ENV: ${APP_ENV:-production}
+      VENDURE_PORT: 3000
+      COOKIE_SECRET: ${VENDURE_COOKIE_SECRET:?VENDURE_COOKIE_SECRET must be set}
+      VENDURE_SUPERADMIN_USERNAME: ${VENDURE_SUPERADMIN_USERNAME:?VENDURE_SUPERADMIN_USERNAME must be set}
+      VENDURE_SUPERADMIN_PASSWORD: ${VENDURE_SUPERADMIN_PASSWORD:?VENDURE_SUPERADMIN_PASSWORD must be set}
+      VENDURE_DB_HOST: vendure-db
+      VENDURE_DB_PORT: 5432
+      VENDURE_DB_NAME: ${VENDURE_DB_NAME:-vendure}
+      VENDURE_DB_USERNAME: ${VENDURE_DB_USERNAME:-vendure}
+      VENDURE_DB_PASSWORD: ${VENDURE_DB_PASSWORD:?VENDURE_DB_PASSWORD must be set}
+      CORE_API_URL: http://backend:8000
+      INTEGRATION_SECRET: ${INTEGRATION_SECRET:?INTEGRATION_SECRET must be set}
+      STOREFRONT_ORIGIN: ${STOREFRONT_ORIGIN:-http://localhost:3001}
+      ASSET_URL_PREFIX: ${VENDURE_ASSET_URL_PREFIX:-http://localhost:3000/assets/}
+      VENDURE_DISABLE_TELEMETRY: "true"
+    volumes:
+      - vendure_assets:/app/server/static/assets
+    ports:
+      - "${VENDURE_PORT:-3000}:3000"
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/shop-api',{method:'POST',headers:{'content-type':'application/json'},body:'{\"query\":\"{ __typename }\"}'}).then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  vendure-worker:
+    build:
+      context: ./commerce
+      dockerfile: server/Dockerfile
+    restart: unless-stopped
+    command: ["npm", "run", "start:worker"]
+    depends_on:
+      vendure-server:
+        condition: service_healthy
+    environment: *vendure-environment
+    volumes:
+      - vendure_assets:/app/server/static/assets
+
+  storefront:
+    build:
+      context: ./commerce
+      dockerfile: storefront/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      vendure-server:
+        condition: service_healthy
+    environment:
+      VENDURE_SHOP_API_URL: http://vendure-server:3000/shop-api
+      VENDURE_CHANNEL_TOKEN: ${VENDURE_CHANNEL_TOKEN:-}
+      STOREFRONT_COOKIE_SECURE: ${STOREFRONT_COOKIE_SECURE:-false}
+    ports:
+      - "${STOREFRONT_PORT:-3001}:3000"
+    networks:
+      - default
+      - proxy_net
+
 volumes:
   erplite_db_data:
   erplite_invoices:
+  vendure_db_data:
+  vendure_assets:
 
 networks:
   default:

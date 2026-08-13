@@ -1,0 +1,5 @@
+node_modules
+server/dist
+server/src/gql
+storefront/.next
+**/*.log

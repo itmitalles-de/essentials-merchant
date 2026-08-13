@@ -5,3 +5,4 @@ pub mod customers;
 pub mod invoices;
 pub mod sales_orders;
 pub mod vat_rates;
+pub mod vendure_integration;

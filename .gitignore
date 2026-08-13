@@ -8,6 +8,10 @@ backend/target/
 node_modules/
 frontend/dist/
 frontend/tsconfig.tsbuildinfo
+commerce/server/dist/
+commerce/server/src/gql/
+commerce/storefront/.next/
+commerce/storefront/tsconfig.tsbuildinfo
 
 # misc
 .DS_Store

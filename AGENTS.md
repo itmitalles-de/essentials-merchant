@@ -1,47 +1,33 @@
-# AGENTS.md
+# Repository guide
 
-## Produktgrenze
+## Product boundary
 
-Dieses Repository ist **Shop Suite**, Hauptprojekt 2 von 3. Es verbindet einen fokussierten ERP-/Warenwirtschaftskern mit Vendure als Headless-Commerce-System.
+- This repository is Shop Suite, project 2 of 3. Freelancer time tracking belongs in
+  `Freelancer`; mail, files, office, and team communication belong in `Workspace Suite`.
+- The Core remains a focused Rust/Axum/sqlx ERP and inventory application with a React/Vite
+  administration frontend. It is not an ERPNext/Frappe fork or a multi-tenant SaaS platform.
+- The visible product name is `Shop Suite`.
+- Preserve existing internal `erplite` database, volume, crate, token-storage, and migration names.
+  Renaming them is a separate compatibility-sensitive data migration.
+- Shop Suite Core owns SKU, ERP master data, available stock, imported orders, invoices, and
+  accounting.
+- Vendure owns merchandising, facets/categories, cart, checkout, promotions, payment, and Shop API.
+- The Storefront talks only to the Vendure Shop API.
+- Never share tables or a database between Core and Vendure.
+- The implemented commerce slice is product/price/stock projection, test checkout, idempotent paid
+  order import with stock booking, and fulfillment/tracking projection. Production providers,
+  correction invoices, and reference-tested DATEV EXTF remain future work.
 
-- Hierher gehören Kunden, Artikel, Bestand, Aufträge, Rechnungen, Buchungssätze, DATEV sowie Shop-/Zahlungs-/Versandintegration.
-- Zeiterfassung und Freelancer-Arbeitsabläufe gehören in **Freelancer**.
-- Mail, Dateien, Office und Teamkommunikation gehören in **Workspace Suite**.
-- Kein ERPNext-/Frappe-Fork, keine gemeinsam gehostete Multi-Tenant-SaaS-Plattform.
+## Engineering rules
 
-## Bestehende Architektur
-
-- Core: Rust, Axum, sqlx/PostgreSQL, Typst
-- Admin-Frontend: React, Vite, TypeScript
-- Betrieb: Docker Compose
-- Aktuell implementiert: Auth, Firmendaten, Kunden/USt, Rechnungen/PDF, Artikel/Lager, Aufträge und manuelle Erfüllung
-- Noch nicht implementiert: Vendure, Storefront-Anbindung, Payment, Label, DATEV-Export
-
-Interne Namen wie `erplite`, bestehende Datenbanknamen und Volumes bleiben erhalten, bis eine eigene getestete Migration sie ändert.
-
-## Commerce-Grenze
-
-- Shop Suite Core ist führend für SKU, Bestand, importierte Aufträge, Rechnungen und Buchhaltung.
-- Vendure ist führend für kundenorientierten Katalog, Warenkorb, Checkout, Aktionen, Zahlungen und Shop API.
-- Keine gemeinsame Datenbank und keine direkten Cross-DB-Schreibzugriffe.
-- Synchronisation nur über explizite Adapter, Mappingtabellen, idempotente Events/Webhooks und Outbox.
-- Ein Event muss gefahrlos erneut verarbeitet werden können.
-
-## Arbeitsweise
-
-1. `README.md`, Workflow, Migrationen und betroffene Module vollständig lesen.
-2. CI zuerst grün machen; keine neue große Funktion auf rotem Hauptzweig.
-3. Vertikale Slices statt paralleler halbfertiger Subsysteme.
-4. Geld nie als Float; gesendete Rechnungen unveränderlich; Bestandsbuchungen atomar und idempotent.
-5. Keine Secrets, echten Zahlungsdaten oder realen Kundendaten committen.
-6. Versions- und Datenmigrationen explizit dokumentieren.
-
-## Verifikation
-
-- Backend: `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`, `cargo test`
-- Frontend: `npm ci`, `npm run build`, `npm run lint`
-- Compose: `docker compose config`, `docker compose build`
-- Bei Integrationsänderungen: Test von Duplikaten, Retries, Reihenfolgefehlern und Teilausfällen
-- Smoke-Test: Produkt/SKU → Bestellung → Import → Bestand → Rechnung/Versandstatus
-
-Fertig bedeutet: CI grün, Migrationen reproduzierbar, Kernfluss getestet, Dokumentation aktuell und keine unbeabsichtigte Verantwortungsverschiebung zwischen Core und Vendure.
+- Keep Core migrations additive and preserve existing data and functions.
+- Integration writes cross-system intent to an outbox in the local database transaction. Consumers
+  must be idempotent and safe after worker restarts; do not imply distributed transactions.
+- Keep money in decimal or integer minor units, sent invoices immutable, and stock changes atomic.
+- Keep Vendure and Node versions pinned. Generate explicit Vendure migrations; never enable schema
+  synchronization.
+- Keep secrets in `.env`; `.env.example` contains placeholders only.
+- Run the Rust, frontend, commerce, Docker, and vertical checks documented in `README.md` after
+  relevant changes.
+- Use English in repository code and documentation. German is expected in customer-visible UI and
+  example commerce data.

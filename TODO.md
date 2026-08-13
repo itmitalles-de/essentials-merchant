@@ -2,15 +2,35 @@
 
 ## Prompt
 
-Continue work in `itmitalles-de/erplite` from its latest committed state. First read this file from the latest commit, inspect the latest commit and working tree, and review the repository's issue tracker or other task source. No repository-specific in-progress task was recorded when this handoff file was created. If the user says "mach weiter" or "weida", identify the highest-priority unfinished task from that evidence and continue it without asking the user to repeat prior context. Do not invent scope; ask only when a material decision cannot be resolved safely from the repository.
+Continue Shop Suite from the committed vertical Vendure commerce slice. Read `AGENTS.md`,
+`README.md`, and `docs/CODEX_PROMPT.md` first. Preserve the existing Core/Vendure database boundary
+and internal `erplite` compatibility names. Before changing scope, inspect current CI and the issue
+tracker. The highest-value next task is to extend failure-recovery coverage, not to add another
+provider.
 
-Before every commit, replace this generic prompt with a concrete handoff for the next agent and update all sections below. The `TODO.md` update must be part of the same commit.
+Before every commit, replace this handoff with the current concrete state, remaining work, blockers,
+relevant files, and exact verification performed. Commit the `TODO.md` update with the code.
 
 ## Current state
 
-- Active goal: No active repository-specific goal recorded yet.
-- Completed: Added the canonical next-agent handoff file.
-- Remaining: Identify and execute the next unfinished repository task.
-- Blockers or decisions: None recorded.
-- Relevant files: `TODO.md`
-- Verification: Documentation-only change; no tests required.
+- Active goal: The first Shop Suite ↔ Vendure vertical commerce core is implemented and verified.
+- Completed: SQLx offline CI fix; visible Shop Suite naming; Vendure 3.7.2 server/worker and separate
+  PostgreSQL database; Dashboard; Next.js Storefront; product/price/stock projection; durable
+  mapping/inbox/outboxes; idempotent paid-order import and stock booking; fulfillment/tracking
+  projection; full Compose and vertical CI job. Backend CI installs the same pinned Typst 0.12.0
+  used by the runtime image so the existing PDF rendering test runs on a clean GitHub runner.
+- Remaining: Add deliberate Core/Vendure outage and worker-restart cases to the vertical CI test,
+  then select one production payment and one shipping provider. Correction invoices and
+  reference-tested DATEV EXTF follow those reliability/provider steps.
+- Blockers or decisions: Vendure 3.7.2 currently carries upstream npm production advisories. Do not
+  apply npm's proposed forced downgrade; update when a compatible Vendure patch is released and
+  verify the whole vertical test.
+- Relevant files: `README.md`, `.github/workflows/ci.yml`, `docker-compose.yml`,
+  `backend/crates/db/src/commerce.rs`, `backend/crates/db/migrations/0008_commerce_integration.sql`,
+  `commerce/server/src/plugins/shop-suite-integration/`, `commerce/storefront/`,
+  `commerce/test/vertical.mjs`.
+- Verification: Rust fmt, offline Clippy, SQLx cache check, 23 Rust tests, frontend build/lint,
+  commerce typecheck/tests/build, all Compose images, healthy clean stack, and a passing vertical
+  flow proving one imported order, stock 10 → 8, and tracking projected back to Vendure. The first
+  PR run exposed the missing Typst CI prerequisite after Clippy passed; the pinned install is now
+  included and requires the PR rerun before merge.

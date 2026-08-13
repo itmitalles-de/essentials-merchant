@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT o.id, o.order_number, o.customer_id, c.name AS customer_name, o.source,\n                  o.external_order_id, o.status, o.shipping_carrier, o.tracking_number,\n                  o.notes, o.fulfilled_at, o.created_at\n           FROM sales_orders o JOIN customers c ON c.id = o.customer_id\n           ORDER BY o.created_at DESC",
+  "query": "INSERT INTO sales_orders (customer_id, source, external_order_id, shipping_carrier, tracking_number, notes)\n           SELECT $1, $2, $3, $4, $5, $6\n           FROM customers WHERE id = $1\n           RETURNING id, order_number, customer_id,\n             (SELECT name FROM customers WHERE id = $1) AS \"customer_name!\", source, external_order_id,\n             external_status, status, shipping_carrier, tracking_number, notes, fulfilled_at,\n             stock_booked_at, created_at",
   "describe": {
     "columns": [
       {
@@ -20,7 +20,7 @@
       },
       {
         "ordinal": 3,
-        "name": "customer_name",
+        "name": "customer_name!",
         "type_info": "Text"
       },
       {
@@ -35,52 +35,71 @@
       },
       {
         "ordinal": 6,
-        "name": "status",
+        "name": "external_status",
         "type_info": "Text"
       },
       {
         "ordinal": 7,
-        "name": "shipping_carrier",
+        "name": "status",
         "type_info": "Text"
       },
       {
         "ordinal": 8,
-        "name": "tracking_number",
+        "name": "shipping_carrier",
         "type_info": "Text"
       },
       {
         "ordinal": 9,
-        "name": "notes",
+        "name": "tracking_number",
         "type_info": "Text"
       },
       {
         "ordinal": 10,
+        "name": "notes",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 11,
         "name": "fulfilled_at",
         "type_info": "Timestamptz"
       },
       {
-        "ordinal": 11,
+        "ordinal": 12,
+        "name": "stock_booked_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 13,
         "name": "created_at",
         "type_info": "Timestamptz"
       }
     ],
     "parameters": {
-      "Left": []
+      "Left": [
+        "Uuid",
+        "Text",
+        "Text",
+        "Text",
+        "Text",
+        "Text"
+      ]
     },
     "nullable": [
       false,
       false,
       false,
+      null,
       false,
-      false,
+      true,
       true,
       false,
       true,
       false,
       false,
+      true,
       true,
       false
     ]
   },
-  "hash": "1839bb77b9ce5e8509ba8397c0776ee8010696e155ca3ba28bb353913628dbe0"
+  "hash": "15049cfcda0d378228c821c46138bfcebaa20a7b4fda4329276b705352ed9095"
 }
