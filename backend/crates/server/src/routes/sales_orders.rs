@@ -4,7 +4,7 @@ use axum::routing::{get, post};
 use axum::{Json, Router};
 use uuid::Uuid;
 
-use crate::auth::AuthUser;
+use crate::auth::{ManualShippingUser, OrdersUser};
 use crate::state::AppState;
 use db::sales_orders::{
     CreateSalesOrderInput, FulfillSalesOrderInput, SalesOrder, SalesOrderWithItems,
@@ -19,7 +19,8 @@ pub fn router() -> Router<AppState> {
 
 async fn fulfill(
     State(state): State<AppState>,
-    AuthUser(_user): AuthUser,
+    OrdersUser(_user): OrdersUser,
+    ManualShippingUser(_shipping_user): ManualShippingUser,
     Path(id): Path<Uuid>,
     Json(input): Json<FulfillSalesOrderInput>,
 ) -> Result<Json<SalesOrder>, StatusCode> {
@@ -50,7 +51,7 @@ async fn fulfill(
 
 async fn list(
     State(state): State<AppState>,
-    AuthUser(_user): AuthUser,
+    OrdersUser(_user): OrdersUser,
 ) -> Result<Json<Vec<SalesOrder>>, StatusCode> {
     db::sales_orders::list(&state.pool)
         .await
@@ -60,7 +61,7 @@ async fn list(
 
 async fn get_one(
     State(state): State<AppState>,
-    AuthUser(_user): AuthUser,
+    OrdersUser(_user): OrdersUser,
     Path(id): Path<Uuid>,
 ) -> Result<Json<SalesOrderWithItems>, StatusCode> {
     db::sales_orders::get(&state.pool, id)
@@ -72,7 +73,7 @@ async fn get_one(
 
 async fn create(
     State(state): State<AppState>,
-    AuthUser(_user): AuthUser,
+    OrdersUser(_user): OrdersUser,
     Json(input): Json<CreateSalesOrderInput>,
 ) -> Result<Json<SalesOrderWithItems>, StatusCode> {
     if input.items.is_empty()

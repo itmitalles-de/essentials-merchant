@@ -22,6 +22,9 @@
 #let customer_city = {{ customer.city | tstr }}
 
 #let invoice_number = {{ invoice_number | tstr }}
+#let is_correction = {{ is_correction }}
+#let corrected_invoice_number = {{ corrected_invoice_number | tstr }}
+#let correction_reason = {{ correction_reason | tstr }}
 #let issue_date = {{ issue_date | tstr }}
 #let due_date = {{ due_date | tstr }}
 #let notes = {{ notes | tstr }}
@@ -51,7 +54,7 @@
     #company_zip #company_city
   ],
   align(right)[
-    #text(size: 18pt, weight: "bold")[Rechnung]\
+    #text(size: 18pt, weight: "bold")[#if is_correction [Korrekturrechnung] else [Rechnung]]\
     #invoice_number
   ]
 )
@@ -77,6 +80,12 @@
 )
 
 #v(0.8cm)
+
+#if is_correction [
+  #text(weight: "bold")[Korrektur zu Rechnung #corrected_invoice_number]\
+  Grund: #correction_reason
+  #v(0.6cm)
+]
 
 #table(
   columns: (2fr, auto, auto, auto, auto, auto),

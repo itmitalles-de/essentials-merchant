@@ -7,7 +7,7 @@
     "build:server": "tsc -p tsconfig.json",
     "build:dashboard": "VENDURE_DASHBOARD_BUILD=true vite build",
     "lint": "tsc --noEmit -p tsconfig.json",
-    "test": "node --require ts-node/register --test src/**/*.test.ts",
+    "test": "node --require ts-node/register --test src/providers/*.test.ts src/plugins/*/*.test.ts",
     "start:server": "node dist/initialize.js && node dist/index.js",
     "start:worker": "node dist/index-worker.js"
   },

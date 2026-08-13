@@ -398,6 +398,7 @@ version = "0.1.0"
 dependencies = [
  "chrono",
  "domain",
+ "hex",
  "rust_decimal",
  "serde",
  "serde_json",
@@ -1869,6 +1870,8 @@ dependencies = [
  "db",
  "domain",
  "flate2",
+ "hex",
+ "hmac",
  "jsonwebtoken",
  "pdf",
  "reqwest",

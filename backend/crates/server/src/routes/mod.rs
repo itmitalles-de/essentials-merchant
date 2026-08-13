@@ -2,6 +2,8 @@ pub mod articles;
 pub mod auth;
 pub mod company_settings;
 pub mod customers;
+pub mod exports;
+pub mod integration_diagnostics;
 pub mod invoices;
 pub mod marketplace;
 pub mod modules;

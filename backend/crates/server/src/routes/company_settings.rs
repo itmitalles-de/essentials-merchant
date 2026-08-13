@@ -3,7 +3,7 @@ use axum::http::StatusCode;
 use axum::routing::get;
 use axum::{Json, Router};
 
-use crate::auth::AuthUser;
+use crate::auth::CatalogUser;
 use crate::state::AppState;
 use db::company_settings::{CompanySettings, CompanySettingsUpdate};
 
@@ -13,7 +13,7 @@ pub fn router() -> Router<AppState> {
 
 async fn get_settings(
     State(state): State<AppState>,
-    AuthUser(_user): AuthUser,
+    CatalogUser(_user): CatalogUser,
 ) -> Result<Json<CompanySettings>, StatusCode> {
     db::company_settings::get(&state.pool)
         .await
@@ -23,7 +23,7 @@ async fn get_settings(
 
 async fn update_settings(
     State(state): State<AppState>,
-    AuthUser(_user): AuthUser,
+    CatalogUser(_user): CatalogUser,
     Json(payload): Json<CompanySettingsUpdate>,
 ) -> Result<Json<CompanySettings>, StatusCode> {
     db::company_settings::update(&state.pool, &payload)

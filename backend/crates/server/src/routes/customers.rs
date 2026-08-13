@@ -4,7 +4,7 @@ use axum::routing::get;
 use axum::{Json, Router};
 use uuid::Uuid;
 
-use crate::auth::AuthUser;
+use crate::auth::OrdersUser;
 use crate::state::AppState;
 use db::customers::{Customer, CustomerInput};
 
@@ -16,7 +16,7 @@ pub fn router() -> Router<AppState> {
 
 async fn list(
     State(state): State<AppState>,
-    AuthUser(_user): AuthUser,
+    OrdersUser(_user): OrdersUser,
 ) -> Result<Json<Vec<Customer>>, StatusCode> {
     db::customers::list(&state.pool)
         .await
@@ -26,7 +26,7 @@ async fn list(
 
 async fn get_one(
     State(state): State<AppState>,
-    AuthUser(_user): AuthUser,
+    OrdersUser(_user): OrdersUser,
     Path(id): Path<Uuid>,
 ) -> Result<Json<Customer>, StatusCode> {
     db::customers::get(&state.pool, id)
@@ -38,7 +38,7 @@ async fn get_one(
 
 async fn create(
     State(state): State<AppState>,
-    AuthUser(_user): AuthUser,
+    OrdersUser(_user): OrdersUser,
     Json(input): Json<CustomerInput>,
 ) -> Result<Json<Customer>, StatusCode> {
     db::customers::create(&state.pool, &input)
@@ -49,7 +49,7 @@ async fn create(
 
 async fn update(
     State(state): State<AppState>,
-    AuthUser(_user): AuthUser,
+    OrdersUser(_user): OrdersUser,
     Path(id): Path<Uuid>,
     Json(input): Json<CustomerInput>,
 ) -> Result<Json<Customer>, StatusCode> {
@@ -62,7 +62,7 @@ async fn update(
 
 async fn delete_one(
     State(state): State<AppState>,
-    AuthUser(_user): AuthUser,
+    OrdersUser(_user): OrdersUser,
     Path(id): Path<Uuid>,
 ) -> Result<StatusCode, StatusCode> {
     let deleted = db::customers::delete(&state.pool, id)

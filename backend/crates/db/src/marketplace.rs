@@ -38,8 +38,8 @@ const REPORT_DEFINITIONS: [ReportDefinition; 4] = [
         required_roles: &["Brand Analytics"],
         regions: &["na", "eu", "fe"],
         format: "json",
-        parser_version: Some("sales-traffic-json-v1"),
-        supported_options: &[],
+        parser_version: Some("sales-traffic-json-v2"),
+        supported_options: &["dateGranularity", "asinGranularity"],
         pii_classification: "aggregated",
         analysis_capable: true,
         requires_rdt: false,
@@ -319,6 +319,7 @@ pub struct AmazonReportDocumentInfo {
     pub run_id: Uuid,
     pub amazon_report_document_id: String,
     pub sha256: String,
+    pub decoded_sha256: String,
     pub content_type: Option<String>,
     pub compression_algorithm: Option<String>,
     pub downloaded_at: DateTime<Utc>,
@@ -909,9 +910,11 @@ pub async fn archive_document(
     document_id: &str,
     content_type: Option<&str>,
     compression_algorithm: Option<&str>,
-    content: &[u8],
+    raw_content: &[u8],
+    decoded_content: &[u8],
 ) -> Result<(), sqlx::Error> {
-    let checksum = sha256(content);
+    let checksum = sha256(raw_content);
+    let decoded_checksum = sha256(decoded_content);
     let mut tx = pool.begin().await?;
     let existing = sqlx::query_scalar::<_, String>(
         "SELECT sha256 FROM amazon_report_documents WHERE run_id = $1",
@@ -929,15 +932,18 @@ pub async fn archive_document(
         None => {
             sqlx::query(
                 "INSERT INTO amazon_report_documents
-                     (run_id, amazon_report_document_id, sha256, content_type, compression_algorithm, raw_content)
-                 VALUES ($1, $2, $3, $4, $5, $6)",
+                     (run_id, amazon_report_document_id, sha256, content_type,
+                      compression_algorithm, raw_content, decoded_content, decoded_sha256)
+                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8)",
             )
             .bind(run_id)
             .bind(document_id)
             .bind(&checksum)
             .bind(content_type)
             .bind(compression_algorithm)
-            .bind(content)
+            .bind(raw_content)
+            .bind(decoded_content)
+            .bind(&decoded_checksum)
             .execute(&mut *tx)
             .await?;
         }
@@ -965,7 +971,7 @@ pub async fn load_document_for_parsing(
     run_id: Uuid,
 ) -> Result<Option<(String, Vec<u8>)>, sqlx::Error> {
     sqlx::query_as(
-        "SELECT amazon_report_document_id, raw_content
+        "SELECT amazon_report_document_id, decoded_content
          FROM amazon_report_documents WHERE run_id = $1",
     )
     .bind(run_id)
@@ -1321,13 +1327,15 @@ pub async fn previous_compatible_snapshot(
                 period_start, period_end, granularity, comparability_key, summary, created_at
          FROM amazon_metric_snapshots
          WHERE connection_id = $1 AND marketplace_id = $2 AND report_type = $3
-           AND comparability_key = $4 AND id <> $5 AND created_at < $6
+           AND comparability_key = $4 AND parser_version = $5
+           AND id <> $6 AND created_at < $7
          ORDER BY created_at DESC LIMIT 1",
     )
     .bind(snapshot.connection_id)
     .bind(&snapshot.marketplace_id)
     .bind(&snapshot.report_type)
     .bind(&snapshot.comparability_key)
+    .bind(&snapshot.parser_version)
     .bind(snapshot.id)
     .bind(snapshot.created_at)
     .fetch_optional(pool)
@@ -1447,7 +1455,8 @@ pub async fn get_run_detail(
     .fetch_all(pool)
     .await?;
     let document = sqlx::query_as::<_, AmazonReportDocumentInfo>(
-        "SELECT id, run_id, amazon_report_document_id, sha256, content_type, compression_algorithm,
+        "SELECT id, run_id, amazon_report_document_id, sha256, decoded_sha256,
+                content_type, compression_algorithm,
                 downloaded_at, parser_version, import_status, import_error
          FROM amazon_report_documents WHERE run_id = $1",
     )
@@ -1484,7 +1493,10 @@ pub async fn raw_document(
     run_id: Uuid,
 ) -> Result<Option<RawReportDocument>, sqlx::Error> {
     sqlx::query_as::<_, (Option<String>, Vec<u8>)>(
-        "SELECT content_type, raw_content FROM amazon_report_documents WHERE run_id = $1",
+        "SELECT CASE WHEN compression_algorithm = 'GZIP' THEN 'application/gzip'
+                     ELSE content_type END,
+                raw_content
+         FROM amazon_report_documents WHERE run_id = $1",
     )
     .bind(run_id)
     .fetch_optional(pool)
@@ -1495,6 +1507,19 @@ pub async fn raw_document(
             content,
         })
     })
+}
+
+pub async fn analysis_result(
+    pool: &PgPool,
+    analysis_id: Uuid,
+) -> Result<Option<AnalysisResult>, sqlx::Error> {
+    sqlx::query_as::<_, AnalysisResult>(
+        "SELECT id, job_id, strategy, model_name, prompt_version, payload_sha256, result, created_at
+         FROM amazon_analysis_results WHERE id = $1",
+    )
+    .bind(analysis_id)
+    .fetch_optional(pool)
+    .await
 }
 
 pub async fn overview(pool: &PgPool) -> Result<MarketplaceOverview, sqlx::Error> {
@@ -1548,7 +1573,7 @@ pub fn report_type_is_allowed_for_connection(
     report_type: &str,
 ) -> bool {
     let Some(definition) = report_definition(report_type) else {
-        return false;
+        return connection.mode == "fixture" && report_type.starts_with("GET_");
     };
     definition.regions.contains(&connection.region.as_str())
         && definition
@@ -1559,14 +1584,30 @@ pub fn report_type_is_allowed_for_connection(
 
 pub fn report_options_are_supported(report_type: &str, options: &Value) -> bool {
     let Some(definition) = report_definition(report_type) else {
-        return false;
+        return options.as_object().is_some_and(serde_json::Map::is_empty);
     };
     let Some(object) = options.as_object() else {
         return false;
     };
-    object
+    if !object
         .keys()
         .all(|option| definition.supported_options.contains(&option.as_str()))
+    {
+        return false;
+    }
+    if report_type != SALES_AND_TRAFFIC {
+        return object.is_empty();
+    }
+    object.iter().all(|(name, value)| {
+        let Some(value) = value.as_str() else {
+            return false;
+        };
+        match name.as_str() {
+            "dateGranularity" => matches!(value, "DAY" | "WEEK" | "MONTH"),
+            "asinGranularity" => matches!(value, "PARENT" | "CHILD" | "SKU"),
+            _ => false,
+        }
+    })
 }
 
 pub fn default_analysis_payload(job: &ClaimedAnalysisJob, snapshots: &[MetricSnapshot]) -> Value {
@@ -1595,9 +1636,21 @@ mod tests {
     #[test]
     fn only_registered_options_are_accepted() {
         assert!(report_options_are_supported(SALES_AND_TRAFFIC, &json!({})));
+        assert!(report_options_are_supported(
+            SALES_AND_TRAFFIC,
+            &json!({ "dateGranularity": "DAY", "asinGranularity": "CHILD" })
+        ));
+        assert!(!report_options_are_supported(
+            SALES_AND_TRAFFIC,
+            &json!({ "dateGranularity": "HOUR" })
+        ));
         assert!(!report_options_are_supported(
             SALES_AND_TRAFFIC,
             &json!({ "unsafe": true })
+        ));
+        assert!(report_options_are_supported(
+            "GET_SYNTHETIC_UNKNOWN_REPORT",
+            &json!({})
         ));
     }
 }

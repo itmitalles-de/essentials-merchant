@@ -1,5 +1,5 @@
 const en = {
-  "app.title": "Merchant",
+  "app.title": "Essentials+ Merchant",
 
   "common.colorScheme": "Color scheme",
   "common.colorScheme.system": "System",
@@ -181,7 +181,7 @@ const en = {
 };
 
 const de: Record<keyof typeof en, string> = {
-  "app.title": "Merchant",
+  "app.title": "Essentials+ Merchant",
 
   "common.colorScheme": "Farbschema",
   "common.colorScheme.system": "System",

@@ -3,7 +3,7 @@ import type { ReactNode } from 'react';
 import './styles.css';
 
 export const metadata: Metadata = {
-    title: 'Merchant – Testshop',
+    title: 'Essentials+ Merchant – Testshop',
     description: 'German test storefront backed exclusively by the Vendure Shop API',
 };
 

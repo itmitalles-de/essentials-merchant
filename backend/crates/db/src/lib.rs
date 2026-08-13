@@ -1,5 +1,6 @@
 use sqlx::postgres::{PgPool, PgPoolOptions};
 
+pub mod accounting;
 pub mod articles;
 pub mod commerce;
 pub mod company_settings;

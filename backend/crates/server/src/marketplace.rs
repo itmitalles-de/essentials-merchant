@@ -4,7 +4,7 @@
 //! It does not implement legacy AWS IAM/SigV4 signing. Credentials are resolved
 //! from environment-backed secret references and are never serialised or logged.
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::io::Read;
 use std::sync::Arc;
 
@@ -22,7 +22,7 @@ use db::marketplace::{
 };
 use db::modules;
 
-const PROMPT_VERSION: &str = "marketplace-deterministic-v1";
+const RULESET_VERSION: &str = "marketplace-rules-v2";
 const MAX_DOCUMENT_BYTES: usize = 25 * 1024 * 1024;
 
 #[derive(Debug, Clone)]
@@ -92,117 +92,7 @@ pub trait AmazonReportsClient: Send + Sync {
     ) -> Result<Vec<u8>, AmazonClientError>;
 }
 
-#[async_trait]
-pub trait InsightProvider: Send + Sync {
-    fn model_name(&self) -> &str;
-    async fn analyse(&self, payload: &Value) -> Result<Value, String>;
-}
-
-#[derive(Clone)]
-pub struct OpenAiCompatibleProvider {
-    http: reqwest::Client,
-    endpoint: String,
-    model: String,
-    api_key: Option<String>,
-}
-
-impl OpenAiCompatibleProvider {
-    pub fn from_environment() -> Result<Option<Self>, reqwest::Error> {
-        let Ok(endpoint) = std::env::var("AI_PROVIDER_ENDPOINT") else {
-            return Ok(None);
-        };
-        let Ok(model) = std::env::var("AI_PROVIDER_MODEL") else {
-            return Ok(None);
-        };
-        if endpoint.trim().is_empty() || model.trim().is_empty() {
-            return Ok(None);
-        }
-        Ok(Some(Self {
-            http: reqwest::Client::builder()
-                .timeout(std::time::Duration::from_secs(30))
-                .build()?,
-            endpoint,
-            model,
-            api_key: std::env::var("AI_PROVIDER_API_KEY")
-                .ok()
-                .filter(|key| !key.is_empty()),
-        }))
-    }
-}
-
-#[async_trait]
-impl InsightProvider for OpenAiCompatibleProvider {
-    fn model_name(&self) -> &str {
-        &self.model
-    }
-
-    async fn analyse(&self, payload: &Value) -> Result<Value, String> {
-        let mut request = self.http.post(&self.endpoint).json(&json!({
-            "model": self.model,
-            "temperature": 0,
-            "response_format": { "type": "json_object" },
-            "messages": [
-                {
-                    "role": "system",
-                    "content": "You analyse only aggregated marketplace metrics. Return JSON with facts, changes_since_last_run, overall_trend, anomalies, hypotheses, options (2-5), uncertainty, and missing_data. Never infer personal data or instruct automatic marketplace changes."
-                },
-                { "role": "user", "content": payload.to_string() }
-            ]
-        }));
-        if let Some(api_key) = &self.api_key {
-            request = request.bearer_auth(api_key);
-        }
-        let response = request
-            .send()
-            .await
-            .map_err(|error| format!("AI provider request failed: {error}"))?;
-        if !response.status().is_success() {
-            return Err(format!("AI provider returned HTTP {}", response.status()));
-        }
-        let body: Value = response
-            .json()
-            .await
-            .map_err(|_| "AI provider returned invalid JSON envelope".to_owned())?;
-        let content = body
-            .pointer("/choices/0/message/content")
-            .and_then(Value::as_str)
-            .ok_or_else(|| "AI provider response lacks choices[0].message.content".to_owned())?;
-        let candidate: Value = serde_json::from_str(content)
-            .map_err(|_| "AI provider content is not valid JSON".to_owned())?;
-        validate_provider_result(&candidate)?;
-        Ok(candidate)
-    }
-}
-
-fn validate_provider_result(candidate: &Value) -> Result<(), String> {
-    let object = candidate
-        .as_object()
-        .ok_or_else(|| "AI provider result must be a JSON object".to_owned())?;
-    for field in [
-        "facts",
-        "changes_since_last_run",
-        "overall_trend",
-        "anomalies",
-        "hypotheses",
-        "options",
-        "uncertainty",
-        "missing_data",
-    ] {
-        if !object.contains_key(field) {
-            return Err(format!("AI provider result lacks {field}"));
-        }
-    }
-    let options = object
-        .get("options")
-        .and_then(Value::as_array)
-        .ok_or_else(|| "AI provider options must be an array".to_owned())?;
-    if !(2..=5).contains(&options.len()) {
-        return Err("AI provider must return two to five options".to_owned());
-    }
-    Ok(())
-}
-
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 struct LiveSecret {
     refresh_token: String,
     client_id: String,
@@ -212,6 +102,9 @@ struct LiveSecret {
 #[derive(Clone)]
 pub struct LiveAmazonClient {
     http: reqwest::Client,
+    endpoint_override: Option<String>,
+    lwa_endpoint: String,
+    secret_override: Option<LiveSecret>,
 }
 
 impl LiveAmazonClient {
@@ -219,14 +112,39 @@ impl LiveAmazonClient {
         reqwest::Client::builder()
             .timeout(std::time::Duration::from_secs(30))
             .build()
-            .map(|http| Self { http })
+            .map(|http| Self {
+                http,
+                endpoint_override: None,
+                lwa_endpoint: "https://api.amazon.com/auth/o2/token".to_owned(),
+                secret_override: None,
+            })
     }
 
-    fn endpoint(region: &str) -> Result<&'static str, AmazonClientError> {
+    #[cfg(test)]
+    fn for_fake_server(endpoint: String) -> Result<Self, reqwest::Error> {
+        reqwest::Client::builder()
+            .timeout(std::time::Duration::from_secs(5))
+            .build()
+            .map(|http| Self {
+                http,
+                endpoint_override: Some(endpoint.clone()),
+                lwa_endpoint: format!("{endpoint}/auth/o2/token"),
+                secret_override: Some(LiveSecret {
+                    refresh_token: "synthetic-refresh".to_owned(),
+                    client_id: "synthetic-client".to_owned(),
+                    client_secret: "synthetic-secret".to_owned(),
+                }),
+            })
+    }
+
+    fn endpoint(&self, region: &str) -> Result<String, AmazonClientError> {
+        if let Some(endpoint) = &self.endpoint_override {
+            return Ok(endpoint.clone());
+        }
         match region {
-            "na" => Ok("https://sellingpartnerapi-na.amazon.com"),
-            "eu" => Ok("https://sellingpartnerapi-eu.amazon.com"),
-            "fe" => Ok("https://sellingpartnerapi-fe.amazon.com"),
+            "na" => Ok("https://sellingpartnerapi-na.amazon.com".to_owned()),
+            "eu" => Ok("https://sellingpartnerapi-eu.amazon.com".to_owned()),
+            "fe" => Ok("https://sellingpartnerapi-fe.amazon.com".to_owned()),
             _ => Err(AmazonClientError::Permanent(
                 "unsupported Amazon region".to_owned(),
             )),
@@ -247,7 +165,10 @@ impl LiveAmazonClient {
         format!("AMAZON_SECRET_{normalized}")
     }
 
-    fn load_secret(secret_ref: &str) -> Result<LiveSecret, AmazonClientError> {
+    fn load_secret(&self, secret_ref: &str) -> Result<LiveSecret, AmazonClientError> {
+        if let Some(secret) = &self.secret_override {
+            return Ok(secret.clone());
+        }
         let key = Self::secret_environment_key(secret_ref);
         let raw = std::env::var(&key).map_err(|_| {
             AmazonClientError::Permanent(format!(
@@ -260,10 +181,10 @@ impl LiveAmazonClient {
     }
 
     async fn access_token(&self, secret_ref: &str) -> Result<String, AmazonClientError> {
-        let secret = Self::load_secret(secret_ref)?;
+        let secret = self.load_secret(secret_ref)?;
         let response = self
             .http
-            .post("https://api.amazon.com/auth/o2/token")
+            .post(&self.lwa_endpoint)
             .form(&[
                 ("grant_type", "refresh_token"),
                 ("refresh_token", secret.refresh_token.as_str()),
@@ -303,7 +224,7 @@ impl LiveAmazonClient {
         method: reqwest::Method,
         path: &str,
     ) -> Result<reqwest::RequestBuilder, AmazonClientError> {
-        let base = Self::endpoint(&request.region)?;
+        let base = self.endpoint(&request.region)?;
         let access_token = self.access_token(&request.secret_ref).await?;
         Ok(self
             .http
@@ -486,14 +407,20 @@ impl AmazonReportsClient for LiveAmazonClient {
 pub struct FixtureAmazonClient;
 
 const SALES_FIXTURE: &str = r#"{
+  "reportSpecification": {
+    "reportType": "GET_SALES_AND_TRAFFIC_REPORT",
+    "reportOptions": {"dateGranularity":"DAY","asinGranularity":"CHILD"},
+    "dataStartTime": "2026-08-01",
+    "dataEndTime": "2026-08-02",
+    "marketplaceIds": ["A1PA6795UKMFR9"]
+  },
   "salesAndTrafficByDate": [
-    {"date":"2026-08-01","salesByAsin":[
-      {"parentAsin":"B0PARENT01","childAsin":"B0DEMO001","salesByAsin":{"orderedProductSales":{"amount":"120.50","currencyCode":"EUR"},"unitsOrdered":10},"trafficByAsin":{"sessions":100,"pageViews":150,"unitSessionPercentage":10.0}},
-      {"parentAsin":"B0PARENT02","childAsin":"B0DEMO002","salesByAsin":{"orderedProductSales":{"amount":"35.00","currencyCode":"EUR"},"unitsOrdered":2},"trafficByAsin":{"sessions":50,"pageViews":60,"unitSessionPercentage":4.0}}
-    ]},
-    {"date":"2026-08-02","salesByAsin":[
-      {"parentAsin":"B0PARENT01","childAsin":"B0DEMO001","salesByAsin":{"orderedProductSales":{"amount":"98.00","currencyCode":"EUR"},"unitsOrdered":8},"trafficByAsin":{"sessions":95,"pageViews":145,"unitSessionPercentage":8.42}}
-    ]}
+    {"date":"2026-08-01","salesByDate":{"orderedProductSales":{"amount":"155.50","currencyCode":"EUR"},"unitsOrdered":12},"trafficByDate":{"sessions":150,"pageViews":210}},
+    {"date":"2026-08-02","salesByDate":{"orderedProductSales":{"amount":"98.00","currencyCode":"EUR"},"unitsOrdered":8},"trafficByDate":{"sessions":95,"pageViews":145}}
+  ],
+  "salesAndTrafficByAsin": [
+    {"parentAsin":"B0PARENT01","childAsin":"B0DEMO001","salesByAsin":{"orderedProductSales":{"amount":"218.50","currencyCode":"EUR"},"unitsOrdered":18},"trafficByAsin":{"sessions":195,"pageViews":295,"unitSessionPercentage":9.23},"futureField":"accepted"},
+    {"parentAsin":"B0PARENT02","childAsin":"B0DEMO002","salesByAsin":{"orderedProductSales":{"amount":"35.00","currencyCode":"EUR"},"unitsOrdered":2},"trafficByAsin":{"sessions":50,"pageViews":60,"unitSessionPercentage":4.0}}
   ]
 }"#;
 
@@ -645,18 +572,11 @@ impl AmazonReportsClient for CompositeAmazonClient {
 #[derive(Clone)]
 pub struct MarketplaceWorker {
     client: Arc<dyn AmazonReportsClient>,
-    insight_provider: Option<Arc<dyn InsightProvider>>,
 }
 
 impl MarketplaceWorker {
-    pub fn new(
-        client: Arc<dyn AmazonReportsClient>,
-        insight_provider: Option<Arc<dyn InsightProvider>>,
-    ) -> Self {
-        Self {
-            client,
-            insight_provider,
-        }
+    pub fn new(client: Arc<dyn AmazonReportsClient>) -> Self {
+        Self { client }
     }
 
     pub async fn cycle(&self, pool: &sqlx::PgPool) -> Result<(), sqlx::Error> {
@@ -818,6 +738,7 @@ impl MarketplaceWorker {
                                         &document.document_id,
                                         Some(content_type_for(&run.report_type)),
                                         document.compression_algorithm.as_deref(),
+                                        &downloaded,
                                         &content,
                                     )
                                     .await;
@@ -973,30 +894,18 @@ impl MarketplaceWorker {
         };
         match result {
             Ok(mut result) => {
-                let payload = allowlisted_ai_payload(&result);
-                let mut strategy = "deterministic";
-                let mut model_name = None;
-                if let Some(provider) = &self.insight_provider {
-                    match provider.analyse(&payload).await {
-                        Ok(provider_result) => {
-                            result["provider_insight"] = provider_result;
-                            strategy = "deterministic_with_provider";
-                            model_name = Some(provider.model_name());
-                        }
-                        Err(error) => {
-                            result["provider_status"] =
-                                json!({ "status": "failed", "message": error });
-                        }
-                    }
-                } else {
-                    result["provider_status"] = json!({ "status": "disabled" });
-                }
+                let payload = pii_safe_analysis_export(&result);
+                result["analysis_engine"] = json!({
+                    "kind": "deterministic_rules",
+                    "ruleset_version": RULESET_VERSION,
+                    "external_ai": false,
+                });
                 let _ = marketplace::complete_analysis(
                     pool,
                     &job,
-                    strategy,
-                    model_name,
-                    PROMPT_VERSION,
+                    "deterministic_rules",
+                    None,
+                    RULESET_VERSION,
                     &sha256(payload.to_string().as_bytes()),
                     &result,
                 )
@@ -1127,22 +1036,59 @@ fn parse_sales_and_traffic(
                 .to_owned(),
         );
     }
+    let specification = value.get("reportSpecification");
+    let report_options = specification.and_then(|specification| specification.get("reportOptions"));
+    let date_granularity = report_options
+        .and_then(|options| options.get("dateGranularity"))
+        .and_then(Value::as_str)
+        .unwrap_or("DAY");
+    let asin_granularity = report_options
+        .and_then(|options| options.get("asinGranularity"))
+        .and_then(Value::as_str)
+        .or_else(|| infer_asin_granularity(&rows))
+        .unwrap_or("PARENT");
+    if !matches!(date_granularity, "DAY" | "WEEK" | "MONTH")
+        || !matches!(asin_granularity, "PARENT" | "CHILD" | "SKU")
+    {
+        return Err("Sales & Traffic report has unsupported granularity".to_owned());
+    }
+    let date_granularity_key = date_granularity.to_ascii_lowercase();
+    let asin_granularity_key = asin_granularity.to_ascii_lowercase();
     let mut metrics = Vec::new();
     let mut total_sales = Decimal::ZERO;
     let mut total_units = Decimal::ZERO;
     let mut total_sessions = Decimal::ZERO;
     let mut total_page_views = Decimal::ZERO;
+    let mut sessions_present = false;
+    let mut page_views_present = false;
     let mut currencies = BTreeMap::<String, Decimal>::new();
     let mut dates = Vec::new();
+    let mut dimensions = HashSet::new();
     for (row, row_date) in rows {
         let asin = row
-            .get("childAsin")
+            .get(match asin_granularity {
+                "PARENT" => "parentAsin",
+                "CHILD" => "childAsin",
+                "SKU" => "sku",
+                _ => unreachable!(),
+            })
             .or_else(|| row.get("asin"))
             .and_then(Value::as_str)
             .filter(|value| !value.is_empty())
-            .ok_or_else(|| "Sales & Traffic row lacks childAsin".to_owned())?;
+            .ok_or_else(|| {
+                format!("Sales & Traffic row lacks required {asin_granularity} identifier")
+            })?;
         if let Some(date) = row_date {
             dates.push(date);
+        }
+        let dimension = format!(
+            "{asin}:{}",
+            row_date.map_or_else(|| "aggregate".to_owned(), |date| date.to_string())
+        );
+        if !dimensions.insert(dimension) {
+            return Err(format!(
+                "Sales & Traffic report contains duplicate ASIN/date row for {asin}"
+            ));
         }
         let sales = decimal(
             value_at(row, &["salesByAsin", "orderedProductSales", "amount"]),
@@ -1156,23 +1102,31 @@ fn parse_sales_and_traffic(
             value_at(row, &["salesByAsin", "unitsOrdered"]),
             "unitsOrdered",
         )?;
-        let sessions = optional_decimal(value_at(row, &["trafficByAsin", "sessions"]))
-            .unwrap_or(Decimal::ZERO);
-        let page_views = optional_decimal(value_at(row, &["trafficByAsin", "pageViews"]))
-            .unwrap_or(Decimal::ZERO);
+        let sessions = optional_decimal(value_at(row, &["trafficByAsin", "sessions"]));
+        let page_views = optional_decimal(value_at(row, &["trafficByAsin", "pageViews"]));
         total_sales += sales;
         total_units += units;
-        total_sessions += sessions;
-        total_page_views += page_views;
+        if let Some(sessions) = sessions {
+            sessions_present = true;
+            total_sessions += sessions;
+        }
+        if let Some(page_views) = page_views {
+            page_views_present = true;
+            total_page_views += page_views;
+        }
         *currencies.entry(currency.clone()).or_default() += sales;
-        let evidence = json!({ "asin": asin, "date": row_date.map(|value| value.to_string()) });
+        let evidence = json!({
+            "dimension": asin,
+            "dimension_kind": asin_granularity_key,
+            "date": row_date.map(|value| value.to_string()),
+        });
         let asin_dimension_key = row_date
             .map(|date| format!("{asin}:{date}"))
             .unwrap_or_else(|| asin.to_owned());
         metrics.extend([
             ParsedMetric {
                 metric_name: "ordered_product_sales".to_owned(),
-                dimension_type: "asin_date".to_owned(),
+                dimension_type: format!("{asin_granularity_key}_period"),
                 dimension_key: asin_dimension_key.clone(),
                 value_numeric: sales,
                 unit: "currency".to_owned(),
@@ -1181,32 +1135,36 @@ fn parse_sales_and_traffic(
             },
             ParsedMetric {
                 metric_name: "units_ordered".to_owned(),
-                dimension_type: "asin_date".to_owned(),
+                dimension_type: format!("{asin_granularity_key}_period"),
                 dimension_key: asin_dimension_key.clone(),
                 value_numeric: units,
                 unit: "units".to_owned(),
                 currency_code: None,
                 evidence: evidence.clone(),
             },
-            ParsedMetric {
+        ]);
+        if let Some(sessions) = sessions {
+            metrics.push(ParsedMetric {
                 metric_name: "sessions".to_owned(),
-                dimension_type: "asin_date".to_owned(),
+                dimension_type: format!("{asin_granularity_key}_period"),
                 dimension_key: asin_dimension_key.clone(),
                 value_numeric: sessions,
                 unit: "sessions".to_owned(),
                 currency_code: None,
                 evidence: evidence.clone(),
-            },
-            ParsedMetric {
+            });
+        }
+        if let Some(page_views) = page_views {
+            metrics.push(ParsedMetric {
                 metric_name: "page_views".to_owned(),
-                dimension_type: "asin_date".to_owned(),
+                dimension_type: format!("{asin_granularity_key}_period"),
                 dimension_key: asin_dimension_key,
                 value_numeric: page_views,
                 unit: "views".to_owned(),
                 currency_code: None,
                 evidence,
-            },
-        ]);
+            });
+        }
     }
     if currencies.len() > 1 {
         return Err(
@@ -1214,26 +1172,36 @@ fn parse_sales_and_traffic(
         );
     }
     let currency = currencies.keys().next().cloned();
+    let report_start = specification
+        .and_then(|value| value.get("dataStartTime"))
+        .and_then(Value::as_str)
+        .and_then(parse_amazon_date);
+    let report_end = specification
+        .and_then(|value| value.get("dataEndTime"))
+        .and_then(Value::as_str)
+        .and_then(parse_amazon_date);
     let start = dates
         .iter()
         .min()
         .copied()
         .map(|date| Utc.from_utc_datetime(&date.and_hms_opt(0, 0, 0).unwrap()))
+        .or(report_start)
         .or(requested_start);
     let end = dates
         .iter()
         .max()
         .copied()
         .map(|date| Utc.from_utc_datetime(&date.and_hms_opt(23, 59, 59).unwrap()))
+        .or(report_end)
         .or(requested_end);
     let period_days = match (start, end) {
         (Some(start), Some(end)) => (end.date_naive() - start.date_naive()).num_days() + 1,
         _ => 0,
     };
-    let conversion = if total_sessions.is_zero() {
-        Decimal::ZERO
+    let conversion = if !sessions_present || total_sessions.is_zero() {
+        None
     } else {
-        (total_units / total_sessions * Decimal::from(100)).round_dp(4)
+        Some((total_units / total_sessions * Decimal::from(100)).round_dp(4))
     };
     metrics.extend([
         ParsedMetric {
@@ -1254,7 +1222,9 @@ fn parse_sales_and_traffic(
             currency_code: None,
             evidence: json!({ "aggregation": "sum_by_asin" }),
         },
-        ParsedMetric {
+    ]);
+    if sessions_present {
+        metrics.push(ParsedMetric {
             metric_name: "sessions".to_owned(),
             dimension_type: "catalog".to_owned(),
             dimension_key: String::new(),
@@ -1262,8 +1232,21 @@ fn parse_sales_and_traffic(
             unit: "sessions".to_owned(),
             currency_code: None,
             evidence: json!({ "aggregation": "sum_by_asin" }),
-        },
-        ParsedMetric {
+        });
+    }
+    if page_views_present {
+        metrics.push(ParsedMetric {
+            metric_name: "page_views".to_owned(),
+            dimension_type: "catalog".to_owned(),
+            dimension_key: String::new(),
+            value_numeric: total_page_views,
+            unit: "views".to_owned(),
+            currency_code: None,
+            evidence: json!({ "aggregation": "sum_by_asin" }),
+        });
+    }
+    if let Some(conversion) = conversion {
+        metrics.push(ParsedMetric {
             metric_name: "conversion_rate".to_owned(),
             dimension_type: "catalog".to_owned(),
             dimension_key: String::new(),
@@ -1271,25 +1254,49 @@ fn parse_sales_and_traffic(
             unit: "percent".to_owned(),
             currency_code: None,
             evidence: json!({ "formula": "units_ordered / sessions * 100" }),
-        },
-    ]);
+        });
+    }
     Ok(ParsedSnapshot {
-        parser_version: "sales-traffic-json-v1".to_owned(),
+        parser_version: "sales-traffic-json-v2".to_owned(),
         period_start: start,
         period_end: end,
-        granularity: "daily_asin".to_owned(),
-        comparability_key: format!("sales-traffic:daily_asin:{period_days}d"),
+        granularity: format!("{date_granularity_key}_{asin_granularity_key}"),
+        comparability_key: format!(
+            "sales-traffic:{date_granularity_key}_{asin_granularity_key}:{period_days}d"
+        ),
         summary: json!({
             "ordered_product_sales": total_sales.to_string(),
             "currency": currency,
             "units_ordered": total_units.to_string(),
-            "sessions": total_sessions.to_string(),
-            "page_views": total_page_views.to_string(),
-            "conversion_rate": conversion.to_string(),
+            "sessions": sessions_present.then(|| total_sessions.to_string()),
+            "page_views": page_views_present.then(|| total_page_views.to_string()),
+            "conversion_rate": conversion.map(|value| value.to_string()),
             "period_days": period_days,
+            "date_granularity": date_granularity,
+            "asin_granularity": asin_granularity,
         }),
         metrics,
     })
+}
+
+fn infer_asin_granularity(rows: &[(&Value, Option<NaiveDate>)]) -> Option<&'static str> {
+    let first = rows.first()?.0;
+    if first.get("sku").and_then(Value::as_str).is_some() {
+        Some("SKU")
+    } else if first.get("childAsin").and_then(Value::as_str).is_some() {
+        Some("CHILD")
+    } else if first.get("parentAsin").and_then(Value::as_str).is_some() {
+        Some("PARENT")
+    } else {
+        None
+    }
+}
+
+fn parse_amazon_date(value: &str) -> Option<DateTime<Utc>> {
+    NaiveDate::parse_from_str(value.get(..10).unwrap_or(value), "%Y-%m-%d")
+        .ok()
+        .and_then(|date| date.and_hms_opt(0, 0, 0))
+        .map(|date| Utc.from_utc_datetime(&date))
 }
 
 fn parse_inventory_planning(raw: &[u8]) -> Result<ParsedSnapshot, String> {
@@ -1316,6 +1323,7 @@ fn parse_inventory_planning(raw: &[u8]) -> Result<ParsedSnapshot, String> {
     let mut total_available = Decimal::ZERO;
     let mut total_shipped = Decimal::ZERO;
     let mut snapshot_dates = Vec::new();
+    let mut seen_skus = HashSet::new();
     let mut rows = 0;
     for (line_number, line) in lines.enumerate() {
         if line.trim().is_empty() {
@@ -1328,6 +1336,11 @@ fn parse_inventory_planning(raw: &[u8]) -> Result<ParsedSnapshot, String> {
             return Err(format!(
                 "Inventory Planning row {} lacks sku",
                 line_number + 2
+            ));
+        }
+        if !seen_skus.insert(sku.to_owned()) {
+            return Err(format!(
+                "Inventory Planning report contains duplicate sku {sku}"
             ));
         }
         let available = Decimal::from_str_exact(get(available_index)).map_err(|_| {
@@ -1398,17 +1411,17 @@ fn parse_inventory_planning(raw: &[u8]) -> Result<ParsedSnapshot, String> {
     } else {
         Some((total_available / total_shipped * Decimal::from(30)).round_dp(2))
     };
-    metrics.extend([
-        ParsedMetric {
-            metric_name: "available_inventory".to_owned(),
-            dimension_type: "catalog".to_owned(),
-            dimension_key: String::new(),
-            value_numeric: total_available,
-            unit: "units".to_owned(),
-            currency_code: None,
-            evidence: json!({ "aggregation": "sum_by_sku" }),
-        },
-        ParsedMetric {
+    metrics.push(ParsedMetric {
+        metric_name: "available_inventory".to_owned(),
+        dimension_type: "catalog".to_owned(),
+        dimension_key: String::new(),
+        value_numeric: total_available,
+        unit: "units".to_owned(),
+        currency_code: None,
+        evidence: json!({ "aggregation": "sum_by_sku" }),
+    });
+    if shipped_index.is_some() {
+        metrics.push(ParsedMetric {
             metric_name: "units_shipped_t30".to_owned(),
             dimension_type: "catalog".to_owned(),
             dimension_key: String::new(),
@@ -1416,8 +1429,8 @@ fn parse_inventory_planning(raw: &[u8]) -> Result<ParsedSnapshot, String> {
             unit: "units_30d".to_owned(),
             currency_code: None,
             evidence: json!({ "aggregation": "sum_by_sku" }),
-        },
-    ]);
+        });
+    }
     if let Some(stock_cover_days) = stock_cover_days {
         metrics.push(ParsedMetric {
             metric_name: "stock_cover_days".to_owned(),
@@ -1438,7 +1451,7 @@ fn parse_inventory_planning(raw: &[u8]) -> Result<ParsedSnapshot, String> {
         comparability_key: "inventory-planning:current_sku".to_owned(),
         summary: json!({
             "available_inventory": total_available.to_string(),
-            "units_shipped_t30": total_shipped.to_string(),
+            "units_shipped_t30": shipped_index.map(|_| total_shipped.to_string()),
             "stock_cover_days": stock_cover_days.map(|value| value.to_string()),
             "row_count": rows,
         }),
@@ -1510,7 +1523,7 @@ async fn deterministic_delta(
             "options": generic_options(),
             "uncertainty": "high",
             "missing_data": ["A previous successful snapshot with matching report type, granularity and period length is required for a delta analysis."],
-            "recommendation_notice": "Recommendations only; Merchant does not make Amazon changes.",
+            "recommendation_notice": "Recommendations only; Essentials+ Merchant does not make Amazon changes.",
         }));
     };
     let previous_metrics = metric_map(
@@ -1574,7 +1587,7 @@ async fn deterministic_delta(
         "options": options,
         "uncertainty": if anomalies.is_empty() { "medium" } else { "medium; material changes need operational validation" },
         "missing_data": missing_data_for_metrics(&current_metrics),
-        "recommendation_notice": "Recommendations only; Merchant does not make Amazon changes.",
+        "recommendation_notice": "Recommendations only; Essentials+ Merchant does not make Amazon changes.",
     }))
 }
 
@@ -1590,19 +1603,19 @@ async fn deterministic_total(
             "facts": [], "changes_since_last_run": [], "overall_trend": "No snapshots in selected period.",
             "anomalies": [], "hypotheses": [], "options": generic_options(), "uncertainty": "high",
             "missing_data": ["No normalized snapshots exist in the selected period."],
-            "recommendation_notice": "Recommendations only; Merchant does not make Amazon changes.",
+            "recommendation_notice": "Recommendations only; Essentials+ Merchant does not make Amazon changes.",
         }));
     }
     let keys = snapshots
         .iter()
-        .map(|snapshot| snapshot.comparability_key.as_str())
+        .map(|snapshot| (&snapshot.comparability_key, &snapshot.parser_version))
         .collect::<std::collections::BTreeSet<_>>();
     if keys.len() != 1 {
         return Ok(json!({
             "facts": [], "changes_since_last_run": [], "overall_trend": "Analysis was not aggregated.",
             "anomalies": [], "hypotheses": [], "options": generic_options(), "uncertainty": "high",
             "missing_data": ["Selected snapshots have incompatible granularity or reporting periods and are intentionally not compared."],
-            "recommendation_notice": "Recommendations only; Merchant does not make Amazon changes.",
+            "recommendation_notice": "Recommendations only; Essentials+ Merchant does not make Amazon changes.",
         }));
     }
     let mut series = Vec::new();
@@ -1635,7 +1648,7 @@ async fn deterministic_total(
         "options": generic_options(),
         "uncertainty": "medium",
         "missing_data": ["Trend interpretation is deterministic and does not infer causality."],
-        "recommendation_notice": "Recommendations only; Merchant does not make Amazon changes.",
+        "recommendation_notice": "Recommendations only; Essentials+ Merchant does not make Amazon changes.",
     }))
 }
 
@@ -1721,7 +1734,10 @@ fn missing_data_for_metrics(metrics: &[NormalizedMetric]) -> Vec<&'static str> {
     missing
 }
 
-pub fn allowlisted_ai_payload(result: &Value) -> Value {
+/// Export only aggregate allowlisted metrics. This is also the regression
+/// boundary that keeps buyer identifiers and raw report fields out of analysis
+/// exports even though no external AI provider is compiled into this product.
+pub fn pii_safe_analysis_export(result: &Value) -> Value {
     let allowed = [
         "ordered_product_sales",
         "units_ordered",
@@ -1742,19 +1758,151 @@ pub fn allowlisted_ai_payload(result: &Value) -> Value {
                 .and_then(Value::as_str)
                 .is_some_and(|metric| allowed.contains(&metric))
         })
-        .cloned()
+        .map(strip_pii)
         .collect::<Vec<_>>();
-    json!({ "facts": facts, "changes_since_last_run": result.get("changes_since_last_run").cloned().unwrap_or_else(|| json!([])) })
+    let mut export = serde_json::Map::new();
+    export.insert("facts".to_owned(), Value::Array(facts));
+    for field in [
+        "changes_since_last_run",
+        "overall_trend",
+        "seasonality",
+        "anomalies",
+        "hypotheses",
+        "options",
+        "uncertainty",
+        "missing_data",
+        "recommendation_notice",
+        "analysis_engine",
+    ] {
+        if let Some(value) = result.get(field) {
+            export.insert(field.to_owned(), strip_pii(value));
+        }
+    }
+    Value::Object(export)
+}
+
+fn strip_pii(value: &Value) -> Value {
+    match value {
+        Value::Object(values) => Value::Object(
+            values
+                .iter()
+                .filter(|(key, _)| {
+                    let key = key.to_ascii_lowercase();
+                    ![
+                        "buyer", "customer", "email", "address", "order_id", "comment", "phone",
+                        "person",
+                    ]
+                    .iter()
+                    .any(|forbidden| key.contains(forbidden))
+                })
+                .map(|(key, value)| (key.clone(), strip_pii(value)))
+                .collect(),
+        ),
+        Value::Array(values) => Value::Array(values.iter().map(strip_pii).collect()),
+        Value::String(value) if value.contains('@') => Value::String("[redacted]".to_owned()),
+        _ => value.clone(),
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
+    #[tokio::test]
+    async fn live_transport_contract_runs_against_local_fake_sp_api_only() {
+        use axum::extract::{Path, State};
+        use axum::http::HeaderMap;
+        use axum::routing::{get, post};
+        use axum::{Json, Router};
+
+        async fn token() -> Json<Value> {
+            Json(json!({ "access_token": "synthetic-access-token" }))
+        }
+        async fn create(headers: HeaderMap, Json(body): Json<Value>) -> Json<Value> {
+            assert_eq!(
+                headers
+                    .get("x-amz-access-token")
+                    .and_then(|value| value.to_str().ok()),
+                Some("synthetic-access-token")
+            );
+            assert_eq!(body["reportType"], marketplace::SALES_AND_TRAFFIC);
+            assert_eq!(body["marketplaceIds"][0], "A1PA6795UKMFR9");
+            Json(json!({ "reportId": "fake-report-1" }))
+        }
+        async fn report(Path(report_id): Path<String>) -> Json<Value> {
+            assert_eq!(report_id, "fake-report-1");
+            Json(json!({
+                "processingStatus": "DONE",
+                "reportDocumentId": "fake-document-1",
+            }))
+        }
+        async fn document(
+            State(base): State<String>,
+            Path(document_id): Path<String>,
+        ) -> Json<Value> {
+            assert_eq!(document_id, "fake-document-1");
+            Json(json!({ "url": format!("{base}/download") }))
+        }
+        async fn download() -> &'static [u8] {
+            SALES_FIXTURE.as_bytes()
+        }
+        async fn partial() -> axum::response::Response {
+            axum::response::Response::builder()
+                .header(axum::http::header::CONTENT_LENGTH, "100")
+                .body(axum::body::Body::from("truncated"))
+                .unwrap()
+        }
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let base = format!("http://{}", listener.local_addr().unwrap());
+        let app = Router::new()
+            .route("/auth/o2/token", post(token))
+            .route("/reports/2021-06-30/reports", post(create))
+            .route("/reports/2021-06-30/reports/{report_id}", get(report))
+            .route("/reports/2021-06-30/documents/{document_id}", get(document))
+            .route("/download", get(download))
+            .route("/partial", get(partial))
+            .with_state(base.clone());
+        let server = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        let client = LiveAmazonClient::for_fake_server(base).unwrap();
+        let request = AmazonReportRequest {
+            seller_id: "SYNTHETIC-SELLER".to_owned(),
+            region: "eu".to_owned(),
+            secret_ref: "fake-server".to_owned(),
+            report_type: marketplace::SALES_AND_TRAFFIC.to_owned(),
+            marketplace_id: "A1PA6795UKMFR9".to_owned(),
+            data_start_time: None,
+            data_end_time: None,
+            report_options: json!({}),
+        };
+        let report_id = client.create_report(&request).await.unwrap();
+        let AmazonReportStatus::Done { document_id } =
+            client.get_report(&request, &report_id).await.unwrap()
+        else {
+            panic!("fake report must be DONE");
+        };
+        let document = client
+            .get_report_document(&request, &document_id)
+            .await
+            .unwrap();
+        let bytes = client.download_document(&document).await.unwrap();
+        assert_eq!(bytes, SALES_FIXTURE.as_bytes());
+        let partial = client
+            .download_document(&AmazonReportDocument {
+                document_id: "partial-document".to_owned(),
+                url: format!("{}/partial", client.endpoint("eu").unwrap()),
+                compression_algorithm: None,
+            })
+            .await;
+        assert!(matches!(partial, Err(AmazonClientError::Retryable(_))));
+        server.abort();
+    }
+
     #[test]
     fn parses_sales_json_without_binary_money() {
         let parsed = parse_sales_and_traffic(SALES_FIXTURE.as_bytes(), None, None).unwrap();
-        assert_eq!(parsed.parser_version, "sales-traffic-json-v1");
+        assert_eq!(parsed.parser_version, "sales-traffic-json-v2");
+        assert_eq!(parsed.granularity, "day_child");
         assert!(parsed
             .metrics
             .iter()
@@ -1773,6 +1921,45 @@ mod tests {
     }
 
     #[test]
+    fn parsers_handle_optional_columns_order_empty_duplicates_and_encoding_explicitly() {
+        let reordered = b"available\textra-new\tsku\n4\tignored\tSKU-OPTIONAL\n";
+        let parsed = parse_inventory_planning(reordered).unwrap();
+        assert_eq!(parsed.summary["available_inventory"], "4");
+        assert!(parsed.summary["units_shipped_t30"].is_null());
+        assert!(!parsed
+            .metrics
+            .iter()
+            .any(|metric| metric.metric_name == "units_shipped_t30"));
+        assert!(parse_inventory_planning(b"sku\tavailable\n").is_err());
+        assert!(parse_inventory_planning(b"sku\tavailable\nDUP\t1\nDUP\t1\n").is_err());
+        assert!(parse_inventory_planning(&[0xff, 0xfe, 0xfd]).is_err());
+        assert!(parse_sales_and_traffic(br#"{"salesAndTrafficByDate":[]}"#, None, None).is_err());
+        let duplicate_sales = br#"{"salesAndTrafficByAsin":[
+          {"childAsin":"B0DUPLICATE","salesByAsin":{"orderedProductSales":{"amount":"1.00","currencyCode":"EUR"},"unitsOrdered":1}},
+          {"childAsin":"B0DUPLICATE","salesByAsin":{"orderedProductSales":{"amount":"1.00","currencyCode":"EUR"},"unitsOrdered":1}}
+        ]}"#;
+        assert!(parse_sales_and_traffic(duplicate_sales, None, None).is_err());
+    }
+
+    #[test]
+    fn missing_optional_traffic_is_not_silently_normalized_to_zero() {
+        let fixture = br#"{
+          "salesAndTrafficByAsin": [{
+            "childAsin":"B0OPTIONAL1",
+            "salesByAsin":{"orderedProductSales":{"amount":"10.00","currencyCode":"EUR"},"unitsOrdered":1},
+            "unknownFutureField":"accepted"
+          }]
+        }"#;
+        let parsed = parse_sales_and_traffic(fixture, None, None).unwrap();
+        assert!(parsed.summary["sessions"].is_null());
+        assert!(parsed.summary["conversion_rate"].is_null());
+        assert!(!parsed
+            .metrics
+            .iter()
+            .any(|metric| matches!(metric.metric_name.as_str(), "sessions" | "conversion_rate")));
+    }
+
+    #[test]
     fn missing_inventory_required_field_is_visible() {
         assert!(parse_inventory_planning(b"sku\nSKU-1\n").is_err());
     }
@@ -1787,19 +1974,21 @@ mod tests {
     }
 
     #[test]
-    fn ai_payload_removes_unallowlisted_fields() {
-        let payload = allowlisted_ai_payload(&json!({
+    fn analysis_export_removes_unallowlisted_and_pii_fields() {
+        let payload = pii_safe_analysis_export(&json!({
             "facts": [
                 { "metric": "sessions", "value": "10" },
                 { "metric": "buyer_email", "value": "private@example.test" }
-            ]
+            ],
+            "options": [{
+                "action": "Review aggregate trend",
+                "buyer_email": "private@example.test",
+                "evidence_refs": ["snapshot:synthetic:metric:1"]
+            }]
         }));
         assert_eq!(payload["facts"].as_array().unwrap().len(), 1);
-    }
-
-    #[test]
-    fn invalid_provider_result_is_rejected() {
-        assert!(validate_provider_result(&json!({ "options": [] })).is_err());
+        assert!(payload["options"][0].get("buyer_email").is_none());
+        assert!(!payload.to_string().contains("private@example.test"));
     }
 
     #[sqlx::test(migrations = "../db/migrations")]
@@ -1826,7 +2015,7 @@ mod tests {
         assert_eq!(first.id, duplicate.id);
 
         for _ in 0..5 {
-            MarketplaceWorker::new(Arc::new(FixtureAmazonClient), None)
+            MarketplaceWorker::new(Arc::new(FixtureAmazonClient))
                 .cycle(&pool)
                 .await
                 .unwrap();
@@ -1839,8 +2028,8 @@ mod tests {
         assert!(detail.document.is_some());
         assert!(detail.snapshot.is_some());
         assert_eq!(
-            detail.analyses[0].result["provider_status"]["status"],
-            "disabled"
+            detail.analyses[0].result["analysis_engine"]["external_ai"],
+            false
         );
         let snapshots: i64 =
             sqlx::query_scalar("SELECT count(*) FROM amazon_metric_snapshots WHERE run_id = $1")
@@ -1852,11 +2041,251 @@ mod tests {
     }
 
     #[sqlx::test(migrations = "../db/migrations")]
+    async fn parser_versions_and_period_keys_are_required_for_snapshot_comparison(
+        pool: sqlx::PgPool,
+    ) {
+        let connection = db::marketplace::create_demo_connection(&pool)
+            .await
+            .unwrap();
+        let mut snapshots = Vec::new();
+        for (index, parser_version, key) in [
+            (1, "parser-v1", "same-period"),
+            (2, "parser-v2", "different-period"),
+            (3, "parser-v2", "same-period"),
+        ] {
+            let run_id: uuid::Uuid = sqlx::query_scalar(
+                "INSERT INTO amazon_report_runs (
+                     connection_id, marketplace_id, report_type, trigger_source,
+                     idempotency_key, status, completed_at
+                 ) VALUES ($1, 'A1PA6795UKMFR9', $2, 'manual', $3, 'succeeded', now())
+                 RETURNING id",
+            )
+            .bind(connection.id)
+            .bind(marketplace::SALES_AND_TRAFFIC)
+            .bind(format!("comparison-{index}"))
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+            let snapshot: MetricSnapshot = sqlx::query_as(
+                "INSERT INTO amazon_metric_snapshots (
+                     run_id, connection_id, marketplace_id, report_type, parser_version,
+                     granularity, comparability_key, summary, created_at
+                 ) VALUES ($1, $2, 'A1PA6795UKMFR9', $3, $4, 'daily_asin', $5, '{}',
+                     now() + ($6::text || ' seconds')::interval)
+                 RETURNING id, run_id, connection_id, marketplace_id, report_type,
+                     parser_version, period_start, period_end, granularity,
+                     comparability_key, summary, created_at",
+            )
+            .bind(run_id)
+            .bind(connection.id)
+            .bind(marketplace::SALES_AND_TRAFFIC)
+            .bind(parser_version)
+            .bind(key)
+            .bind(index)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+            snapshots.push(snapshot);
+        }
+        let previous = db::marketplace::previous_compatible_snapshot(&pool, &snapshots[2])
+            .await
+            .unwrap();
+        assert!(
+            previous.is_none(),
+            "neither another parser version nor another period key is compatible"
+        );
+    }
+
+    #[sqlx::test(migrations = "../db/migrations")]
+    async fn compatible_snapshots_produce_an_evidence_backed_delta(pool: sqlx::PgPool) {
+        db::modules::set_enabled(&pool, db::modules::MARKETPLACE_INTELLIGENCE, true)
+            .await
+            .unwrap();
+        let connection = db::marketplace::create_demo_connection(&pool)
+            .await
+            .unwrap();
+        let worker = MarketplaceWorker::new(Arc::new(FixtureAmazonClient));
+        let periods = [
+            (
+                Utc.with_ymd_and_hms(2026, 7, 1, 0, 0, 0).unwrap(),
+                Utc.with_ymd_and_hms(2026, 7, 7, 23, 59, 59).unwrap(),
+            ),
+            (
+                Utc.with_ymd_and_hms(2026, 7, 8, 0, 0, 0).unwrap(),
+                Utc.with_ymd_and_hms(2026, 7, 14, 23, 59, 59).unwrap(),
+            ),
+        ];
+        let mut run_ids = Vec::new();
+        for (start, end) in periods {
+            let run = db::marketplace::create_manual_run(
+                &pool,
+                connection.id,
+                &db::marketplace::CreateAmazonReportRunInput {
+                    marketplace_id: "A1PA6795UKMFR9".to_owned(),
+                    report_type: marketplace::SALES_AND_TRAFFIC.to_owned(),
+                    data_start_time: Some(start),
+                    data_end_time: Some(end),
+                    report_options: json!({}),
+                },
+            )
+            .await
+            .unwrap();
+            run_ids.push(run.id);
+            for _ in 0..5 {
+                worker.cycle(&pool).await.unwrap();
+            }
+        }
+        let second = db::marketplace::get_run_detail(&pool, run_ids[1])
+            .await
+            .unwrap()
+            .unwrap();
+        let changes = second.analyses[0].result["changes_since_last_run"]
+            .as_array()
+            .unwrap();
+        assert!(!changes.is_empty());
+        assert!(changes.iter().all(|change| change["evidence_refs"]
+            .as_array()
+            .is_some_and(|refs| refs.len() == 2)));
+    }
+
+    #[sqlx::test(migrations = "../db/migrations")]
+    async fn compressed_download_keeps_transport_bytes_and_decoded_parser_bytes(
+        pool: sqlx::PgPool,
+    ) {
+        db::modules::set_enabled(&pool, db::modules::MARKETPLACE_INTELLIGENCE, true)
+            .await
+            .unwrap();
+        let connection = db::marketplace::upsert_connection(
+            &pool,
+            &db::marketplace::AmazonConnectionInput {
+                seller_id: "DEMO-GZIP".to_owned(),
+                region: "eu".to_owned(),
+                secret_ref: "fixture:gzip".to_owned(),
+                granted_roles: vec!["Brand Analytics".to_owned()],
+                marketplace_ids: vec!["A1PA6795UKMFR9".to_owned()],
+                mode: "fixture".to_owned(),
+                enabled: true,
+            },
+        )
+        .await
+        .unwrap();
+        let run = db::marketplace::create_manual_run(
+            &pool,
+            connection.id,
+            &db::marketplace::CreateAmazonReportRunInput {
+                marketplace_id: "A1PA6795UKMFR9".to_owned(),
+                report_type: marketplace::SALES_AND_TRAFFIC.to_owned(),
+                data_start_time: None,
+                data_end_time: None,
+                report_options: json!({}),
+            },
+        )
+        .await
+        .unwrap();
+        let worker = MarketplaceWorker::new(Arc::new(FixtureAmazonClient));
+        for _ in 0..5 {
+            worker.cycle(&pool).await.unwrap();
+        }
+        let (raw, decoded, raw_hash, decoded_hash): (Vec<u8>, Vec<u8>, String, String) =
+            sqlx::query_as(
+                "SELECT raw_content, decoded_content, sha256, decoded_sha256
+                 FROM amazon_report_documents WHERE run_id = $1",
+            )
+            .bind(run.id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(&raw[..2], &[0x1f, 0x8b]);
+        assert_eq!(decoded, SALES_FIXTURE.as_bytes());
+        assert_eq!(raw_hash, sha256(&raw));
+        assert_eq!(decoded_hash, sha256(&decoded));
+    }
+
+    #[sqlx::test(migrations = "../db/migrations")]
+    async fn unknown_fixture_report_is_raw_archived_but_never_marked_analysed(pool: sqlx::PgPool) {
+        db::modules::set_enabled(&pool, db::modules::MARKETPLACE_INTELLIGENCE, true)
+            .await
+            .unwrap();
+        let connection = db::marketplace::create_demo_connection(&pool)
+            .await
+            .unwrap();
+        let run = db::marketplace::create_manual_run(
+            &pool,
+            connection.id,
+            &db::marketplace::CreateAmazonReportRunInput {
+                marketplace_id: "A1PA6795UKMFR9".to_owned(),
+                report_type: "GET_SYNTHETIC_UNKNOWN_REPORT".to_owned(),
+                data_start_time: None,
+                data_end_time: None,
+                report_options: json!({}),
+            },
+        )
+        .await
+        .unwrap();
+        let worker = MarketplaceWorker::new(Arc::new(FixtureAmazonClient));
+        for _ in 0..4 {
+            worker.cycle(&pool).await.unwrap();
+        }
+        let detail = db::marketplace::get_run_detail(&pool, run.id)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(detail.run.status, "archived");
+        assert_eq!(detail.document.unwrap().import_status, "unsupported");
+        assert!(detail.snapshot.is_none());
+        assert!(detail.analyses.is_empty());
+    }
+
+    #[sqlx::test(migrations = "../db/migrations")]
+    async fn disabled_module_stops_due_jobs_and_late_schedule_runs_once_after_enable(
+        pool: sqlx::PgPool,
+    ) {
+        let connection = db::marketplace::create_demo_connection(&pool)
+            .await
+            .unwrap();
+        let schedule = db::marketplace::upsert_schedule(
+            &pool,
+            connection.id,
+            &db::marketplace::AmazonReportScheduleInput {
+                marketplace_id: "A1PA6795UKMFR9".to_owned(),
+                report_type: marketplace::SALES_AND_TRAFFIC.to_owned(),
+                report_options: json!({}),
+                interval_seconds: 900,
+                enabled: true,
+            },
+        )
+        .await
+        .unwrap();
+        sqlx::query("UPDATE amazon_report_schedules SET next_run_at = now() - interval '1 hour' WHERE id = $1")
+            .bind(schedule.id)
+            .execute(&pool)
+            .await
+            .unwrap();
+        let worker = MarketplaceWorker::new(Arc::new(FixtureAmazonClient));
+        worker.cycle(&pool).await.unwrap();
+        let disabled_count: i64 = sqlx::query_scalar("SELECT count(*) FROM amazon_report_runs")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(disabled_count, 0);
+        db::modules::set_enabled(&pool, db::modules::MARKETPLACE_INTELLIGENCE, true)
+            .await
+            .unwrap();
+        worker.cycle(&pool).await.unwrap();
+        worker.cycle(&pool).await.unwrap();
+        let enabled_count: i64 = sqlx::query_scalar("SELECT count(*) FROM amazon_report_runs")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(enabled_count, 1);
+    }
+
+    #[sqlx::test(migrations = "../db/migrations")]
     async fn fixture_terminal_and_retry_states_preserve_raw_data(pool: sqlx::PgPool) {
         db::modules::set_enabled(&pool, db::modules::MARKETPLACE_INTELLIGENCE, true)
             .await
             .unwrap();
-        let worker = MarketplaceWorker::new(Arc::new(FixtureAmazonClient), None);
+        let worker = MarketplaceWorker::new(Arc::new(FixtureAmazonClient));
         for (suffix, expected_status) in [("cancelled", "cancelled"), ("fatal", "fatal")] {
             let connection = db::marketplace::upsert_connection(
                 &pool,
@@ -1952,7 +2381,7 @@ mod tests {
         )
         .await
         .unwrap();
-        let worker = MarketplaceWorker::new(Arc::new(FixtureAmazonClient), None);
+        let worker = MarketplaceWorker::new(Arc::new(FixtureAmazonClient));
         for _ in 0..5 {
             worker.cycle(&pool).await.unwrap();
         }
@@ -1973,7 +2402,7 @@ mod tests {
         db::modules::set_enabled(&pool, db::modules::MARKETPLACE_INTELLIGENCE, true)
             .await
             .unwrap();
-        let worker = MarketplaceWorker::new(Arc::new(FixtureAmazonClient), None);
+        let worker = MarketplaceWorker::new(Arc::new(FixtureAmazonClient));
         for (suffix, expected_status, archive_expected) in [
             ("expired", "downloading", false),
             ("broken", "failed", true),

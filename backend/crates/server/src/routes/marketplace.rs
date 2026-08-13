@@ -6,6 +6,7 @@ use axum::routing::{get, post, put};
 use axum::{Json, Router};
 use chrono::{DateTime, Utc};
 use serde::Deserialize;
+use serde_json::json;
 use uuid::Uuid;
 
 use crate::auth::AuthUser;
@@ -27,17 +28,17 @@ pub fn router() -> Router<AppState> {
         )
         .route("/runs/{run_id}", get(run_detail))
         .route("/runs/{run_id}/raw", get(raw_document))
+        .route("/analyses/{analysis_id}/export", get(export_analysis))
 }
 
 async fn require_marketplace(
     state: &AppState,
     user: &db::users::User,
-    action: bool,
+    _action: bool,
 ) -> Result<(), StatusCode> {
-    if action
-        && !db::modules::is_enabled(&state.pool, db::modules::MARKETPLACE_INTELLIGENCE)
-            .await
-            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+    if !db::modules::is_enabled(&state.pool, db::modules::MARKETPLACE_INTELLIGENCE)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
     {
         return Err(StatusCode::CONFLICT);
     }
@@ -243,5 +244,36 @@ async fn raw_document(
             "attachment; filename=amazon-report.raw",
         )
         .body(Body::from(document.content))
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)
+}
+
+async fn export_analysis(
+    State(state): State<AppState>,
+    AuthUser(user): AuthUser,
+    Path(analysis_id): Path<Uuid>,
+) -> Result<Response, StatusCode> {
+    require_marketplace(&state, &user, false).await?;
+    let analysis = db::marketplace::analysis_result(&state.pool, analysis_id)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+        .ok_or(StatusCode::NOT_FOUND)?;
+    let export = crate::marketplace::pii_safe_analysis_export(&analysis.result);
+    let content = serde_json::to_vec_pretty(&json!({
+        "analysis_id": analysis.id,
+        "strategy": analysis.strategy,
+        "ruleset_version": analysis.prompt_version,
+        "payload_sha256": analysis.payload_sha256,
+        "created_at": analysis.created_at,
+        "result": export,
+    }))
+    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    Response::builder()
+        .status(StatusCode::OK)
+        .header(header::CONTENT_TYPE, "application/json")
+        .header(
+            header::CONTENT_DISPOSITION,
+            format!("attachment; filename=marketplace-analysis-{analysis_id}.json"),
+        )
+        .body(Body::from(content))
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)
 }

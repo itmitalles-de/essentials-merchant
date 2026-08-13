@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { api, downloadMarketplaceRawReport } from "../api";
+import { api, downloadMarketplaceAnalysis, downloadMarketplaceRawReport } from "../api";
 import { useAuth } from "../contexts/AuthContext";
 import type {
   AmazonConnectionSummary,
@@ -60,7 +60,7 @@ export function MarketplaceIntelligence() {
         report_type: reportType,
         data_start_time: start.toISOString(),
         data_end_time: now.toISOString(),
-        report_options: {},
+        report_options: reportType === salesReport ? { dateGranularity: "DAY", asinGranularity: "CHILD" } : {},
       });
       setMessage(`Abruf ${run.status === "polling" ? "bei Amazon angefordert" : "eingeplant"}.`);
       await reload();
@@ -78,7 +78,7 @@ export function MarketplaceIntelligence() {
       await api.put(`/marketplace/connections/${connection.id}/schedules`, {
         marketplace_id: marketplaceId,
         report_type: salesReport,
-        report_options: {},
+        report_options: { dateGranularity: "DAY", asinGranularity: "CHILD" },
         interval_seconds: 86400,
         enabled: true,
       });
@@ -172,7 +172,7 @@ export function MarketplaceIntelligence() {
       </section>
 
       {selected && <RunDetail detail={selected} administrator={role === "administrator"} />}
-      {(overview?.analyses ?? []).map((analysis) => <AnalysisCard key={analysis.id} result={analysis.result} title={`Analyse · ${formatDate(analysis.created_at)}`} />)}
+      {(overview?.analyses ?? []).map((analysis) => <AnalysisCard key={analysis.id} id={analysis.id} result={analysis.result} title={`Analyse · ${formatDate(analysis.created_at)}`} />)}
     </div>
   );
 }
@@ -194,17 +194,22 @@ function RunDetail({ detail, administrator }: { detail: MarketplaceRunDetail; ad
     {detail.snapshot && <p>Snapshot: {detail.snapshot.granularity} · vergleichbar als <code>{detail.snapshot.comparability_key}</code></p>}
     <details><summary>Zustandsverlauf</summary><ul>{detail.events.map((event) => <li key={event.id}>{formatDate(event.created_at)} · <strong>{event.status}</strong> · {event.message}</li>)}</ul></details>
     {detail.metrics.length > 0 && <details><summary>Normalisierte Kennzahlen</summary><table><thead><tr><th>Kennzahl</th><th>Dimension</th><th>Wert</th></tr></thead><tbody>{detail.metrics.map((metric) => <tr key={metric.id}><td>{metric.metric_name}</td><td>{metric.dimension_type} {metric.dimension_key}</td><td>{metric.value_numeric} {metric.unit} {metric.currency_code}</td></tr>)}</tbody></table></details>}
-    {detail.analyses.map((analysis) => <AnalysisCard key={analysis.id} title="Delta-Analyse" result={analysis.result} />)}
+    {detail.analyses.map((analysis) => <AnalysisCard key={analysis.id} id={analysis.id} title="Delta-Analyse" result={analysis.result} />)}
   </section>;
 }
 
-function AnalysisCard({ result, title }: { result: Record<string, unknown>; title: string }) {
+function AnalysisCard({ id, result, title }: { id: string; result: Record<string, unknown>; title: string }) {
   const options = Array.isArray(result.options) ? result.options as Array<Record<string, unknown>> : [];
   return <section className="card">
     <h2>{title}</h2>
     <p>{String(result.overall_trend ?? "Noch keine Trendbewertung.")}</p>
-    {options.length > 0 && <><h3>Mögliche Handlungsoptionen</h3><ul>{options.map((option, index) => <li key={index}><strong>{String(option.action)}</strong> · Wirkung: {String(option.expected_effect)} · Aufwand: {String(option.effort)} · Unsicherheit: {String(option.uncertainty)}</li>)}</ul></>}
+    {options.length > 0 && <><h3>Mögliche Handlungsoptionen</h3><ul>{options.map((option, index) => <li key={index}>
+      <strong>{String(option.action)}</strong> · Wirkung: {String(option.expected_effect)} · Aufwand: {String(option.effort)} · Unsicherheit: {String(option.uncertainty)}
+      {Array.isArray(option.risks) && <div>Risiken: {(option.risks as unknown[]).join(" ")}</div>}
+      {Array.isArray(option.evidence_refs) && <div style={{ color: "var(--fg-muted)" }}>Evidenz: {(option.evidence_refs as unknown[]).join(", ")}</div>}
+    </li>)}</ul></>}
     {Array.isArray(result.missing_data) && <p style={{ color: "var(--fg-muted)" }}>Fehlende Daten: {(result.missing_data as unknown[]).join(" ")}</p>}
-    <p style={{ color: "var(--warning)" }}>KI-Ausgaben und Analysen sind Empfehlungen. Merchant nimmt keine Preis-, Werbe-, Listing-, Bestands- oder Bestelländerungen vor.</p>
+    <button className="secondary" onClick={() => void downloadMarketplaceAnalysis(id)}>PII-minimierten Analyseexport laden</button>
+    <p style={{ color: "var(--warning)" }}>Regelanalysen sind Empfehlungen. Essentials+ Merchant nimmt keine Preis-, Werbe-, Listing-, Bestands- oder Bestelländerungen vor.</p>
   </section>;
 }

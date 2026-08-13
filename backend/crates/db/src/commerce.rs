@@ -20,6 +20,25 @@ pub struct OutboxEvent {
     pub created_at: DateTime<Utc>,
 }
 
+#[derive(Debug, Clone, Copy)]
+pub struct OutboxPolicy {
+    pub lease_seconds: i32,
+    pub retry_base_seconds: i32,
+    pub retry_max_seconds: i32,
+    pub max_attempts: i32,
+}
+
+impl Default for OutboxPolicy {
+    fn default() -> Self {
+        Self {
+            lease_seconds: 300,
+            retry_base_seconds: 2,
+            retry_max_seconds: 3_600,
+            max_attempts: 20,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct VendureCustomer {
     pub id: String,
@@ -82,7 +101,7 @@ pub struct ImportResult {
 pub enum ImportError {
     #[error("Vendure order {0} contains no lines")]
     EmptyOrder(String),
-    #[error("unknown Merchant SKU: {0}")]
+    #[error("unknown Essentials+ Merchant SKU: {0}")]
     UnknownSku(String),
     #[error("idempotency record exists without its imported order")]
     InconsistentInbox,
@@ -91,12 +110,22 @@ pub enum ImportError {
 }
 
 pub async fn claim_outbox(pool: &PgPool, limit: i64) -> Result<Vec<OutboxEvent>, sqlx::Error> {
+    claim_outbox_with_policy(pool, limit, OutboxPolicy::default()).await
+}
+
+pub async fn claim_outbox_with_policy(
+    pool: &PgPool,
+    limit: i64,
+    policy: OutboxPolicy,
+) -> Result<Vec<OutboxEvent>, sqlx::Error> {
     sqlx::query(
         "UPDATE integration_outbox
          SET status = 'pending', locked_at = NULL,
              last_error = COALESCE(last_error, 'worker lease expired')
-         WHERE status = 'processing' AND locked_at < now() - interval '5 minutes'",
+         WHERE status = 'processing'
+           AND locked_at < now() - make_interval(secs => $1)",
     )
+    .bind(f64::from(policy.lease_seconds.clamp(1, 86_400)))
     .execute(pool)
     .await?;
 
@@ -133,6 +162,15 @@ pub async fn acknowledge_outbox(pool: &PgPool, id: Uuid) -> Result<bool, sqlx::E
 }
 
 pub async fn retry_outbox(pool: &PgPool, id: Uuid, error: &str) -> Result<bool, sqlx::Error> {
+    retry_outbox_with_policy(pool, id, error, OutboxPolicy::default()).await
+}
+
+pub async fn retry_outbox_with_policy(
+    pool: &PgPool,
+    id: Uuid,
+    error: &str,
+    policy: OutboxPolicy,
+) -> Result<bool, sqlx::Error> {
     let attempts = sqlx::query_scalar::<_, i32>(
         "SELECT attempts FROM integration_outbox WHERE id = $1 AND status = 'processing'",
     )
@@ -142,8 +180,18 @@ pub async fn retry_outbox(pool: &PgPool, id: Uuid, error: &str) -> Result<bool, 
     let Some(attempts) = attempts else {
         return Ok(false);
     };
-    let delay_seconds = 2_i32.pow(attempts.clamp(1, 10) as u32).min(3600);
-    let status = if attempts >= 20 { "dead" } else { "pending" };
+    let exponent = attempts.saturating_sub(1).clamp(0, 20) as u32;
+    let delay_seconds = policy
+        .retry_base_seconds
+        .clamp(1, 3_600)
+        .saturating_mul(2_i32.saturating_pow(exponent))
+        .min(policy.retry_max_seconds.clamp(1, 86_400));
+    let status = if attempts >= policy.max_attempts.clamp(1, 100) {
+        "dead"
+    } else {
+        "pending"
+    };
+    let safe_error = sanitize_integration_error(error);
     let result = sqlx::query(
         "UPDATE integration_outbox
          SET status = $2, available_at = now() + make_interval(secs => $3),
@@ -153,7 +201,500 @@ pub async fn retry_outbox(pool: &PgPool, id: Uuid, error: &str) -> Result<bool, 
     .bind(id)
     .bind(status)
     .bind(f64::from(delay_seconds))
-    .bind(error)
+    .bind(safe_error)
+    .execute(pool)
+    .await?;
+    Ok(result.rows_affected() == 1)
+}
+
+pub fn sanitize_integration_error(error: &str) -> String {
+    let normalized = error
+        .chars()
+        .map(|character| {
+            if character.is_control() {
+                ' '
+            } else {
+                character
+            }
+        })
+        .collect::<String>();
+    normalized.chars().take(512).collect()
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct QueueSummary {
+    pub pending: i64,
+    pub processing: i64,
+    pub delivered: i64,
+    pub dead: i64,
+    pub oldest_open_at: Option<DateTime<Utc>>,
+    pub last_success_at: Option<DateTime<Utc>>,
+    pub last_error: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct InboxSummary {
+    pub completed: i64,
+    pub failed: i64,
+    pub last_processed_at: Option<DateTime<Utc>>,
+}
+
+#[derive(Debug, Clone, Serialize, sqlx::FromRow)]
+pub struct DiagnosticEvent {
+    pub source: String,
+    pub event_id: String,
+    pub event_type: String,
+    pub status: String,
+    pub attempts: i32,
+    pub available_at: Option<DateTime<Utc>>,
+    pub locked_at: Option<DateTime<Utc>>,
+    pub last_error: Option<String>,
+    pub created_at: DateTime<Utc>,
+    pub delivered_at: Option<DateTime<Utc>>,
+}
+
+#[derive(Debug, Clone, Serialize, sqlx::FromRow)]
+pub struct MappingSummary {
+    pub entity_type: String,
+    pub count: i64,
+    pub last_updated_at: Option<DateTime<Utc>>,
+}
+
+#[derive(Debug, Clone, Serialize, sqlx::FromRow)]
+pub struct AuditEntry {
+    pub id: Uuid,
+    pub actor_user_id: Uuid,
+    pub action: String,
+    pub target_type: String,
+    pub target_id: String,
+    pub idempotency_key: String,
+    pub details: Value,
+    pub created_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct IntegrationDiagnostics {
+    pub core_outbox: QueueSummary,
+    pub core_inbox: InboxSummary,
+    pub vendure_outbox: QueueSummary,
+    pub events: Vec<DiagnosticEvent>,
+    pub mappings: Vec<MappingSummary>,
+    pub audit: Vec<AuditEntry>,
+    pub core_database_ready: bool,
+    pub vendure_health: String,
+    pub vendure_observed_at: Option<DateTime<Utc>>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct RemoteDiagnosticEvent {
+    pub event_id: String,
+    pub event_type: String,
+    pub status: String,
+    pub attempts: i32,
+    pub available_at: Option<DateTime<Utc>>,
+    pub locked_at: Option<DateTime<Utc>>,
+    pub last_error: Option<String>,
+    pub created_at: DateTime<Utc>,
+    pub delivered_at: Option<DateTime<Utc>>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct RemoteDiagnosticsReport {
+    pub health_status: String,
+    pub last_success_at: Option<DateTime<Utc>>,
+    pub last_error: Option<String>,
+    pub observed_at: DateTime<Utc>,
+    #[serde(default)]
+    pub events: Vec<RemoteDiagnosticEvent>,
+}
+
+#[derive(Debug, Clone, Serialize, sqlx::FromRow)]
+pub struct IntegrationAdminCommand {
+    pub id: Uuid,
+    pub provider: String,
+    pub action: String,
+    pub target_id: String,
+    pub attempts: i32,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct RequeueResult {
+    pub accepted: bool,
+    pub duplicate: bool,
+    pub command_id: Option<Uuid>,
+}
+
+#[derive(sqlx::FromRow)]
+struct QueueCountsRow {
+    pending: i64,
+    processing: i64,
+    delivered: i64,
+    dead: i64,
+    oldest_open_at: Option<DateTime<Utc>>,
+    last_success_at: Option<DateTime<Utc>>,
+}
+
+#[derive(sqlx::FromRow)]
+struct RemoteStatusRow {
+    health_status: String,
+    last_success_at: Option<DateTime<Utc>>,
+    last_error: Option<String>,
+    observed_at: DateTime<Utc>,
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum RequeueError {
+    #[error("event not found")]
+    NotFound,
+    #[error("only dead events can be manually requeued")]
+    NotDead,
+    #[error("unsupported integration source")]
+    UnsupportedSource,
+    #[error(transparent)]
+    Sqlx(#[from] sqlx::Error),
+}
+
+pub async fn integration_diagnostics(pool: &PgPool) -> Result<IntegrationDiagnostics, sqlx::Error> {
+    let core_counts = sqlx::query_as::<_, QueueCountsRow>(
+        "SELECT
+                count(*) FILTER (WHERE status = 'pending') AS pending,
+                count(*) FILTER (WHERE status = 'processing') AS processing,
+                count(*) FILTER (WHERE status = 'delivered') AS delivered,
+                count(*) FILTER (WHERE status = 'dead') AS dead,
+                min(created_at) FILTER (WHERE status IN ('pending', 'processing')) AS oldest_open_at,
+                max(delivered_at) AS last_success_at
+             FROM integration_outbox",
+    )
+    .fetch_one(pool)
+    .await?;
+    let core_last_error: Option<String> = sqlx::query_scalar::<_, String>(
+        "SELECT last_error FROM integration_outbox
+         WHERE last_error IS NOT NULL ORDER BY created_at DESC LIMIT 1",
+    )
+    .fetch_optional(pool)
+    .await?
+    .map(|error| sanitize_integration_error(&error));
+
+    let inbox: (i64, i64, Option<DateTime<Utc>>) = sqlx::query_as(
+        "SELECT count(*) FILTER (WHERE status = 'completed'),
+                count(*) FILTER (WHERE status = 'failed'), max(processed_at)
+         FROM integration_inbox",
+    )
+    .fetch_one(pool)
+    .await?;
+
+    let remote_counts = sqlx::query_as::<_, QueueCountsRow>(
+        "SELECT
+                count(*) FILTER (WHERE status = 'pending') AS pending,
+                count(*) FILTER (WHERE status = 'processing') AS processing,
+                count(*) FILTER (WHERE status = 'delivered') AS delivered,
+                count(*) FILTER (WHERE status = 'dead') AS dead,
+                min(created_at) FILTER (WHERE status IN ('pending', 'processing')) AS oldest_open_at,
+                max(delivered_at) AS last_success_at
+             FROM integration_remote_events WHERE provider = 'vendure'",
+    )
+    .fetch_one(pool)
+    .await?;
+    let remote_status = sqlx::query_as::<_, RemoteStatusRow>(
+        "SELECT health_status, last_success_at, last_error, observed_at
+             FROM integration_remote_status WHERE provider = 'vendure'",
+    )
+    .fetch_optional(pool)
+    .await?;
+
+    let mut events = sqlx::query_as::<_, DiagnosticEvent>(
+        "SELECT 'core'::text AS source, id::text AS event_id, event_type, status, attempts,
+                available_at, locked_at, last_error, created_at, delivered_at
+         FROM integration_outbox ORDER BY created_at DESC LIMIT 50",
+    )
+    .fetch_all(pool)
+    .await?;
+    events.extend(
+        sqlx::query_as::<_, DiagnosticEvent>(
+            "SELECT provider AS source, external_event_id AS event_id, event_type, status,
+                    attempts, available_at, locked_at, last_error, created_at, delivered_at
+             FROM integration_remote_events WHERE provider = 'vendure'
+             ORDER BY created_at DESC LIMIT 50",
+        )
+        .fetch_all(pool)
+        .await?,
+    );
+    for event in &mut events {
+        event.last_error = event.last_error.as_deref().map(sanitize_integration_error);
+    }
+    events.sort_by_key(|event| std::cmp::Reverse(event.created_at));
+    events.truncate(75);
+
+    let mappings = sqlx::query_as::<_, MappingSummary>(
+        "SELECT entity_type, count(*) AS count, max(updated_at) AS last_updated_at
+         FROM external_entity_mappings WHERE provider = 'vendure'
+         GROUP BY entity_type ORDER BY entity_type",
+    )
+    .fetch_all(pool)
+    .await?;
+    let audit = sqlx::query_as::<_, AuditEntry>(
+        "SELECT id, actor_user_id, action, target_type, target_id, idempotency_key,
+                details, created_at
+         FROM administrative_audit_log ORDER BY created_at DESC LIMIT 50",
+    )
+    .fetch_all(pool)
+    .await?;
+
+    Ok(IntegrationDiagnostics {
+        core_outbox: QueueSummary {
+            pending: core_counts.pending,
+            processing: core_counts.processing,
+            delivered: core_counts.delivered,
+            dead: core_counts.dead,
+            oldest_open_at: core_counts.oldest_open_at,
+            last_success_at: core_counts.last_success_at,
+            last_error: core_last_error,
+        },
+        core_inbox: InboxSummary {
+            completed: inbox.0,
+            failed: inbox.1,
+            last_processed_at: inbox.2,
+        },
+        vendure_outbox: QueueSummary {
+            pending: remote_counts.pending,
+            processing: remote_counts.processing,
+            delivered: remote_counts.delivered,
+            dead: remote_counts.dead,
+            oldest_open_at: remote_counts.oldest_open_at,
+            last_success_at: remote_status
+                .as_ref()
+                .and_then(|status| status.last_success_at)
+                .or(remote_counts.last_success_at),
+            last_error: remote_status
+                .as_ref()
+                .and_then(|status| status.last_error.as_deref())
+                .map(sanitize_integration_error),
+        },
+        events,
+        mappings,
+        audit,
+        core_database_ready: true,
+        vendure_health: remote_status
+            .as_ref()
+            .map(|status| status.health_status.clone())
+            .unwrap_or_else(|| "unknown".into()),
+        vendure_observed_at: remote_status.map(|status| status.observed_at),
+    })
+}
+
+pub async fn record_remote_diagnostics(
+    pool: &PgPool,
+    provider: &str,
+    report: &RemoteDiagnosticsReport,
+) -> Result<(), sqlx::Error> {
+    let mut tx = pool.begin().await?;
+    let health = match report.health_status.as_str() {
+        "healthy" | "degraded" | "failed" => report.health_status.as_str(),
+        _ => "degraded",
+    };
+    sqlx::query(
+        "INSERT INTO integration_remote_status
+             (provider, health_status, last_success_at, last_error, observed_at)
+         VALUES ($1, $2, $3, $4, $5)
+         ON CONFLICT (provider) DO UPDATE SET
+             health_status = EXCLUDED.health_status,
+             last_success_at = EXCLUDED.last_success_at,
+             last_error = EXCLUDED.last_error,
+             observed_at = EXCLUDED.observed_at,
+             updated_at = now()",
+    )
+    .bind(provider)
+    .bind(health)
+    .bind(report.last_success_at)
+    .bind(report.last_error.as_deref().map(sanitize_integration_error))
+    .bind(report.observed_at)
+    .execute(&mut *tx)
+    .await?;
+    for event in report.events.iter().take(100) {
+        sqlx::query(
+            "INSERT INTO integration_remote_events
+                 (provider, external_event_id, event_type, status, attempts, available_at,
+                  locked_at, last_error, created_at, delivered_at, observed_at)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+             ON CONFLICT (provider, external_event_id) DO UPDATE SET
+                 event_type = EXCLUDED.event_type, status = EXCLUDED.status,
+                 attempts = EXCLUDED.attempts, available_at = EXCLUDED.available_at,
+                 locked_at = EXCLUDED.locked_at, last_error = EXCLUDED.last_error,
+                 delivered_at = EXCLUDED.delivered_at, observed_at = EXCLUDED.observed_at",
+        )
+        .bind(provider)
+        .bind(&event.event_id)
+        .bind(&event.event_type)
+        .bind(&event.status)
+        .bind(event.attempts)
+        .bind(event.available_at)
+        .bind(event.locked_at)
+        .bind(event.last_error.as_deref().map(sanitize_integration_error))
+        .bind(event.created_at)
+        .bind(event.delivered_at)
+        .bind(report.observed_at)
+        .execute(&mut *tx)
+        .await?;
+    }
+    tx.commit().await
+}
+
+pub async fn manually_requeue(
+    pool: &PgPool,
+    actor_user_id: Uuid,
+    source: &str,
+    event_id: &str,
+    idempotency_key: &str,
+) -> Result<RequeueResult, RequeueError> {
+    if idempotency_key.trim().is_empty() || idempotency_key.len() > 128 {
+        return Err(RequeueError::UnsupportedSource);
+    }
+    let mut tx = pool.begin().await?;
+    let audit_id = sqlx::query_scalar::<_, Uuid>(
+        "INSERT INTO administrative_audit_log
+             (actor_user_id, action, target_type, target_id, idempotency_key, details)
+         VALUES ($1, 'integration.requeue', $2, $3, $4, '{\"outcome\":\"requested\"}'::jsonb)
+         ON CONFLICT (action, idempotency_key) DO NOTHING
+         RETURNING id",
+    )
+    .bind(actor_user_id)
+    .bind(format!("{source}.outbox"))
+    .bind(event_id)
+    .bind(idempotency_key)
+    .fetch_optional(&mut *tx)
+    .await?;
+    let Some(audit_id) = audit_id else {
+        tx.rollback().await?;
+        return Ok(RequeueResult {
+            accepted: true,
+            duplicate: true,
+            command_id: None,
+        });
+    };
+
+    let result = match source {
+        "core" => {
+            let parsed_id = Uuid::parse_str(event_id).map_err(|_| RequeueError::NotFound)?;
+            let status = sqlx::query_scalar::<_, String>(
+                "SELECT status FROM integration_outbox WHERE id = $1 FOR UPDATE",
+            )
+            .bind(parsed_id)
+            .fetch_optional(&mut *tx)
+            .await?
+            .ok_or(RequeueError::NotFound)?;
+            if status != "dead" {
+                return Err(RequeueError::NotDead);
+            }
+            sqlx::query(
+                "UPDATE integration_outbox SET status = 'pending', available_at = now(),
+                    locked_at = NULL, last_error = 'manually requeued',
+                    requeue_count = requeue_count + 1, requeued_at = now()
+                 WHERE id = $1",
+            )
+            .bind(parsed_id)
+            .execute(&mut *tx)
+            .await?;
+            RequeueResult {
+                accepted: true,
+                duplicate: false,
+                command_id: None,
+            }
+        }
+        "vendure" => {
+            let status = sqlx::query_scalar::<_, String>(
+                "SELECT status FROM integration_remote_events
+                 WHERE provider = 'vendure' AND external_event_id = $1",
+            )
+            .bind(event_id)
+            .fetch_optional(&mut *tx)
+            .await?
+            .ok_or(RequeueError::NotFound)?;
+            if status != "dead" {
+                return Err(RequeueError::NotDead);
+            }
+            let command_id = sqlx::query_scalar::<_, Uuid>(
+                "INSERT INTO integration_admin_commands
+                     (provider, action, target_id, idempotency_key, actor_user_id)
+                 VALUES ('vendure', 'requeue', $1, $2, $3) RETURNING id",
+            )
+            .bind(event_id)
+            .bind(idempotency_key)
+            .bind(actor_user_id)
+            .fetch_one(&mut *tx)
+            .await?;
+            RequeueResult {
+                accepted: true,
+                duplicate: false,
+                command_id: Some(command_id),
+            }
+        }
+        _ => return Err(RequeueError::UnsupportedSource),
+    };
+    let audit_details = serde_json::json!({
+        "outcome": "accepted",
+        "command_id": result.command_id,
+    });
+    sqlx::query("UPDATE administrative_audit_log SET details = $2 WHERE id = $1")
+        .bind(audit_id)
+        .bind(audit_details)
+        .execute(&mut *tx)
+        .await?;
+    tx.commit().await?;
+    Ok(result)
+}
+
+pub async fn claim_admin_commands(
+    pool: &PgPool,
+    provider: &str,
+    limit: i64,
+    lease_seconds: i32,
+) -> Result<Vec<IntegrationAdminCommand>, sqlx::Error> {
+    sqlx::query(
+        "UPDATE integration_admin_commands SET status = 'pending', locked_at = NULL,
+             last_error = COALESCE(last_error, 'worker lease expired')
+         WHERE provider = $1 AND status = 'processing'
+           AND locked_at < now() - make_interval(secs => $2)",
+    )
+    .bind(provider)
+    .bind(f64::from(lease_seconds.clamp(1, 86_400)))
+    .execute(pool)
+    .await?;
+    sqlx::query_as::<_, IntegrationAdminCommand>(
+        "WITH selected AS (
+             SELECT id FROM integration_admin_commands
+             WHERE provider = $1 AND status = 'pending'
+             ORDER BY created_at FOR UPDATE SKIP LOCKED LIMIT $2
+         )
+         UPDATE integration_admin_commands command
+         SET status = 'processing', locked_at = now(), attempts = command.attempts + 1
+         FROM selected WHERE command.id = selected.id
+         RETURNING command.id, command.provider, command.action, command.target_id,
+                   command.attempts",
+    )
+    .bind(provider)
+    .bind(limit.clamp(1, 20))
+    .fetch_all(pool)
+    .await
+}
+
+pub async fn complete_admin_command(
+    pool: &PgPool,
+    command_id: Uuid,
+    error: Option<&str>,
+) -> Result<bool, sqlx::Error> {
+    let safe_error = error.map(sanitize_integration_error);
+    let result = sqlx::query(
+        "UPDATE integration_admin_commands SET status = $2, locked_at = NULL,
+                last_error = $3, completed_at = now()
+         WHERE id = $1 AND status = 'processing'",
+    )
+    .bind(command_id)
+    .bind(if error.is_some() {
+        "failed"
+    } else {
+        "completed"
+    })
+    .bind(safe_error)
     .execute(pool)
     .await?;
     Ok(result.rows_affected() == 1)
@@ -531,5 +1072,101 @@ mod tests {
         assert_eq!(state.0, "pending");
         assert_eq!(state.1, 1);
         assert_eq!(state.2, "connection refused");
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn active_lease_is_not_reclaimed_and_retry_reaches_dead_state(pool: PgPool) {
+        insert_article(&pool).await;
+        let policy = OutboxPolicy {
+            lease_seconds: 30,
+            retry_base_seconds: 1,
+            retry_max_seconds: 1,
+            max_attempts: 2,
+        };
+        let first = claim_outbox_with_policy(&pool, 1, policy)
+            .await
+            .unwrap()
+            .remove(0);
+        assert!(claim_outbox_with_policy(&pool, 1, policy)
+            .await
+            .unwrap()
+            .is_empty());
+        retry_outbox_with_policy(&pool, first.id, "temporary\nsynthetic failure", policy)
+            .await
+            .unwrap();
+        sqlx::query("UPDATE integration_outbox SET available_at = now() WHERE id = $1")
+            .bind(first.id)
+            .execute(&pool)
+            .await
+            .unwrap();
+        let second = claim_outbox_with_policy(&pool, 1, policy)
+            .await
+            .unwrap()
+            .remove(0);
+        retry_outbox_with_policy(&pool, second.id, "terminal synthetic failure", policy)
+            .await
+            .unwrap();
+        let state: (String, i32, Option<DateTime<Utc>>) = sqlx::query_as(
+            "SELECT status, attempts, locked_at FROM integration_outbox WHERE id = $1",
+        )
+        .bind(first.id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(state.0, "dead");
+        assert_eq!(state.1, 2);
+        assert!(state.2.is_none());
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn manual_requeue_is_idempotent_and_audited(pool: PgPool) {
+        let article_id = insert_article(&pool).await;
+        let event_id: Uuid = sqlx::query_scalar(
+            "UPDATE integration_outbox SET status = 'dead' WHERE aggregate_id = $1 RETURNING id",
+        )
+        .bind(article_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        let user_id: Uuid = sqlx::query_scalar(
+            "INSERT INTO users (username, password_hash) VALUES ('synthetic-admin', 'not-a-secret') RETURNING id",
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        let first = manually_requeue(
+            &pool,
+            user_id,
+            "core",
+            &event_id.to_string(),
+            "synthetic-requeue-1",
+        )
+        .await
+        .unwrap();
+        let duplicate = manually_requeue(
+            &pool,
+            user_id,
+            "core",
+            &event_id.to_string(),
+            "synthetic-requeue-1",
+        )
+        .await
+        .unwrap();
+        assert!(first.accepted && !first.duplicate);
+        assert!(duplicate.accepted && duplicate.duplicate);
+        let state: (String, i32) =
+            sqlx::query_as("SELECT status, requeue_count FROM integration_outbox WHERE id = $1")
+                .bind(event_id)
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert_eq!(state, ("pending".into(), 1));
+        let audit_count: i64 = sqlx::query_scalar(
+            "SELECT count(*) FROM administrative_audit_log WHERE idempotency_key = 'synthetic-requeue-1'",
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(audit_count, 1);
     }
 }

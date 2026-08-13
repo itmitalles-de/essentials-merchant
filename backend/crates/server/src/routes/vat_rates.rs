@@ -3,7 +3,7 @@ use axum::http::StatusCode;
 use axum::routing::get;
 use axum::{Json, Router};
 
-use crate::auth::AuthUser;
+use crate::auth::InvoicesUser;
 use crate::state::AppState;
 use db::vat_rates::VatRate;
 
@@ -13,7 +13,7 @@ pub fn router() -> Router<AppState> {
 
 async fn list(
     State(state): State<AppState>,
-    AuthUser(_user): AuthUser,
+    InvoicesUser(_user): InvoicesUser,
 ) -> Result<Json<Vec<VatRate>>, StatusCode> {
     db::vat_rates::list(&state.pool)
         .await

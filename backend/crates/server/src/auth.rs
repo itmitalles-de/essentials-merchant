@@ -98,3 +98,67 @@ where
         Ok(AuthUser(user))
     }
 }
+
+macro_rules! module_user {
+    ($name:ident, $module_id:literal) => {
+        pub struct $name(pub User);
+
+        impl<S> FromRequestParts<S> for $name
+        where
+            AppState: FromRef<S>,
+            S: Send + Sync,
+        {
+            type Rejection = (StatusCode, Json<serde_json::Value>);
+
+            async fn from_request_parts(
+                parts: &mut Parts,
+                state: &S,
+            ) -> Result<Self, Self::Rejection> {
+                let AuthUser(user) = AuthUser::from_request_parts(parts, state).await?;
+                let app_state = AppState::from_ref(state);
+                let enabled = db::modules::is_enabled(&app_state.pool, $module_id)
+                    .await
+                    .map_err(|_| {
+                        (
+                            StatusCode::INTERNAL_SERVER_ERROR,
+                            Json(json!({ "error": "module_state_unavailable" })),
+                        )
+                    })?;
+                if !enabled {
+                    return Err((
+                        StatusCode::CONFLICT,
+                        Json(json!({ "error": "module_disabled", "module_id": $module_id })),
+                    ));
+                }
+                let permitted = db::modules::user_can_access(
+                    &app_state.pool,
+                    user.id,
+                    &user.role,
+                    $module_id,
+                )
+                .await
+                .map_err(|_| {
+                    (
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        Json(json!({ "error": "module_permission_unavailable" })),
+                    )
+                })?;
+                if !permitted {
+                    return Err((
+                        StatusCode::FORBIDDEN,
+                        Json(json!({ "error": "module_not_permitted", "module_id": $module_id })),
+                    ));
+                }
+                Ok(Self(user))
+            }
+        }
+    };
+}
+
+module_user!(CatalogUser, "core.catalog");
+module_user!(InventoryUser, "core.inventory");
+module_user!(OrdersUser, "core.orders");
+module_user!(InvoicesUser, "accounting.invoices");
+module_user!(CorrectionsUser, "accounting.corrections");
+module_user!(DatevExportUser, "export.datev");
+module_user!(ManualShippingUser, "shipping.manual");

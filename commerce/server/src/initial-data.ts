@@ -1,4 +1,5 @@
-import { dummyPaymentHandler, InitialData, LanguageCode } from '@vendure/core';
+import { InitialData, LanguageCode } from '@vendure/core';
+import { moduleAwareTestPaymentHandler } from './plugins/shop-suite-integration/module-aware-test-payment-handler';
 
 export const initialData: InitialData = {
     defaultLanguage: LanguageCode.de,
@@ -14,7 +15,7 @@ export const initialData: InitialData = {
         {
             name: 'Testzahlung',
             handler: {
-                code: dummyPaymentHandler.code,
+                code: moduleAwareTestPaymentHandler.code,
                 arguments: [{ name: 'automaticSettle', value: 'true' }],
             },
         },

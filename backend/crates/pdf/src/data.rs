@@ -49,6 +49,9 @@ pub struct VatBreakdownRow {
 #[derive(Debug, Clone)]
 pub struct InvoicePdfInput {
     pub invoice_number: String,
+    pub is_correction: bool,
+    pub corrected_invoice_number: String,
+    pub correction_reason: String,
     pub issue_date: NaiveDate,
     pub due_date: NaiveDate,
     pub company: CompanyInfo,

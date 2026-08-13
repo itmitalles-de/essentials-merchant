@@ -4,7 +4,6 @@ import {
     DefaultJobQueuePlugin,
     DefaultSchedulerPlugin,
     DefaultSearchPlugin,
-    dummyPaymentHandler,
     LanguageCode,
     VendureConfig,
 } from '@vendure/core';
@@ -12,6 +11,7 @@ import { DashboardPlugin } from '@vendure/dashboard/plugin';
 import { GraphiqlPlugin } from '@vendure/graphiql-plugin';
 import 'dotenv/config';
 import { ShopSuiteIntegrationPlugin } from './plugins/shop-suite-integration/shop-suite-integration.plugin';
+import { moduleAwareTestPaymentHandler } from './plugins/shop-suite-integration/module-aware-test-payment-handler';
 
 process.env.VENDURE_DISABLE_TELEMETRY ??= 'true';
 
@@ -40,6 +40,9 @@ const databaseUsername = required('VENDURE_DB_USERNAME');
 const databasePassword = required('VENDURE_DB_PASSWORD');
 required('CORE_API_URL');
 required('INTEGRATION_SECRET');
+if (Boolean(process.env.INTEGRATION_PREVIOUS_KEY_ID) !== Boolean(process.env.INTEGRATION_PREVIOUS_SECRET)) {
+    throw new Error('INTEGRATION_PREVIOUS_KEY_ID and INTEGRATION_PREVIOUS_SECRET must be configured together');
+}
 
 export const config: VendureConfig = {
     defaultLanguageCode: LanguageCode.de,
@@ -73,7 +76,7 @@ export const config: VendureConfig = {
         username: databaseUsername,
         password: databasePassword,
     },
-    paymentOptions: { paymentMethodHandlers: [dummyPaymentHandler] },
+    paymentOptions: { paymentMethodHandlers: [moduleAwareTestPaymentHandler] },
     customFields: {
         ProductVariant: [
             { name: 'coreId', type: 'string', nullable: true, internal: true },

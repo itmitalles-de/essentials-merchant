@@ -25,6 +25,8 @@ async-trait = "0.1"
 flate2 = "1"
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
 sha2 = "0.10"
+hmac = "0.12"
+hex = "0.4"
 
 domain = { path = "crates/domain" }
 db = { path = "crates/db" }

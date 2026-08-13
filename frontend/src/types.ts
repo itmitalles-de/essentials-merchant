@@ -66,6 +66,10 @@ export interface InvoiceListItem {
   due_date: string | null;
   gross_total: string;
   created_at: string;
+  document_type: "invoice" | "correction";
+  corrects_invoice_id: string | null;
+  corrected_invoice_number: string | null;
+  correction_reason: string | null;
 }
 
 export interface CustomerSnapshot {
@@ -131,7 +135,13 @@ export interface Invoice {
   paid_at: string | null;
   cancelled_at: string | null;
   created_at: string;
+  document_type: "invoice" | "correction";
+  corrects_invoice_id: string | null;
+  correction_reason: string | null;
+  correction_idempotency_key: string | null;
   line_items: InvoiceLineItem[];
+  correction: { id: string; invoice_number: string | null } | null;
+  corrected_invoice_number: string | null;
 }
 
 export interface InvoiceInput {
@@ -239,19 +249,80 @@ export interface FulfillSalesOrderInput {
 
 export interface EssentialsModule {
   module_key: string;
+  module_id: string;
   module_group: string;
   display_name: string;
   module_kind: "core" | "optional" | "connector";
+  version: string;
+  state: "not_installed" | "needs_configuration" | "disabled" | "enabled" | "degraded";
   enabled: boolean;
+  required: boolean;
+  dependencies: string[];
+  conflicts: string[];
+  compatibility: Record<string, unknown>;
+  configuration_requirements: unknown[];
+  secret_requirements: unknown[];
+  api_boundaries: string[];
+  navigation_boundaries: string[];
+  jobs: string[];
+  webhooks: string[];
+  healthcheck: Record<string, unknown>;
+  data_ownership: string;
+  backup_restore: Record<string, unknown>;
   updated_at: string;
 }
 
 export interface ConnectorHealth {
   module_key: string;
+  module_id: string;
   configuration_valid: boolean;
   health_status: "not_configured" | "healthy" | "degraded" | "failed";
   checked_at: string | null;
   message: string | null;
+}
+
+export interface IntegrationQueueSummary {
+  pending: number;
+  processing: number;
+  delivered: number;
+  dead: number;
+  oldest_open_at: string | null;
+  last_success_at: string | null;
+  last_error: string | null;
+}
+
+export interface IntegrationDiagnosticEvent {
+  source: "core" | "vendure";
+  event_id: string;
+  event_type: string;
+  status: "pending" | "processing" | "delivered" | "dead";
+  attempts: number;
+  available_at: string | null;
+  locked_at: string | null;
+  last_error: string | null;
+  created_at: string;
+  delivered_at: string | null;
+}
+
+export interface IntegrationDiagnostics {
+  core_outbox: IntegrationQueueSummary;
+  core_inbox: { completed: number; failed: number; last_processed_at: string | null };
+  vendure_outbox: IntegrationQueueSummary;
+  events: IntegrationDiagnosticEvent[];
+  mappings: { entity_type: string; count: number; last_updated_at: string | null }[];
+  audit: {
+    id: string;
+    actor_user_id: string;
+    action: string;
+    target_type: string;
+    target_id: string;
+    idempotency_key: string;
+    details: Record<string, unknown>;
+    created_at: string;
+  }[];
+  core_database_ready: boolean;
+  vendure_health: string;
+  vendure_observed_at: string | null;
 }
 
 export interface AmazonReportDefinition {
@@ -330,7 +401,7 @@ export interface MarketplaceOverview {
 export interface MarketplaceRunDetail {
   run: AmazonReportRun;
   events: Array<{ id: number; status: string; message: string | null; created_at: string }>;
-  document: { sha256: string; import_status: string; import_error: string | null; parser_version: string | null; downloaded_at: string } | null;
+  document: { sha256: string; decoded_sha256: string; import_status: string; import_error: string | null; parser_version: string | null; downloaded_at: string } | null;
   snapshot: { id: string; period_start: string | null; period_end: string | null; granularity: string; comparability_key: string; summary: Record<string, unknown> } | null;
   metrics: Array<{ id: number; metric_name: string; dimension_type: string; dimension_key: string; value_numeric: string; unit: string; currency_code: string | null }>;
   analyses: Array<{ id: string; result: Record<string, unknown>; created_at: string }>;

@@ -6,7 +6,8 @@ use crate::marketplace::MarketplaceWorker;
 pub struct AppState {
     pub pool: PgPool,
     pub jwt_secret: String,
-    pub integration_secret: String,
+    pub integration_auth: crate::integration_auth::IntegrationAuth,
+    pub outbox_policy: db::commerce::OutboxPolicy,
     pub pdf_storage_dir: String,
     pub marketplace_worker: MarketplaceWorker,
 }
