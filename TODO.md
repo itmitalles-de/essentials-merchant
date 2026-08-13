@@ -17,7 +17,8 @@ relevant files, and exact verification performed. Commit the `TODO.md` update wi
 - Completed: SQLx offline CI fix; visible Shop Suite naming; Vendure 3.7.2 server/worker and separate
   PostgreSQL database; Dashboard; Next.js Storefront; product/price/stock projection; durable
   mapping/inbox/outboxes; idempotent paid-order import and stock booking; fulfillment/tracking
-  projection; full Compose and vertical CI job.
+  projection; full Compose and vertical CI job. Backend CI installs the same pinned Typst 0.12.0
+  used by the runtime image so the existing PDF rendering test runs on a clean GitHub runner.
 - Remaining: Add deliberate Core/Vendure outage and worker-restart cases to the vertical CI test,
   then select one production payment and one shipping provider. Correction invoices and
   reference-tested DATEV EXTF follow those reliability/provider steps.
@@ -30,4 +31,6 @@ relevant files, and exact verification performed. Commit the `TODO.md` update wi
   `commerce/test/vertical.mjs`.
 - Verification: Rust fmt, offline Clippy, SQLx cache check, 23 Rust tests, frontend build/lint,
   commerce typecheck/tests/build, all Compose images, healthy clean stack, and a passing vertical
-  flow proving one imported order, stock 10 → 8, and tracking projected back to Vendure.
+  flow proving one imported order, stock 10 → 8, and tracking projected back to Vendure. The first
+  PR run exposed the missing Typst CI prerequisite after Clippy passed; the pinned install is now
+  included and requires the PR rerun before merge.
