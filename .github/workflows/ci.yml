@@ -129,6 +129,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     env:
+      COMPOSE_PROJECT_NAME: essentials-merchant-ci
       POSTGRES_PASSWORD: ci-placeholder
       JWT_SECRET: ci-placeholder
       ADMIN_PASSWORD: ci-placeholder
@@ -166,7 +167,6 @@ jobs:
       - name: Run restart and failure recovery matrix
         working-directory: commerce
         env:
-          COMPOSE_PROJECT_NAME: erplite
           CORE_API_URL: http://localhost:8090/api
           STOREFRONT_API_URL: http://localhost:3001/api/shop
           CORE_ADMIN_USERNAME: admin
