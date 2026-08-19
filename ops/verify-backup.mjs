@@ -19,8 +19,14 @@ const requiredStores = [
     'core-postgres', 'vendure-postgres', 'core-documents', 'vendure-assets',
     'module-configurations-without-secrets', 'integration-mappings-inbox-outbox',
     'marketplace-raw-and-normalized-data', 'redacted-compose-metadata',
+    'parser-versions', 'git-commit-and-image-digests',
 ];
 for (const store of requiredStores) {
     if (!manifest.stores.includes(store)) throw new Error(`manifest lacks store: ${store}`);
+}
+if (!/^[0-9a-f]{40}$/.test(manifest.repository_revision)
+    || !Object.keys(manifest.container_images?.runtime_image_digests ?? {}).length
+    || !manifest.parser_versions?.declared?.includes('sales-traffic-json-v2')) {
+    throw new Error('manifest lacks revision, runtime image digests, or parser versions');
 }
 process.stdout.write(`Verified ${Object.keys(manifest.files).length} backup checksums.\n`);

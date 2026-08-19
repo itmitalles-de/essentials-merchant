@@ -4,6 +4,17 @@ All destructive rehearsals in this document are designed for disposable syntheti
 Never load a real `.env` into a rehearsal, never generate migrations against production, and never
 restore over an existing Compose project.
 
+## Amazon Intelligence pilot startup
+
+The standalone `compose.amazon-pilot.yml` contains exactly `db`, `backend`, and `frontend`. It does
+not define or start Vendure, Storefront, payment, shipping, carrier, or DATEV services. The fixed
+Compose project is `essentials-merchant-amazon-pilot`.
+
+`scripts/start-amazon-pilot.sh --env-file .env.amazon-pilot` defaults to configuration validation.
+Add `--start` only for an explicitly prepared local environment. After startup, the script queries
+the persisted pilot status and fails closed if the exact module allowlist differs, a schedule is
+enabled, or a forbidden service is running. It never deletes data or prints secret values.
+
 ## Health and readiness
 
 - `GET /api/health` reports process health.
@@ -95,6 +106,29 @@ ops/test-backup-restore.sh
 The rehearsal is a local infrastructure proof. It is not proof that an external backup system,
 retention policy, encryption key, disaster location, or production-sized restore meets an RPO/RTO.
 
+## Amazon pilot backup and empty restore
+
+`ops/backup-amazon-pilot.sh` exports the Core schema plus allowlisted pilot data only: users,
+module state, audit, Amazon connections/jobs, immutable raw archives, normalized snapshots,
+analyses, transport observations, and backup verifications. It archives only the `amazon-pilot`
+document subtree and records file hashes, Git revision, parser versions, and declared image
+digests. Its manifest explicitly excludes Amazon tokens/secrets, customer/order/invoice/payment/
+shipping data, buyer data, Vendure data, and Storefront data.
+
+Before quiescing services, the backup fails closed if a live connection contains anything other
+than a constrained logical secret-reference name or if a raw archive belongs to a report type
+outside the aggregate Sales & Traffic pilot. It does not silently copy a historical potential-PII
+archive into a pilot backup.
+
+`ops/restore-amazon-pilot.sh` refuses a non-empty destination project. The automated rehearsal
+seeds a report larger than 2 MiB, restores into an empty project, and compares report inventory,
+raw hashes, parser/snapshot/analysis fingerprints, audit, exact module state, schedule state, and
+the read-only pilot profile:
+
+```bash
+ops/test-amazon-pilot-backup-restore.sh
+```
+
 ## Upgrade rehearsal
 
 `ops/test-upgrade-rehearsal.sh` starts a temporary PostgreSQL 16 container, migrates through schema
@@ -111,9 +145,10 @@ migrations and Core events are separate. Keep `synchronize: false` in every envi
 
 ## Marketplace operations
 
-Marketplace Intelligence remains disabled until a connection is configured and an administrator
-explicitly activates it. The synthetic demo uses `fixture:*` references and never accesses the
-environment secret mechanism. A live secret reference resolves only server-side from
+The pilot profile enables the Marketplace Intelligence module, but no acquisition runs without an
+administrator-created connection and explicit manual request. Automatic schedules remain disabled.
+The synthetic demo uses `fixture:*` references and never accesses the environment secret mechanism.
+A live secret reference resolves only server-side from
 `AMAZON_SECRET_<NORMALIZED_REFERENCE>` and contains LWA refresh token, client ID, and client secret.
 
 The required external staging gate is:
@@ -128,9 +163,19 @@ The required external staging gate is:
 No live report type requiring RDT may be enabled until its registry classification and minimized
 storage/retention design are separately reviewed.
 
+The first real request is specified in `docs/operations/AMAZON_STAGING_GATE.md`. Its command
+defaults to validation and requires an ignored approval file, ignored environment file, encrypted
+archive attestation, exact seller/region/marketplace approval, and a manual `--execute`. No
+automatic scheduler is used. Until those external facts are provided, the gate is `BLOCKED` and no
+fixture or local run may be described as Amazon staging.
+
 ## External validation gates
 
-- Amazon: no real account acceptance has run.
-- Stripe and DHL: ports/fakes are implemented; no real adapter or sandbox acceptance has run.
-- DATEV: renderer is disabled until checking-program and approved test-client import succeeds.
-- Vendure: 3.7.2 release security fixes are present; transitive npm advisories remain monitored.
+- Amazon: no approved seller credentials, roles, or marketplace participation were supplied; no
+  real request has run.
+- Stripe, payment webhooks, DHL, DPD, and carrier labels: ports/fakes are retained, but all adapters
+  and account work are frozen until after a successful Amazon pilot.
+- DATEV: retained renderer stays disabled; checking-program/test-client work is frozen for this
+  milestone.
+- Vendure: retained at 3.7.2 and not started by the pilot; known transitive advisories remain open
+  and are individually triaged in `docs/security/VENDURE_ADVISORIES.md`.

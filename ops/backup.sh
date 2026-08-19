@@ -1,7 +1,7 @@
 #!/bin/sh
 set -eu
 
-repository_dir=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+repository_dir=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)
 project=${COMPOSE_PROJECT_NAME:?COMPOSE_PROJECT_NAME must identify the running disposable or production stack}
 compose_env_file=${COMPOSE_ENV_FILE:-/dev/null}
 output_dir=${1:?usage: COMPOSE_PROJECT_NAME=name ops/backup.sh OUTPUT_DIRECTORY}
@@ -15,7 +15,7 @@ if [ -e "$output_dir" ]; then
     exit 2
 fi
 mkdir -p "$output_dir/data"
-output_dir=$(CDPATH= cd -- "$output_dir" && pwd)
+output_dir=$(CDPATH='' cd -- "$output_dir" && pwd)
 
 compose() {
     docker compose --env-file "$compose_env_file" -p "$project" "$@"
@@ -40,11 +40,15 @@ compose stop frontend storefront vendure-worker vendure-server backend >/dev/nul
 
 compose exec -T db pg_dump -U erplite -d erplite --format=custom --no-owner --no-acl \
     >"$output_dir/data/core-postgres.dump"
+# Expansion is intentionally performed by the shell inside vendure-db.
+# shellcheck disable=SC2016
 compose exec -T vendure-db sh -c 'pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB" --format=custom --no-owner --no-acl' \
     >"$output_dir/data/vendure-postgres.dump"
 
 core_schema=$(compose exec -T db psql -U erplite -d erplite -qAt -v ON_ERROR_STOP=1 \
     -c 'SELECT COALESCE(max(version), 0) FROM _sqlx_migrations')
+# Expansion is intentionally performed by the shell inside vendure-db.
+# shellcheck disable=SC2016
 vendure_schema=$(compose exec -T vendure-db sh -c \
     'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -qAt -v ON_ERROR_STOP=1 -c '\''SELECT COALESCE(max("timestamp"), 0) FROM migrations'\''')
 
@@ -59,6 +63,24 @@ compose exec -T db psql -U erplite -d erplite -qAt -v ON_ERROR_STOP=1 -c \
     WHERE module.catalog_visible" \
     >"$output_dir/data/module-configurations.json"
 
+compose exec -T db psql -U erplite -d erplite -qAt -v ON_ERROR_STOP=1 -c \
+    "SELECT jsonb_pretty(jsonb_build_object(
+        'declared', ARRAY['sales-traffic-json-v2', 'inventory-planning-tsv-v1'],
+        'stored', COALESCE((SELECT jsonb_agg(version ORDER BY version)
+                            FROM (SELECT DISTINCT parser_version AS version
+                                  FROM amazon_report_documents
+                                  WHERE parser_version IS NOT NULL) versions), '[]'::jsonb)
+    ))" >"$output_dir/data/parser-versions.json"
+
+: >"$output_dir/data/runtime-image-digests.tsv"
+for service in db backend frontend vendure-db vendure-server vendure-worker storefront; do
+    container_id=$(compose ps -aq "$service" | head -n 1)
+    if [ -n "$container_id" ]; then
+        image_id=$(docker inspect --format '{{.Image}}' "$container_id")
+        printf '%s\t%s\n' "$service" "$image_id" >>"$output_dir/data/runtime-image-digests.tsv"
+    fi
+done
+
 archive_volume() {
     volume_name=$1
     archive_name=$2
@@ -66,7 +88,7 @@ archive_volume() {
     docker run --rm \
         -v "$volume_name:/source:ro" \
         -v "$output_dir/data:/backup" \
-        postgres:16-alpine \
+        postgres:16-alpine@sha256:cf78e76683b9ca8c5733cbbdce6c9262b45b6767934dd0a95e671f9a0fc20685 \
         tar -C /source -czf "/backup/$archive_name" .
 }
 
