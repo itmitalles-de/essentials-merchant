@@ -231,7 +231,10 @@ async function verifyRequestAuthentication() {
     const headers = signedHeaders(
         oldId, oldSecret, 'POST', path, body, timestamp, `old-${randomUUID()}`,
     );
-    const first = await fetch(new URL(path, coreApi), { method: 'POST', headers, body });
+    const first = await eventually('previous rotation key activation', async () => {
+        const response = await fetch(new URL(path, coreApi), { method: 'POST', headers, body });
+        return response.status === 200 ? response : undefined;
+    }, 30_000);
     assert.equal(first.status, 200, 'previous rotation key must remain accepted');
     const replay = await fetch(new URL(path, coreApi), { method: 'POST', headers, body });
     assert.equal(replay.status, 409, 'the same nonce must be rejected');
