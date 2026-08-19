@@ -1,0 +1,43 @@
+{
+  "generated_at": "2026-08-19",
+  "repository": "itmitalles-de/essentials-merchant",
+  "redaction": "counts, advisory identifiers, versions, and package paths only; no environment or registry credentials",
+  "frontend": {
+    "command": "npm audit --omit=dev --json",
+    "production_dependencies": 6,
+    "vulnerabilities": { "total": 0, "moderate": 0, "high": 0, "critical": 0 }
+  },
+  "commerce": {
+    "command": "npm audit --omit=dev --json",
+    "production_dependencies": 1010,
+    "installed_vendure": {
+      "@vendure/core": "3.7.2",
+      "@vendure/asset-server-plugin": "3.7.2",
+      "newest_compatible_3_x_observed": "3.7.2"
+    },
+    "affected_package_nodes": { "total": 12, "moderate": 6, "high": 6, "critical": 0 },
+    "distinct_advisories": [
+      "GHSA-9q82-xgwf-vj6h",
+      "GHSA-5v7r-6r5c-r473",
+      "GHSA-w3rx-r6r6-pgpr",
+      "GHSA-5p2g-fcmc-qvqq",
+      "GHSA-r5fr-rjxr-66jc",
+      "GHSA-f23m-r3pf-42rh",
+      "GHSA-xxjr-mmjv-4gpg",
+      "GHSA-f88m-g3jw-g9cj",
+      "GHSA-w5hq-g745-h8pq",
+      "GHSA-58qx-3vcg-4xpx",
+      "GHSA-96hv-2xvq-fx4p"
+    ],
+    "decision": "open and individually triaged; no npm force-fix or incompatible downgrade",
+    "pilot_runtime": "Vendure, its database and worker, and Storefront are absent from compose.amazon-pilot.yml"
+  },
+  "sbom": {
+    "format": "CycloneDX 1.5",
+    "pilot_components": 322,
+    "commerce_components": 1227,
+    "generation": "lockfile-derived",
+    "native_commerce_npm_sbom": "blocked by invalid peer relationships; see VENDURE_ADVISORIES.md"
+  },
+  "unverified_tools": ["cargo-audit", "syft", "trivy", "cyclonedx-npm"]
+}
