@@ -258,7 +258,7 @@ async function verifyRequestAuthentication() {
 }
 
 // Recreating only processes clears one-shot failpoint markers without touching data stores.
-compose(['up', '-d', '--force-recreate', 'backend', 'vendure-worker']);
+compose(['up', '-d', '--force-recreate', '--no-deps', 'backend', 'vendure-worker']);
 await waitForCore();
 await verifyRequestAuthentication();
 
