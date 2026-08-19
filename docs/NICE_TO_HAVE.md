@@ -3,6 +3,12 @@
 These are product options, not implemented stubs. None has an unused dependency, empty migration,
 placeholder endpoint, or dormant runtime table in this repository.
 
+For the Amazon Intelligence pilot milestone, every item below is deliberately frozen. Stripe,
+payment webhooks, DHL, DPD, carrier labels, DATEV activation, other marketplaces, external AI,
+multi-tenancy, and Kubernetes receive no active implementation before the Amazon staging gate has
+succeeded and a later milestone is explicitly approved. Existing ports, fakes, tests, and retained
+Commerce code remain in place.
+
 ## Additional payment providers
 
 Benefit: lets merchants choose regional pricing, payment methods, and risk policies. Scope: one

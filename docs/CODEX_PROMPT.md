@@ -9,7 +9,8 @@ The reliability, module-contract, correction-invoice, deterministic Marketplace 
 backup/restore, provider-port, and guarded DATEV export work that followed this historical brief is
 documented in `README.md`, `docs/FAILURE_MATRIX.md`, `docs/VERIFICATION_MATRIX.md`, and
 `.agent/STATE.md`. Do not repeat completed Vendure or SQLx work from this prompt.
-The repository slug and internal compatibility identifiers remain `erplite`.
+The repository slug is `itmitalles-de/essentials-merchant`; internal compatibility identifiers
+remain `erplite`.
 
 ## Ziel
 
