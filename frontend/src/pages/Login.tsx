@@ -50,18 +50,26 @@ export function Login() {
         style={{ width: 320, display: "flex", flexDirection: "column", gap: "0.75rem" }}
       >
         <h2 style={{ margin: 0 }}>{t("app.title")}</h2>
-        <input
-          placeholder={t("login.username")}
-          value={username}
-          onChange={(e) => setUsername(e.target.value)}
-          autoFocus
-        />
-        <input
-          placeholder={t("login.password")}
-          type="password"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-        />
+        <label>
+          <span>{t("login.username")}</span>
+          <input
+            name="username"
+            autoComplete="username"
+            value={username}
+            onChange={(e) => setUsername(e.target.value)}
+            autoFocus
+          />
+        </label>
+        <label>
+          <span>{t("login.password")}</span>
+          <input
+            name="password"
+            autoComplete="current-password"
+            type="password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+          />
+        </label>
         {error && <div style={{ color: "var(--danger)" }}>{error}</div>}
         <button type="submit" disabled={submitting}>
           {t("login.submit")}

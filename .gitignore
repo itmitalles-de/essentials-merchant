@@ -1,5 +1,8 @@
 # env / secrets
 .env
+.env.amazon-pilot
+.amazon-staging-gate.json
+.amazon-staging-result.json
 
 # Rust
 backend/target/
@@ -8,10 +11,13 @@ backend/target/
 node_modules/
 frontend/dist/
 frontend/tsconfig.tsbuildinfo
+frontend/playwright-report/
+frontend/test-results/
 commerce/server/dist/
 commerce/server/src/gql/
 commerce/storefront/.next/
 commerce/storefront/tsconfig.tsbuildinfo
+artifacts/
 
 # misc
 .DS_Store

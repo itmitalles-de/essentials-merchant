@@ -9,6 +9,30 @@ use uuid::Uuid;
 /// `marketplace.amazon_intelligence` and is resolved transparently.
 pub const MARKETPLACE_INTELLIGENCE: &str = "marketplace_intelligence";
 pub const COMMERCE_VENDURE: &str = "commerce_vendure";
+pub const AMAZON_READ_ONLY_PILOT: &str = "pilot_amazon_read_only";
+
+pub const AMAZON_PILOT_ENABLED_MODULES: &[&str] = &[
+    "core.operations",
+    "core.catalog",
+    "core.inventory",
+    "core.orders",
+    "marketplace.amazon_intelligence",
+    "intelligence.rules",
+    "pilot.amazon_read_only",
+];
+
+pub const AMAZON_PILOT_MUTATION_MODULES: &[&str] = &[
+    "commerce.vendure",
+    "commerce.storefront",
+    "payment.test",
+    "shipping.manual",
+    "shipping.dhl",
+    "shipping.dpd",
+    "accounting.invoices",
+    "accounting.corrections",
+    "export.datev",
+    "custom.catalog",
+];
 
 const MODULE_COLUMNS: &str =
     "module_key, module_id, module_group, display_name, module_kind, version, state,
@@ -66,6 +90,30 @@ pub struct ModuleTransition {
     pub module_id: String,
     pub state: String,
     pub duplicate: bool,
+}
+
+#[derive(Debug, Clone, Serialize, sqlx::FromRow)]
+pub struct PilotBackupVerification {
+    pub outcome: String,
+    pub manifest_sha256: String,
+    pub repository_revision: String,
+    pub details: Value,
+    pub verified_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct AmazonPilotStatus {
+    pub profile: &'static str,
+    pub title: &'static str,
+    pub enabled: bool,
+    pub compliant: bool,
+    pub active_modules: Vec<String>,
+    pub disabled_modules: Vec<String>,
+    pub mutation_modules: Vec<String>,
+    pub unexpected_active_modules: Vec<String>,
+    pub missing_required_modules: Vec<String>,
+    pub automatic_schedules_enabled: i64,
+    pub last_backup_verification: Option<PilotBackupVerification>,
 }
 
 #[derive(sqlx::FromRow)]
@@ -147,6 +195,144 @@ pub async fn is_enabled(pool: &PgPool, identifier: &str) -> Result<bool, sqlx::E
     .fetch_optional(pool)
     .await
     .map(|enabled| enabled.unwrap_or(false))
+}
+
+/// Atomically applies the pilot through canonical module state. The deployment
+/// selector is not consulted by request handlers; once applied, this persisted
+/// module is the fail-closed runtime boundary.
+pub async fn apply_amazon_read_only_profile(
+    pool: &PgPool,
+    actor_user_id: Uuid,
+) -> Result<AmazonPilotStatus, sqlx::Error> {
+    let enabled_modules = AMAZON_PILOT_ENABLED_MODULES
+        .iter()
+        .map(|module_id| (*module_id).to_owned())
+        .collect::<Vec<_>>();
+    let mut tx = pool.begin().await?;
+    sqlx::query(
+        "UPDATE essentials_modules
+         SET enabled = required OR module_id = ANY($1),
+             state = CASE
+                 WHEN required OR module_id = ANY($1) THEN 'enabled'
+                 WHEN state = 'not_installed' THEN 'not_installed'
+                 ELSE 'disabled'
+             END,
+             updated_at = now()",
+    )
+    .bind(&enabled_modules)
+    .execute(&mut *tx)
+    .await?;
+    sqlx::query(
+        "WITH held AS (
+             UPDATE amazon_report_runs run
+             SET status = 'failed', failure_code = 'pilot_manual_gate_required',
+                 failure_message = 'Live run held during pilot activation; submit a new explicit manual request',
+                 completed_at = now(), locked_at = NULL, updated_at = now()
+             FROM amazon_connections connection
+             WHERE run.connection_id = connection.id AND connection.mode = 'live'
+               AND run.status IN ('queued', 'requesting', 'polling', 'downloading', 'parsing', 'analysing')
+             RETURNING run.id
+         )
+         INSERT INTO amazon_report_run_events (run_id, status, message)
+         SELECT id, 'failed', 'Live run held by Amazon read-only pilot activation' FROM held",
+    )
+    .execute(&mut *tx)
+    .await?;
+    sqlx::query(
+        "UPDATE amazon_report_schedules SET enabled = false, updated_at = now() WHERE enabled",
+    )
+    .execute(&mut *tx)
+    .await?;
+    sqlx::query(
+        "INSERT INTO administrative_audit_log
+             (actor_user_id, action, target_type, target_id, idempotency_key, details)
+         VALUES ($1, 'pilot.profile_apply', 'pilot_profile', 'amazon-read-only',
+                 'pilot-profile:amazon-read-only:v1',
+                 jsonb_build_object('active_modules', $2::text[],
+                                    'automatic_schedules', false,
+                                    'business_mutations', false))
+         ON CONFLICT (action, idempotency_key) DO NOTHING",
+    )
+    .bind(actor_user_id)
+    .bind(&enabled_modules)
+    .execute(&mut *tx)
+    .await?;
+    tx.commit().await?;
+    amazon_pilot_status(pool).await
+}
+
+pub async fn amazon_pilot_status(pool: &PgPool) -> Result<AmazonPilotStatus, sqlx::Error> {
+    let modules: Vec<(String, bool, bool)> = sqlx::query_as(
+        "SELECT module_id, enabled, required FROM essentials_modules ORDER BY module_id",
+    )
+    .fetch_all(pool)
+    .await?;
+    let active_modules = modules
+        .iter()
+        .filter(|(_, enabled, _)| *enabled)
+        .map(|(module_id, _, _)| module_id.clone())
+        .collect::<Vec<_>>();
+    let disabled_modules = modules
+        .iter()
+        .filter(|(_, enabled, _)| !*enabled)
+        .map(|(module_id, _, _)| module_id.clone())
+        .collect::<Vec<_>>();
+    let unexpected_active_modules = modules
+        .iter()
+        .filter(|(module_id, enabled, _required)| {
+            *enabled && !AMAZON_PILOT_ENABLED_MODULES.contains(&module_id.as_str())
+        })
+        .map(|(module_id, _, _)| module_id.clone())
+        .collect::<Vec<_>>();
+    let missing_required_modules = AMAZON_PILOT_ENABLED_MODULES
+        .iter()
+        .filter(|expected| {
+            !modules
+                .iter()
+                .any(|(module_id, enabled, _)| module_id == *expected && *enabled)
+        })
+        .map(|module_id| (*module_id).to_owned())
+        .collect::<Vec<_>>();
+    let automatic_schedules_enabled: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM amazon_report_schedules WHERE enabled")
+            .fetch_one(pool)
+            .await?;
+    let last_backup_verification = sqlx::query_as::<_, PilotBackupVerification>(
+        "SELECT outcome, manifest_sha256, repository_revision, details, verified_at
+         FROM pilot_backup_verifications WHERE profile = 'amazon-read-only'
+         ORDER BY verified_at DESC LIMIT 1",
+    )
+    .fetch_optional(pool)
+    .await?;
+    let enabled = active_modules
+        .iter()
+        .any(|module_id| module_id == "pilot.amazon_read_only");
+    let mutation_modules_disabled = AMAZON_PILOT_MUTATION_MODULES.iter().all(|module_id| {
+        !active_modules
+            .iter()
+            .any(|active| active.as_str() == *module_id)
+    });
+    let compliant = enabled
+        && mutation_modules_disabled
+        && unexpected_active_modules.is_empty()
+        && missing_required_modules.is_empty()
+        && automatic_schedules_enabled == 0;
+    Ok(AmazonPilotStatus {
+        profile: "amazon-read-only",
+        title: "Essentials+ Merchant - Amazon Intelligence Pilot - Read-only",
+        enabled,
+        compliant,
+        active_modules,
+        disabled_modules,
+        mutation_modules: AMAZON_PILOT_MUTATION_MODULES
+            .iter()
+            .map(|module_id| (*module_id).to_owned())
+            .collect(),
+        unexpected_active_modules,
+        missing_required_modules,
+        automatic_schedules_enabled,
+        last_backup_verification,
+    })
 }
 
 pub async fn user_can_access(
@@ -510,6 +696,99 @@ mod tests {
             !user_can_access(&pool, user_id, "user", "marketplace.amazon_intelligence")
                 .await
                 .unwrap()
+        );
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn amazon_pilot_profile_is_persisted_fail_closed_and_idempotent(pool: PgPool) {
+        let actor = admin(&pool).await;
+        let connection_id: Uuid = sqlx::query_scalar(
+            "INSERT INTO amazon_connections
+                 (seller_id, region, secret_ref, granted_roles, mode)
+             VALUES ('SYNTHETIC-PILOT', 'eu', 'fixture:pilot', ARRAY['Brand Analytics'], 'fixture')
+             RETURNING id",
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        sqlx::query(
+            "INSERT INTO amazon_report_schedules
+                 (connection_id, marketplace_id, report_type, interval_seconds, enabled)
+             VALUES ($1, 'SYNTHETIC-MARKETPLACE', 'GET_SALES_AND_TRAFFIC_REPORT', 900, true)",
+        )
+        .bind(connection_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+        let live_connection_id: Uuid = sqlx::query_scalar(
+            "INSERT INTO amazon_connections
+                 (seller_id, region, secret_ref, granted_roles, mode)
+             VALUES ('SYNTHETIC-LIVE-HOLD', 'eu', 'pilot_seller', ARRAY['Brand Analytics'], 'live')
+             RETURNING id",
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        let held_run_id: Uuid = sqlx::query_scalar(
+            "INSERT INTO amazon_report_runs
+                 (connection_id, marketplace_id, report_type, trigger_source, idempotency_key)
+             VALUES ($1, 'SYNTHETIC-MARKETPLACE', 'GET_SALES_AND_TRAFFIC_REPORT', 'manual',
+                     'synthetic-live-run-held-by-profile') RETURNING id",
+        )
+        .bind(live_connection_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+
+        let first = apply_amazon_read_only_profile(&pool, actor).await.unwrap();
+        let second = apply_amazon_read_only_profile(&pool, actor).await.unwrap();
+        assert!(first.enabled && first.compliant);
+        assert!(second.enabled && second.compliant);
+        assert_eq!(second.automatic_schedules_enabled, 0);
+        for module_id in AMAZON_PILOT_MUTATION_MODULES {
+            assert!(!is_enabled(&pool, module_id).await.unwrap(), "{module_id}");
+        }
+        for module_id in AMAZON_PILOT_ENABLED_MODULES {
+            assert!(is_enabled(&pool, module_id).await.unwrap(), "{module_id}");
+        }
+        assert_eq!(
+            module_by_identifier(&pool, "custom.catalog")
+                .await
+                .unwrap()
+                .unwrap()
+                .state,
+            "not_installed"
+        );
+        let held: (String, Option<String>) =
+            sqlx::query_as("SELECT status, failure_code FROM amazon_report_runs WHERE id = $1")
+                .bind(held_run_id)
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert_eq!(held.0, "failed");
+        assert_eq!(held.1.as_deref(), Some("pilot_manual_gate_required"));
+        let audit_count: i64 = sqlx::query_scalar(
+            "SELECT count(*) FROM administrative_audit_log
+             WHERE action = 'pilot.profile_apply'",
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(audit_count, 1);
+
+        sqlx::query(
+            "UPDATE essentials_modules
+             SET required = true, enabled = true, state = 'enabled'
+             WHERE module_id = 'custom.catalog'",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+        let future_required = apply_amazon_read_only_profile(&pool, actor).await.unwrap();
+        assert!(!future_required.compliant);
+        assert_eq!(
+            future_required.unexpected_active_modules,
+            vec!["custom.catalog".to_owned()]
         );
     }
 }

@@ -25,6 +25,49 @@ use db::modules;
 const RULESET_VERSION: &str = "marketplace-rules-v2";
 const MAX_DOCUMENT_BYTES: usize = 25 * 1024 * 1024;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AmazonOperation {
+    LwaTokenRefresh,
+    CreateReport,
+    GetReport,
+    GetReportDocument,
+    DownloadReportDocument,
+}
+
+impl AmazonOperation {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::LwaTokenRefresh => "lwa_token_refresh",
+            Self::CreateReport => "create_report",
+            Self::GetReport => "get_report",
+            Self::GetReportDocument => "get_report_document",
+            Self::DownloadReportDocument => "download_report_document",
+        }
+    }
+}
+
+pub const AMAZON_PILOT_OPERATION_ALLOWLIST: &[AmazonOperation] = &[
+    AmazonOperation::LwaTokenRefresh,
+    AmazonOperation::CreateReport,
+    AmazonOperation::GetReport,
+    AmazonOperation::GetReportDocument,
+    AmazonOperation::DownloadReportDocument,
+];
+
+#[derive(Debug, Clone)]
+pub struct AmazonTransportObservation {
+    pub operation: AmazonOperation,
+    pub request_id_redacted: Option<String>,
+    pub rate_limit_limit: Option<String>,
+    pub retry_after_seconds: Option<i64>,
+}
+
+#[derive(Debug, Clone)]
+pub struct AmazonClientResponse<T> {
+    pub value: T,
+    pub observations: Vec<AmazonTransportObservation>,
+}
+
 #[derive(Debug, Clone)]
 pub struct AmazonReportRequest {
     pub seller_id: String,
@@ -54,7 +97,10 @@ pub struct AmazonReportDocument {
 
 #[derive(Debug, Clone)]
 pub enum AmazonClientError {
-    RateLimited { retry_after_seconds: Option<i64> },
+    RateLimited {
+        retry_after_seconds: Option<i64>,
+        observation: AmazonTransportObservation,
+    },
     ExpiredDownloadUrl,
     Retryable(String),
     Permanent(String),
@@ -75,21 +121,21 @@ pub trait AmazonReportsClient: Send + Sync {
     async fn create_report(
         &self,
         request: &AmazonReportRequest,
-    ) -> Result<String, AmazonClientError>;
+    ) -> Result<AmazonClientResponse<String>, AmazonClientError>;
     async fn get_report(
         &self,
         request: &AmazonReportRequest,
         report_id: &str,
-    ) -> Result<AmazonReportStatus, AmazonClientError>;
+    ) -> Result<AmazonClientResponse<AmazonReportStatus>, AmazonClientError>;
     async fn get_report_document(
         &self,
         request: &AmazonReportRequest,
         document_id: &str,
-    ) -> Result<AmazonReportDocument, AmazonClientError>;
+    ) -> Result<AmazonClientResponse<AmazonReportDocument>, AmazonClientError>;
     async fn download_document(
         &self,
         document: &AmazonReportDocument,
-    ) -> Result<Vec<u8>, AmazonClientError>;
+    ) -> Result<AmazonClientResponse<Vec<u8>>, AmazonClientError>;
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -97,6 +143,13 @@ struct LiveSecret {
     refresh_token: String,
     client_id: String,
     client_secret: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct AmazonStagingApproval {
+    seller_sha256: String,
+    region: String,
+    marketplace_id: String,
 }
 
 #[derive(Clone)]
@@ -111,6 +164,7 @@ impl LiveAmazonClient {
     pub fn new() -> Result<Self, reqwest::Error> {
         reqwest::Client::builder()
             .timeout(std::time::Duration::from_secs(30))
+            .redirect(reqwest::redirect::Policy::none())
             .build()
             .map(|http| Self {
                 http,
@@ -124,6 +178,7 @@ impl LiveAmazonClient {
     fn for_fake_server(endpoint: String) -> Result<Self, reqwest::Error> {
         reqwest::Client::builder()
             .timeout(std::time::Duration::from_secs(5))
+            .redirect(reqwest::redirect::Policy::none())
             .build()
             .map(|http| Self {
                 http,
@@ -175,12 +230,24 @@ impl LiveAmazonClient {
                 "Amazon secret reference {secret_ref} is not configured"
             ))
         })?;
-        serde_json::from_str(&raw).map_err(|_| {
+        let secret: LiveSecret = serde_json::from_str(&raw).map_err(|_| {
             AmazonClientError::Permanent("Amazon secret has invalid JSON shape".to_owned())
-        })
+        })?;
+        if secret.refresh_token.trim().is_empty()
+            || secret.client_id.trim().is_empty()
+            || secret.client_secret.trim().is_empty()
+        {
+            return Err(AmazonClientError::Permanent(
+                "Amazon secret has invalid JSON shape".to_owned(),
+            ));
+        }
+        Ok(secret)
     }
 
-    async fn access_token(&self, secret_ref: &str) -> Result<String, AmazonClientError> {
+    async fn access_token(
+        &self,
+        secret_ref: &str,
+    ) -> Result<AmazonClientResponse<String>, AmazonClientError> {
         let secret = self.load_secret(secret_ref)?;
         let response = self
             .http
@@ -193,12 +260,12 @@ impl LiveAmazonClient {
             ])
             .send()
             .await
-            .map_err(|error| {
-                AmazonClientError::Retryable(format!("LWA OAuth request failed: {error}"))
-            })?;
+            .map_err(|_| AmazonClientError::Retryable("LWA OAuth transport failed".to_owned()))?;
+        let observation = transport_observation(&response, AmazonOperation::LwaTokenRefresh);
         if response.status() == StatusCode::TOO_MANY_REQUESTS {
             return Err(AmazonClientError::RateLimited {
                 retry_after_seconds: retry_after(&response),
+                observation,
             });
         }
         if !response.status().is_success() {
@@ -214,22 +281,61 @@ impl LiveAmazonClient {
         response
             .json::<TokenResponse>()
             .await
-            .map(|body| body.access_token)
+            .map(|body| AmazonClientResponse {
+                value: body.access_token,
+                observations: vec![observation],
+            })
             .map_err(|_| AmazonClientError::Permanent("LWA OAuth returned invalid JSON".to_owned()))
     }
 
     async fn authenticated(
         &self,
         request: &AmazonReportRequest,
-        method: reqwest::Method,
-        path: &str,
-    ) -> Result<reqwest::RequestBuilder, AmazonClientError> {
+        operation: AmazonOperation,
+        resource_id: Option<&str>,
+    ) -> Result<(reqwest::RequestBuilder, Vec<AmazonTransportObservation>), AmazonClientError> {
+        if !AMAZON_PILOT_OPERATION_ALLOWLIST.contains(&operation) {
+            return Err(AmazonClientError::Permanent(
+                "operation is outside the Amazon pilot allowlist".to_owned(),
+            ));
+        }
         let base = self.endpoint(&request.region)?;
+        let valid_resource_id = |value: &str| {
+            !value.is_empty()
+                && value.chars().all(|character| {
+                    character.is_ascii_alphanumeric() || matches!(character, '-' | '_')
+                })
+        };
+        let (method, path) = match (operation, resource_id) {
+            (AmazonOperation::CreateReport, None) => (
+                reqwest::Method::POST,
+                "/reports/2021-06-30/reports".to_owned(),
+            ),
+            (AmazonOperation::GetReport, Some(report_id)) if valid_resource_id(report_id) => (
+                reqwest::Method::GET,
+                format!("/reports/2021-06-30/reports/{report_id}"),
+            ),
+            (AmazonOperation::GetReportDocument, Some(document_id))
+                if valid_resource_id(document_id) =>
+            {
+                (
+                    reqwest::Method::GET,
+                    format!("/reports/2021-06-30/documents/{document_id}"),
+                )
+            }
+            _ => {
+                return Err(AmazonClientError::Permanent(
+                    "operation is outside the Amazon pilot allowlist".to_owned(),
+                ));
+            }
+        };
         let access_token = self.access_token(&request.secret_ref).await?;
-        Ok(self
-            .http
-            .request(method, format!("{base}{path}"))
-            .header("x-amz-access-token", access_token))
+        Ok((
+            self.http
+                .request(method, format!("{base}{path}"))
+                .header("x-amz-access-token", access_token.value),
+            access_token.observations,
+        ))
     }
 }
 
@@ -241,10 +347,43 @@ fn retry_after(response: &reqwest::Response) -> Option<i64> {
         .and_then(|value| value.parse::<i64>().ok())
 }
 
-fn response_error(response: reqwest::Response, description: &str) -> AmazonClientError {
+fn transport_observation(
+    response: &reqwest::Response,
+    operation: AmazonOperation,
+) -> AmazonTransportObservation {
+    let header = |name: &str| {
+        response
+            .headers()
+            .get(name)
+            .and_then(|value| value.to_str().ok())
+            .filter(|value| {
+                value.len() <= 256 && value.chars().all(|character| !character.is_control())
+            })
+    };
+    let request_id_redacted = header("x-amzn-requestid").map(|request_id| {
+        let digest = sha256(request_id.as_bytes());
+        format!("sha256:{}", &digest[..12])
+    });
+    let rate_limit_limit =
+        header("x-amzn-ratelimit-limit").map(|value| value.chars().take(64).collect::<String>());
+    AmazonTransportObservation {
+        operation,
+        request_id_redacted,
+        rate_limit_limit,
+        retry_after_seconds: retry_after(response),
+    }
+}
+
+fn response_error(
+    response: reqwest::Response,
+    description: &str,
+    operation: AmazonOperation,
+) -> AmazonClientError {
     if response.status() == StatusCode::TOO_MANY_REQUESTS {
+        let observation = transport_observation(&response, operation);
         return AmazonClientError::RateLimited {
             retry_after_seconds: retry_after(&response),
+            observation,
         };
     }
     if response.status().is_server_error() {
@@ -253,12 +392,30 @@ fn response_error(response: reqwest::Response, description: &str) -> AmazonClien
     AmazonClientError::Permanent(format!("{description}: HTTP {}", response.status()))
 }
 
+fn download_url_allowed(url: &str) -> bool {
+    let Ok(url) = reqwest::Url::parse(url) else {
+        return false;
+    };
+    let Some(host) = url.host_str() else {
+        return false;
+    };
+    #[cfg(test)]
+    if url.scheme() == "http" && matches!(host, "127.0.0.1" | "localhost" | "::1") {
+        return true;
+    }
+    url.scheme() == "https"
+        && (host == "amazonaws.com"
+            || host.ends_with(".amazonaws.com")
+            || host == "cloudfront.net"
+            || host.ends_with(".cloudfront.net"))
+}
+
 #[async_trait]
 impl AmazonReportsClient for LiveAmazonClient {
     async fn create_report(
         &self,
         request: &AmazonReportRequest,
-    ) -> Result<String, AmazonClientError> {
+    ) -> Result<AmazonClientResponse<String>, AmazonClientError> {
         let body = json!({
             "reportType": request.report_type,
             "marketplaceIds": [request.marketplace_id],
@@ -266,22 +423,23 @@ impl AmazonReportsClient for LiveAmazonClient {
             "dataEndTime": request.data_end_time,
             "reportOptions": request.report_options,
         });
-        let response = self
-            .authenticated(
-                request,
-                reqwest::Method::POST,
-                "/reports/2021-06-30/reports",
-            )
-            .await?
-            .json(&body)
-            .send()
-            .await
-            .map_err(|error| {
-                AmazonClientError::Retryable(format!("createReport failed: {error}"))
-            })?;
+        let (builder, mut observations) = self
+            .authenticated(request, AmazonOperation::CreateReport, None)
+            .await?;
+        let response = builder.json(&body).send().await.map_err(|_| {
+            AmazonClientError::Retryable("createReport transport failed".to_owned())
+        })?;
         if !response.status().is_success() {
-            return Err(response_error(response, "createReport"));
+            return Err(response_error(
+                response,
+                "createReport",
+                AmazonOperation::CreateReport,
+            ));
         }
+        observations.push(transport_observation(
+            &response,
+            AmazonOperation::CreateReport,
+        ));
         #[derive(Deserialize)]
         #[serde(rename_all = "camelCase")]
         struct CreateResponse {
@@ -290,7 +448,10 @@ impl AmazonReportsClient for LiveAmazonClient {
         response
             .json::<CreateResponse>()
             .await
-            .map(|body| body.report_id)
+            .map(|body| AmazonClientResponse {
+                value: body.report_id,
+                observations,
+            })
             .map_err(|_| {
                 AmazonClientError::Permanent("createReport returned invalid JSON".to_owned())
             })
@@ -300,20 +461,22 @@ impl AmazonReportsClient for LiveAmazonClient {
         &self,
         request: &AmazonReportRequest,
         report_id: &str,
-    ) -> Result<AmazonReportStatus, AmazonClientError> {
-        let response = self
-            .authenticated(
-                request,
-                reqwest::Method::GET,
-                &format!("/reports/2021-06-30/reports/{report_id}"),
-            )
-            .await?
+    ) -> Result<AmazonClientResponse<AmazonReportStatus>, AmazonClientError> {
+        let (builder, mut observations) = self
+            .authenticated(request, AmazonOperation::GetReport, Some(report_id))
+            .await?;
+        let response = builder
             .send()
             .await
-            .map_err(|error| AmazonClientError::Retryable(format!("getReport failed: {error}")))?;
+            .map_err(|_| AmazonClientError::Retryable("getReport transport failed".to_owned()))?;
         if !response.status().is_success() {
-            return Err(response_error(response, "getReport"));
+            return Err(response_error(
+                response,
+                "getReport",
+                AmazonOperation::GetReport,
+            ));
         }
+        observations.push(transport_observation(&response, AmazonOperation::GetReport));
         #[derive(Deserialize)]
         #[serde(rename_all = "camelCase")]
         struct GetResponse {
@@ -323,7 +486,7 @@ impl AmazonReportsClient for LiveAmazonClient {
         let body = response.json::<GetResponse>().await.map_err(|_| {
             AmazonClientError::Permanent("getReport returned invalid JSON".to_owned())
         })?;
-        match body.processing_status.as_str() {
+        let value = match body.processing_status.as_str() {
             "DONE" => body
                 .report_document_id
                 .map(|document_id| AmazonReportStatus::Done { document_id })
@@ -335,29 +498,39 @@ impl AmazonReportsClient for LiveAmazonClient {
                 message: "Amazon marked report processing as FATAL".to_owned(),
             }),
             _ => Ok(AmazonReportStatus::InProgress),
-        }
+        }?;
+        Ok(AmazonClientResponse {
+            value,
+            observations,
+        })
     }
 
     async fn get_report_document(
         &self,
         request: &AmazonReportRequest,
         document_id: &str,
-    ) -> Result<AmazonReportDocument, AmazonClientError> {
-        let response = self
+    ) -> Result<AmazonClientResponse<AmazonReportDocument>, AmazonClientError> {
+        let (builder, mut observations) = self
             .authenticated(
                 request,
-                reqwest::Method::GET,
-                &format!("/reports/2021-06-30/documents/{document_id}"),
+                AmazonOperation::GetReportDocument,
+                Some(document_id),
             )
-            .await?
-            .send()
-            .await
-            .map_err(|error| {
-                AmazonClientError::Retryable(format!("getReportDocument failed: {error}"))
-            })?;
+            .await?;
+        let response = builder.send().await.map_err(|_| {
+            AmazonClientError::Retryable("getReportDocument transport failed".to_owned())
+        })?;
         if !response.status().is_success() {
-            return Err(response_error(response, "getReportDocument"));
+            return Err(response_error(
+                response,
+                "getReportDocument",
+                AmazonOperation::GetReportDocument,
+            ));
         }
+        observations.push(transport_observation(
+            &response,
+            AmazonOperation::GetReportDocument,
+        ));
         #[derive(Deserialize)]
         #[serde(rename_all = "camelCase")]
         struct DocumentResponse {
@@ -367,10 +540,13 @@ impl AmazonReportsClient for LiveAmazonClient {
         response
             .json::<DocumentResponse>()
             .await
-            .map(|body| AmazonReportDocument {
-                document_id: document_id.to_owned(),
-                url: body.url,
-                compression_algorithm: body.compression_algorithm,
+            .map(|body| AmazonClientResponse {
+                value: AmazonReportDocument {
+                    document_id: document_id.to_owned(),
+                    url: body.url,
+                    compression_algorithm: body.compression_algorithm,
+                },
+                observations,
             })
             .map_err(|_| {
                 AmazonClientError::Permanent("getReportDocument returned invalid JSON".to_owned())
@@ -380,31 +556,61 @@ impl AmazonReportsClient for LiveAmazonClient {
     async fn download_document(
         &self,
         document: &AmazonReportDocument,
-    ) -> Result<Vec<u8>, AmazonClientError> {
-        let response = self.http.get(&document.url).send().await.map_err(|error| {
-            AmazonClientError::Retryable(format!("report document download failed: {error}"))
+    ) -> Result<AmazonClientResponse<Vec<u8>>, AmazonClientError> {
+        if !download_url_allowed(&document.url) {
+            return Err(AmazonClientError::Permanent(
+                "report document URL is outside the approved Amazon download boundary".to_owned(),
+            ));
+        }
+        let response = self.http.get(&document.url).send().await.map_err(|_| {
+            AmazonClientError::Retryable("report document download transport failed".to_owned())
         })?;
         if response.status() == StatusCode::FORBIDDEN || response.status() == StatusCode::NOT_FOUND
         {
             return Err(AmazonClientError::ExpiredDownloadUrl);
         }
         if !response.status().is_success() {
-            return Err(response_error(response, "report document download"));
+            return Err(response_error(
+                response,
+                "report document download",
+                AmazonOperation::DownloadReportDocument,
+            ));
         }
-        let content = response.bytes().await.map_err(|error| {
-            AmazonClientError::Retryable(format!("report document body failed: {error}"))
+        let observation = transport_observation(&response, AmazonOperation::DownloadReportDocument);
+        let content = response.bytes().await.map_err(|_| {
+            AmazonClientError::Retryable("report document body transport failed".to_owned())
         })?;
         if content.len() > MAX_DOCUMENT_BYTES {
             return Err(AmazonClientError::Permanent(
                 "report document exceeds size limit".to_owned(),
             ));
         }
-        Ok(content.to_vec())
+        Ok(AmazonClientResponse {
+            value: content.to_vec(),
+            observations: vec![observation],
+        })
     }
 }
 
 #[derive(Clone, Default)]
 pub struct FixtureAmazonClient;
+
+fn fixture_observation(operation: AmazonOperation) -> AmazonTransportObservation {
+    let digest = sha256(format!("synthetic:{}", operation.as_str()).as_bytes());
+    AmazonTransportObservation {
+        operation,
+        request_id_redacted: Some(format!("sha256:{}", &digest[..12])),
+        rate_limit_limit: Some("synthetic".to_owned()),
+        retry_after_seconds: None,
+    }
+}
+
+fn fixture_response<T>(operation: AmazonOperation, value: T) -> AmazonClientResponse<T> {
+    AmazonClientResponse {
+        value,
+        observations: vec![fixture_observation(operation)],
+    }
+}
 
 const SALES_FIXTURE: &str = r#"{
   "reportSpecification": {
@@ -431,56 +637,77 @@ impl AmazonReportsClient for FixtureAmazonClient {
     async fn create_report(
         &self,
         request: &AmazonReportRequest,
-    ) -> Result<String, AmazonClientError> {
+    ) -> Result<AmazonClientResponse<String>, AmazonClientError> {
         if request.secret_ref.contains("rate-limit") {
+            let mut observation = fixture_observation(AmazonOperation::CreateReport);
+            observation.retry_after_seconds = Some(1);
             return Err(AmazonClientError::RateLimited {
                 retry_after_seconds: Some(1),
+                observation,
             });
         }
-        Ok(format!("fixture:{}", request.report_type))
+        Ok(fixture_response(
+            AmazonOperation::CreateReport,
+            format!("fixture:{}", request.report_type),
+        ))
     }
 
     async fn get_report(
         &self,
         request: &AmazonReportRequest,
         _report_id: &str,
-    ) -> Result<AmazonReportStatus, AmazonClientError> {
+    ) -> Result<AmazonClientResponse<AmazonReportStatus>, AmazonClientError> {
         if request.secret_ref.contains("cancelled") {
-            return Ok(AmazonReportStatus::Cancelled);
+            return Ok(fixture_response(
+                AmazonOperation::GetReport,
+                AmazonReportStatus::Cancelled,
+            ));
         }
         if request.secret_ref.contains("fatal") {
-            return Ok(AmazonReportStatus::Fatal {
-                message: "Synthetic fatal status".to_owned(),
-            });
+            return Ok(fixture_response(
+                AmazonOperation::GetReport,
+                AmazonReportStatus::Fatal {
+                    message: "Synthetic fatal status".to_owned(),
+                },
+            ));
         }
         if request.secret_ref.contains("pending") {
-            return Ok(AmazonReportStatus::InProgress);
+            return Ok(fixture_response(
+                AmazonOperation::GetReport,
+                AmazonReportStatus::InProgress,
+            ));
         }
-        Ok(AmazonReportStatus::Done {
-            document_id: format!("fixture-document:{}", request.report_type),
-        })
+        Ok(fixture_response(
+            AmazonOperation::GetReport,
+            AmazonReportStatus::Done {
+                document_id: format!("fixture-document:{}", request.report_type),
+            },
+        ))
     }
 
     async fn get_report_document(
         &self,
         request: &AmazonReportRequest,
         document_id: &str,
-    ) -> Result<AmazonReportDocument, AmazonClientError> {
-        Ok(AmazonReportDocument {
-            document_id: document_id.to_owned(),
-            url: format!("fixture://{}/{}", request.secret_ref, request.report_type),
-            compression_algorithm: if request.secret_ref.contains("gzip") {
-                Some("GZIP".to_owned())
-            } else {
-                None
+    ) -> Result<AmazonClientResponse<AmazonReportDocument>, AmazonClientError> {
+        Ok(fixture_response(
+            AmazonOperation::GetReportDocument,
+            AmazonReportDocument {
+                document_id: document_id.to_owned(),
+                url: format!("fixture://{}/{}", request.secret_ref, request.report_type),
+                compression_algorithm: if request.secret_ref.contains("gzip") {
+                    Some("GZIP".to_owned())
+                } else {
+                    None
+                },
             },
-        })
+        ))
     }
 
     async fn download_document(
         &self,
         document: &AmazonReportDocument,
-    ) -> Result<Vec<u8>, AmazonClientError> {
+    ) -> Result<AmazonClientResponse<Vec<u8>>, AmazonClientError> {
         if document.url.contains("expired") {
             return Err(AmazonClientError::ExpiredDownloadUrl);
         }
@@ -500,9 +727,13 @@ impl AmazonReportsClient for FixtureAmazonClient {
                 .map_err(|error| AmazonClientError::Permanent(error.to_string()))?;
             encoder
                 .finish()
+                .map(|content| fixture_response(AmazonOperation::DownloadReportDocument, content))
                 .map_err(|error| AmazonClientError::Permanent(error.to_string()))
         } else {
-            Ok(content)
+            Ok(fixture_response(
+                AmazonOperation::DownloadReportDocument,
+                content,
+            ))
         }
     }
 }
@@ -535,7 +766,7 @@ impl AmazonReportsClient for CompositeAmazonClient {
     async fn create_report(
         &self,
         request: &AmazonReportRequest,
-    ) -> Result<String, AmazonClientError> {
+    ) -> Result<AmazonClientResponse<String>, AmazonClientError> {
         self.client(request).create_report(request).await
     }
 
@@ -543,7 +774,7 @@ impl AmazonReportsClient for CompositeAmazonClient {
         &self,
         request: &AmazonReportRequest,
         report_id: &str,
-    ) -> Result<AmazonReportStatus, AmazonClientError> {
+    ) -> Result<AmazonClientResponse<AmazonReportStatus>, AmazonClientError> {
         self.client(request).get_report(request, report_id).await
     }
 
@@ -551,7 +782,7 @@ impl AmazonReportsClient for CompositeAmazonClient {
         &self,
         request: &AmazonReportRequest,
         document_id: &str,
-    ) -> Result<AmazonReportDocument, AmazonClientError> {
+    ) -> Result<AmazonClientResponse<AmazonReportDocument>, AmazonClientError> {
         self.client(request)
             .get_report_document(request, document_id)
             .await
@@ -560,7 +791,7 @@ impl AmazonReportsClient for CompositeAmazonClient {
     async fn download_document(
         &self,
         document: &AmazonReportDocument,
-    ) -> Result<Vec<u8>, AmazonClientError> {
+    ) -> Result<AmazonClientResponse<Vec<u8>>, AmazonClientError> {
         if document.url.starts_with("fixture://") {
             self.fixture.download_document(document).await
         } else {
@@ -580,10 +811,15 @@ impl MarketplaceWorker {
     }
 
     pub async fn cycle(&self, pool: &sqlx::PgPool) -> Result<(), sqlx::Error> {
-        if !modules::is_enabled(pool, modules::MARKETPLACE_INTELLIGENCE).await? {
+        if !modules::is_enabled(pool, modules::MARKETPLACE_INTELLIGENCE).await?
+            || !modules::is_enabled(pool, "intelligence.rules").await?
+        {
             return Ok(());
         }
-        marketplace::enqueue_due_schedules(pool, 25).await?;
+        let pilot_enabled = modules::is_enabled(pool, modules::AMAZON_READ_ONLY_PILOT).await?;
+        if !pilot_enabled {
+            marketplace::enqueue_due_schedules(pool, 25).await?;
+        }
         for run in marketplace::claim_due_runs(pool, 10).await? {
             self.process_run(pool, run).await;
         }
@@ -611,6 +847,26 @@ impl MarketplaceWorker {
                 "failed",
                 "seller_context_missing",
                 "Amazon seller context is required",
+            )
+            .await;
+            return;
+        }
+        let pilot_enabled = modules::is_enabled(pool, modules::AMAZON_READ_ONLY_PILOT)
+            .await
+            .unwrap_or(true);
+        if pilot_enabled
+            && run.mode == "live"
+            && (!pilot_live_run_is_safe(&run)
+                || !pilot_live_sequence_is_safe(pool, &run, Some(run.id))
+                    .await
+                    .unwrap_or(false))
+        {
+            let _ = marketplace::mark_run_terminal(
+                pool,
+                run.id,
+                "failed",
+                "pilot_live_gate_rejected",
+                "Live pilot acquisition must be one manual Sales & Traffic report for a short completed period",
             )
             .await;
             return;
@@ -655,9 +911,11 @@ impl MarketplaceWorker {
             "queued" | "requesting" => {
                 let _ = marketplace::mark_run_requesting(pool, run.id).await;
                 match self.client.create_report(&request).await {
-                    Ok(report_id) => {
-                        let _ =
-                            marketplace::set_run_request_created(pool, run.id, &report_id).await;
+                    Ok(response) => {
+                        self.record_observations(pool, run.id, &response.observations)
+                            .await;
+                        let _ = marketplace::set_run_request_created(pool, run.id, &response.value)
+                            .await;
                     }
                     Err(error) => {
                         self.record_client_error(pool, run.id, "requesting", error)
@@ -678,35 +936,42 @@ impl MarketplaceWorker {
                     return;
                 };
                 match self.client.get_report(&request, report_id).await {
-                    Ok(AmazonReportStatus::InProgress) => {
-                        let delay = exponential_backoff(run.poll_attempts, 60, 3600);
-                        let _ = marketplace::set_run_poll_pending(
-                            pool,
-                            run.id,
-                            delay,
-                            "Amazon report is still processing",
-                        )
-                        .await;
-                    }
-                    Ok(AmazonReportStatus::Done { document_id }) => {
-                        let _ =
-                            marketplace::set_run_document_ready(pool, run.id, &document_id).await;
-                    }
-                    Ok(AmazonReportStatus::Cancelled) => {
-                        let _ = marketplace::mark_run_terminal(
-                            pool,
-                            run.id,
-                            "cancelled",
-                            "cancelled",
-                            "Amazon cancelled the report or returned no data",
-                        )
-                        .await;
-                    }
-                    Ok(AmazonReportStatus::Fatal { message }) => {
-                        let _ = marketplace::mark_run_terminal(
-                            pool, run.id, "fatal", "fatal", &message,
-                        )
-                        .await;
+                    Ok(response) => {
+                        self.record_observations(pool, run.id, &response.observations)
+                            .await;
+                        match response.value {
+                            AmazonReportStatus::InProgress => {
+                                let delay = exponential_backoff(run.poll_attempts, 60, 3600);
+                                let _ = marketplace::set_run_poll_pending(
+                                    pool,
+                                    run.id,
+                                    delay,
+                                    "Amazon report is still processing",
+                                )
+                                .await;
+                            }
+                            AmazonReportStatus::Done { document_id } => {
+                                let _ =
+                                    marketplace::set_run_document_ready(pool, run.id, &document_id)
+                                        .await;
+                            }
+                            AmazonReportStatus::Cancelled => {
+                                let _ = marketplace::mark_run_terminal(
+                                    pool,
+                                    run.id,
+                                    "cancelled",
+                                    "cancelled",
+                                    "Amazon cancelled the report or returned no data",
+                                )
+                                .await;
+                            }
+                            AmazonReportStatus::Fatal { message } => {
+                                let _ = marketplace::mark_run_terminal(
+                                    pool, run.id, "fatal", "fatal", &message,
+                                )
+                                .await;
+                            }
+                        }
                     }
                     Err(error) => {
                         self.record_client_error(pool, run.id, "polling", error)
@@ -727,50 +992,64 @@ impl MarketplaceWorker {
                     return;
                 };
                 match self.client.get_report_document(&request, document_id).await {
-                    Ok(document) => match self.client.download_document(&document).await {
-                        Ok(downloaded) => {
-                            match decompress(&downloaded, document.compression_algorithm.as_deref())
-                            {
-                                Ok(content) => {
-                                    let _ = marketplace::archive_document(
-                                        pool,
-                                        run.id,
-                                        &document.document_id,
-                                        Some(content_type_for(&run.report_type)),
-                                        document.compression_algorithm.as_deref(),
-                                        &downloaded,
-                                        &content,
-                                    )
-                                    .await;
-                                }
-                                Err(message) => {
-                                    let _ = marketplace::mark_run_failure(
-                                        pool,
-                                        run.id,
-                                        "decompression_failed",
-                                        &message,
-                                        None,
-                                    )
-                                    .await;
+                    Ok(document_response) => {
+                        self.record_observations(pool, run.id, &document_response.observations)
+                            .await;
+                        let document = document_response.value;
+                        match self.client.download_document(&document).await {
+                            Ok(download_response) => {
+                                self.record_observations(
+                                    pool,
+                                    run.id,
+                                    &download_response.observations,
+                                )
+                                .await;
+                                let downloaded = download_response.value;
+                                match decompress(
+                                    &downloaded,
+                                    document.compression_algorithm.as_deref(),
+                                ) {
+                                    Ok(content) => {
+                                        let _ = marketplace::archive_document(
+                                            pool,
+                                            run.id,
+                                            &document.document_id,
+                                            Some(content_type_for(&run.report_type)),
+                                            document.compression_algorithm.as_deref(),
+                                            &downloaded,
+                                            &content,
+                                        )
+                                        .await;
+                                    }
+                                    Err(message) => {
+                                        let _ = marketplace::mark_run_failure(
+                                            pool,
+                                            run.id,
+                                            "decompression_failed",
+                                            &message,
+                                            None,
+                                        )
+                                        .await;
+                                    }
                                 }
                             }
+                            Err(AmazonClientError::ExpiredDownloadUrl) => {
+                                let _ = marketplace::retry_run(
+                                    pool,
+                                    run.id,
+                                    "downloading",
+                                    "download_url_expired",
+                                    "Amazon download URL expired; requesting a fresh document URL",
+                                    exponential_backoff(run.attempts, 5, 300),
+                                )
+                                .await;
+                            }
+                            Err(error) => {
+                                self.record_client_error(pool, run.id, "downloading", error)
+                                    .await
+                            }
                         }
-                        Err(AmazonClientError::ExpiredDownloadUrl) => {
-                            let _ = marketplace::retry_run(
-                                pool,
-                                run.id,
-                                "downloading",
-                                "download_url_expired",
-                                "Amazon download URL expired; requesting a fresh document URL",
-                                exponential_backoff(run.attempts, 5, 300),
-                            )
-                            .await;
-                        }
-                        Err(error) => {
-                            self.record_client_error(pool, run.id, "downloading", error)
-                                .await
-                        }
-                    },
+                    }
                     Err(error) => {
                         self.record_client_error(pool, run.id, "downloading", error)
                             .await
@@ -845,7 +1124,9 @@ impl MarketplaceWorker {
         match error {
             AmazonClientError::RateLimited {
                 retry_after_seconds,
+                observation,
             } => {
+                self.record_observations(pool, run_id, &[observation]).await;
                 let delay = retry_after_seconds.unwrap_or(60).max(1);
                 let _ = marketplace::retry_run(
                     pool,
@@ -886,6 +1167,28 @@ impl MarketplaceWorker {
         }
     }
 
+    async fn record_observations(
+        &self,
+        pool: &sqlx::PgPool,
+        run_id: uuid::Uuid,
+        observations: &[AmazonTransportObservation],
+    ) {
+        for observation in observations {
+            if let Err(error) = marketplace::record_transport_observation(
+                pool,
+                run_id,
+                observation.operation.as_str(),
+                observation.request_id_redacted.as_deref(),
+                observation.rate_limit_limit.as_deref(),
+                observation.retry_after_seconds,
+            )
+            .await
+            {
+                tracing::warn!(%error, %run_id, "could not persist redacted Amazon transport metadata");
+            }
+        }
+    }
+
     async fn process_analysis(&self, pool: &sqlx::PgPool, job: ClaimedAnalysisJob) {
         let result = match job.analysis_type.as_str() {
             "delta" => deterministic_delta(pool, &job).await,
@@ -916,6 +1219,135 @@ impl MarketplaceWorker {
             }
         }
     }
+}
+
+fn staging_context_is_approved(
+    seller_id: &str,
+    region: &str,
+    secret_ref: &str,
+    marketplace_id: &str,
+) -> bool {
+    if !marketplace::live_secret_reference_is_configured(secret_ref) {
+        return false;
+    }
+    let Ok(raw) = std::env::var("AMAZON_STAGING_APPROVAL") else {
+        return false;
+    };
+    let Ok(approval) = serde_json::from_str::<AmazonStagingApproval>(&raw) else {
+        return false;
+    };
+    approval.seller_sha256.len() == 64
+        && approval
+            .seller_sha256
+            .bytes()
+            .all(|byte| byte.is_ascii_hexdigit() && !byte.is_ascii_uppercase())
+        && approval.seller_sha256 == sha256(seller_id.as_bytes())
+        && approval.region == region
+        && approval.marketplace_id == marketplace_id
+}
+
+fn pilot_period_is_safe(
+    report_type: &str,
+    start: Option<DateTime<Utc>>,
+    end: Option<DateTime<Utc>>,
+    report_options: &Value,
+) -> bool {
+    let (Some(start), Some(end)) = (start, end) else {
+        return false;
+    };
+    let period_days = (end.date_naive() - start.date_naive()).num_days() + 1;
+    report_type == marketplace::SALES_AND_TRAFFIC
+        && start < end
+        && end.date_naive() < Utc::now().date_naive()
+        && (1..=7).contains(&period_days)
+        && *report_options == json!({"dateGranularity": "DAY", "asinGranularity": "CHILD"})
+}
+
+fn pilot_live_run_is_safe(run: &ClaimedReportRun) -> bool {
+    run.trigger_source == "manual"
+        && run.schedule_id.is_none()
+        && staging_context_is_approved(
+            &run.seller_id,
+            &run.region,
+            &run.secret_ref,
+            &run.marketplace_id,
+        )
+        && pilot_period_is_safe(
+            &run.report_type,
+            run.data_start_time,
+            run.data_end_time,
+            &run.report_options,
+        )
+}
+
+async fn pilot_live_sequence_is_safe(
+    pool: &sqlx::PgPool,
+    run: &ClaimedReportRun,
+    exclude_run_id: Option<uuid::Uuid>,
+) -> Result<bool, sqlx::Error> {
+    let other_active: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM amazon_report_runs
+         WHERE connection_id = $1 AND ($2::uuid IS NULL OR id <> $2)
+           AND status IN ('queued', 'requesting', 'polling', 'downloading', 'parsing', 'analysing')",
+    )
+    .bind(run.connection_id)
+    .bind(exclude_run_id)
+    .fetch_one(pool)
+    .await?;
+    if other_active != 0 {
+        return Ok(false);
+    }
+    let prior_comparability_key = sqlx::query_scalar::<_, String>(
+        "SELECT snapshot.comparability_key
+         FROM amazon_metric_snapshots snapshot
+         JOIN amazon_report_runs prior_run ON prior_run.id = snapshot.run_id
+         WHERE snapshot.connection_id = $1 AND snapshot.marketplace_id = $2
+           AND snapshot.report_type = $3 AND snapshot.parser_version = 'sales-traffic-json-v2'
+           AND snapshot.granularity = 'day_child' AND prior_run.status = 'succeeded'
+         ORDER BY prior_run.completed_at DESC LIMIT 1",
+    )
+    .bind(run.connection_id)
+    .bind(&run.marketplace_id)
+    .bind(&run.report_type)
+    .fetch_optional(pool)
+    .await?;
+    let Some(prior_comparability_key) = prior_comparability_key else {
+        return Ok(true);
+    };
+    let period_days = match (run.data_start_time, run.data_end_time) {
+        (Some(start), Some(end)) => (end.date_naive() - start.date_naive()).num_days() + 1,
+        _ => return Ok(false),
+    };
+    Ok(prior_comparability_key == format!("sales-traffic:day_child:{period_days}d"))
+}
+
+pub(crate) async fn pilot_live_request_is_safe(
+    pool: &sqlx::PgPool,
+    connection: &marketplace::AmazonConnection,
+    input: &marketplace::CreateAmazonReportRunInput,
+) -> Result<bool, sqlx::Error> {
+    let run = ClaimedReportRun {
+        id: uuid::Uuid::nil(),
+        connection_id: connection.id,
+        schedule_id: None,
+        marketplace_id: input.marketplace_id.clone(),
+        report_type: input.report_type.clone(),
+        data_start_time: input.data_start_time,
+        data_end_time: input.data_end_time,
+        report_options: input.report_options.clone(),
+        trigger_source: "manual".to_owned(),
+        status: "queued".to_owned(),
+        attempts: 0,
+        poll_attempts: 0,
+        amazon_report_id: None,
+        amazon_report_document_id: None,
+        seller_id: connection.seller_id.clone(),
+        region: connection.region.clone(),
+        secret_ref: connection.secret_ref.clone(),
+        granted_roles: connection.granted_roles.clone(),
+        mode: connection.mode.clone(),
+    };
+    Ok(pilot_live_run_is_safe(&run) && pilot_live_sequence_is_safe(pool, &run, None).await?)
 }
 
 fn exponential_backoff(attempt: i32, base_seconds: i64, max_seconds: i64) -> i64 {
@@ -1808,6 +2240,64 @@ fn strip_pii(value: &Value) -> Value {
 mod tests {
     use super::*;
 
+    #[test]
+    fn pilot_operation_contract_is_exact_and_download_hosts_fail_closed() {
+        assert_eq!(
+            AMAZON_PILOT_OPERATION_ALLOWLIST
+                .iter()
+                .map(|operation| operation.as_str())
+                .collect::<Vec<_>>(),
+            vec![
+                "lwa_token_refresh",
+                "create_report",
+                "get_report",
+                "get_report_document",
+                "download_report_document",
+            ]
+        );
+        assert!(download_url_allowed(
+            "https://example.s3.eu-central-1.amazonaws.com/report?signature=redacted"
+        ));
+        assert!(!download_url_allowed(
+            "https://example.invalid/report?signature=redacted"
+        ));
+        assert!(!download_url_allowed("file:///tmp/report"));
+    }
+
+    #[test]
+    fn pilot_live_period_requires_completed_utc_days_and_exact_sales_options() {
+        let yesterday = Utc::now().date_naive().pred_opt().unwrap();
+        let start =
+            DateTime::from_naive_utc_and_offset(yesterday.and_hms_opt(0, 0, 0).unwrap(), Utc);
+        let end =
+            DateTime::from_naive_utc_and_offset(yesterday.and_hms_opt(23, 59, 59).unwrap(), Utc);
+        let options = json!({"dateGranularity": "DAY", "asinGranularity": "CHILD"});
+        assert!(pilot_period_is_safe(
+            marketplace::SALES_AND_TRAFFIC,
+            Some(start),
+            Some(end),
+            &options,
+        ));
+        assert!(!pilot_period_is_safe(
+            marketplace::INVENTORY_PLANNING,
+            Some(start),
+            Some(end),
+            &options,
+        ));
+        assert!(!pilot_period_is_safe(
+            marketplace::SALES_AND_TRAFFIC,
+            Some(start),
+            Some(Utc::now()),
+            &options,
+        ));
+        assert!(!pilot_period_is_safe(
+            marketplace::SALES_AND_TRAFFIC,
+            Some(start),
+            Some(end),
+            &json!({"dateGranularity": "DAY"}),
+        ));
+    }
+
     #[tokio::test]
     async fn live_transport_contract_runs_against_local_fake_sp_api_only() {
         use axum::extract::{Path, State};
@@ -1875,17 +2365,18 @@ mod tests {
             data_end_time: None,
             report_options: json!({}),
         };
-        let report_id = client.create_report(&request).await.unwrap();
+        let report_id = client.create_report(&request).await.unwrap().value;
         let AmazonReportStatus::Done { document_id } =
-            client.get_report(&request, &report_id).await.unwrap()
+            client.get_report(&request, &report_id).await.unwrap().value
         else {
             panic!("fake report must be DONE");
         };
         let document = client
             .get_report_document(&request, &document_id)
             .await
-            .unwrap();
-        let bytes = client.download_document(&document).await.unwrap();
+            .unwrap()
+            .value;
+        let bytes = client.download_document(&document).await.unwrap().value;
         assert_eq!(bytes, SALES_FIXTURE.as_bytes());
         let partial = client
             .download_document(&AmazonReportDocument {
