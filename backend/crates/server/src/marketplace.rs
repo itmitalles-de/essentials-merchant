@@ -1599,6 +1599,29 @@ fn parse_sales_and_traffic(
     let mut currencies = BTreeMap::<String, Decimal>::new();
     let mut dates = Vec::new();
     let mut dimensions = HashSet::new();
+    // Amazon can legitimately emit the same child ASIN more than once when its
+    // parent variation relationship changed inside the requested period. Keep
+    // the strict duplicate guard, but disambiguate those rows by the parent
+    // dimension so their partitioned metrics are retained exactly once.
+    let mut child_parents = HashMap::<String, HashSet<String>>::new();
+    if asin_granularity == "CHILD" {
+        for (row, row_date) in &rows {
+            let Some(child_asin) = row.get("childAsin").and_then(Value::as_str) else {
+                continue;
+            };
+            let Some(parent_asin) = row.get("parentAsin").and_then(Value::as_str) else {
+                continue;
+            };
+            let key = format!(
+                "{child_asin}:{}",
+                row_date.map_or_else(|| "aggregate".to_owned(), |date| date.to_string())
+            );
+            child_parents
+                .entry(key)
+                .or_default()
+                .insert(parent_asin.to_owned());
+        }
+    }
     for (row, row_date) in rows {
         let asin = row
             .get(match asin_granularity {
@@ -1616,14 +1639,31 @@ fn parse_sales_and_traffic(
         if let Some(date) = row_date {
             dates.push(date);
         }
-        let dimension = format!(
+        let base_dimension = format!(
             "{asin}:{}",
             row_date.map_or_else(|| "aggregate".to_owned(), |date| date.to_string())
         );
+        let parent_asin = row.get("parentAsin").and_then(Value::as_str);
+        let disambiguate_parent = asin_granularity == "CHILD"
+            && child_parents
+                .get(&base_dimension)
+                .is_some_and(|parents| parents.len() > 1);
+        let dimension_key = match (disambiguate_parent, parent_asin) {
+            (true, Some(parent_asin)) => format!("{parent_asin}>{asin}"),
+            (true, None) => {
+                return Err(
+                    "Sales & Traffic duplicate child rows lack a stable parent dimension"
+                        .to_owned(),
+                )
+            }
+            (false, _) => asin.to_owned(),
+        };
+        let dimension = format!(
+            "{dimension_key}:{}",
+            row_date.map_or_else(|| "aggregate".to_owned(), |date| date.to_string())
+        );
         if !dimensions.insert(dimension) {
-            return Err(format!(
-                "Sales & Traffic report contains duplicate ASIN/date row for {asin}"
-            ));
+            return Err("Sales & Traffic report contains duplicate ASIN/date row".to_owned());
         }
         let sales = decimal(
             value_at(row, &["salesByAsin", "orderedProductSales", "amount"]),
@@ -1652,12 +1692,13 @@ fn parse_sales_and_traffic(
         *currencies.entry(currency.clone()).or_default() += sales;
         let evidence = json!({
             "dimension": asin,
+            "parent_dimension": disambiguate_parent.then_some(parent_asin).flatten(),
             "dimension_kind": asin_granularity_key,
             "date": row_date.map(|value| value.to_string()),
         });
         let asin_dimension_key = row_date
-            .map(|date| format!("{asin}:{date}"))
-            .unwrap_or_else(|| asin.to_owned());
+            .map(|date| format!("{dimension_key}:{date}"))
+            .unwrap_or(dimension_key);
         metrics.extend([
             ParsedMetric {
                 metric_name: "ordered_product_sales".to_owned(),
@@ -2840,6 +2881,21 @@ mod tests {
           {"childAsin":"B0DUPLICATE","salesByAsin":{"orderedProductSales":{"amount":"1.00","currencyCode":"EUR"},"unitsOrdered":1}}
         ]}"#;
         assert!(parse_sales_and_traffic(duplicate_sales, None, None).is_err());
+
+        let reassigned_child = br#"{"salesAndTrafficByAsin":[
+          {"parentAsin":"B0PARENT01","childAsin":"B0REASSIGN","salesByAsin":{"orderedProductSales":{"amount":"1.00","currencyCode":"EUR"},"unitsOrdered":1}},
+          {"parentAsin":"B0PARENT02","childAsin":"B0REASSIGN","salesByAsin":{"orderedProductSales":{"amount":"2.00","currencyCode":"EUR"},"unitsOrdered":2}}
+        ]}"#;
+        let parsed = parse_sales_and_traffic(reassigned_child, None, None).unwrap();
+        assert_eq!(parsed.summary["ordered_product_sales"], "3.00");
+        assert_eq!(parsed.summary["units_ordered"], "3");
+        let dimension_keys = parsed
+            .metrics
+            .iter()
+            .filter(|metric| metric.dimension_type == "child_period")
+            .map(|metric| metric.dimension_key.as_str())
+            .collect::<HashSet<_>>();
+        assert_eq!(dimension_keys.len(), 2);
     }
 
     #[test]
