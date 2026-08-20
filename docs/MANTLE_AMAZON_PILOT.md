@@ -16,7 +16,7 @@ mutation capability.
 
 ## Current Mantle deployment
 
-The accepted live revision is `f1ec43c20a809cee3abdc87283812132c62def93`
+The accepted live application revision is `61e7b3855afaa6a378edffc39b352afd875feebe`
 in Compose project `essentials-merchant-amazon` on `192.168.178.15`. Internal
 operators use `https://ai-marketing.mantle-climbing.de`; the retained fallback is
 `https://merchant.mantle-climbing.de/ai-marketing`. Both names resolve internally
@@ -29,16 +29,26 @@ CSV, TSV, retry idempotence, two-period comparison, all summary formats,
 business-mutation blocking, backup, and empty-target restore passed. No
 authorized real report has been imported.
 
+The weekly AI mini-tool acceptance reused the four stored synthetic aggregate
+analyses, produced a stable closed-input hash, rendered the fixed KPI and
+handover structure, and proved that a failed provider call creates no weekly
+assessment. The successful-run gate is enforced by a Monday-based database
+unique index in `Europe/Berlin`, not only by the button. Because no separately
+billed OpenAI API key is provisioned, the live external status remains
+fail-closed and no provider request has succeeded.
+
 The live image IDs are:
 
 - PostgreSQL: `sha256:75f5a96988cdf694a215073c3e9c001b706b371e2f94df3967f2efdec2787f6b`
-- backend: `sha256:325d2937867426faa13257017debc3da11ab99d9e028ecec99f41736283caf22`
-- frontend: `sha256:56bbcc509dcb8aa88d81fda7aa9da502da9a671a151692ff5b3daf5fc2597427`
+- backend: `sha256:44e1fc334437608e1cc29a1039de4d8b96b035bc55aef4af45d1941429d473e0`
+- frontend: `sha256:8427903ec0a2eb8da7562804cc81eb67e8b0a698c1cd99b91e1ecff48b39858c`
 
 The final live backup was generated and verified through the repository-owned,
 digest-pinned Node container fallback, so the host does not need a Node.js
 installation. Empty-target restore acceptance matched raw archive hashes,
-normalized metrics, deterministic analyses, module state, and HTTP readiness.
+normalized metrics, deterministic analyses, schema 18, module state, and HTTP
+readiness. The accepted post-deployment backup is
+`/opt/essentials-merchant-amazon-backups/live-weekly-61e7b38-20260820T072000Z`.
 
 ## Relationship to the Mantle wiki toolchain
 

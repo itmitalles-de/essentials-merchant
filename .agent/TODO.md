@@ -10,13 +10,16 @@ This file is the authoritative unfinished-work handoff. Do not create a competin
   idempotent persistence.
 - [x] Add the German strategy panel and `/ai-marketing` AI-first route with visible separation from
   facts and deterministic derivations.
+- [x] Replace the per-analysis confirmation UI with exactly one `Analyse` button, enforce one
+  successful run per Berlin calendar week in the server/database, include bounded aggregate history
+  plus the previous validated handover, and render a fixed KPI/strategy/handover structure.
 - [x] Keep the OpenAI feature disabled by default and the manual report workflow fully usable
   without a key.
 - [x] Verify Rust/DB/frontend, fresh Compose/Chromium, privacy/transport contracts, upgrade, and
   backup/empty-target restore with synthetic data only.
 - [x] Stage, commit, and push the authorized implementation and recovery fix to
   `pilot/mantle-amazon-analysis-live`; all seven PR #5 jobs passed on deployed head
-  `f1ec43c20a809cee3abdc87283812132c62def93`.
+  `61e7b3855afaa6a378edffc39b352afd875feebe` in run `32341733986`.
 - [x] Re-baseline the productive host immediately before deployment and update only Compose project
   `essentials-merchant-amazon` with full Git-SHA backend/frontend images. Do not touch its volumes
   or other projects.
@@ -28,12 +31,16 @@ This file is the authoritative unfinished-work handoff. Do not create a competin
 - [x] Run live synthetic acceptance with OpenAI disabled: login, AI-first view, existing analysis,
   disabled external gate, import/comparison/export, unchanged non-target container IDs/restarts,
   logs/secrets check, backup, and empty-target restore.
+- [x] Re-run live acceptance for the weekly tool: four synthetic aggregate analyses, stable closed
+  hash, fixed UI, provider failure without weekly consumption, schema 18, zero secret-log matches,
+  SHA-tagged images, verified backup, and matching empty-target restore.
 
 ## Operational retention decision
 
 - [ ] After a human confirms the final backup, decide whether to retain or explicitly remove the two
-  stopped restore audit volumes and the segregated, manifest-less first backup attempt. Never use
-  the failed partial directory as a restore source and never use `docker compose down -v`.
+  latest stopped restore audit volumes, the earlier restore audit volumes, and the segregated,
+  manifest-less first backup attempt. Never use the failed partial directory as a restore source and
+  never use `docker compose down -v`.
 
 ## External OpenAI gate
 
