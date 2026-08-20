@@ -175,3 +175,10 @@
   `App.tsx`, and `nginx.conf`
 - `compose.mantle-amazon.yml`, pilot backup/restore scripts, and the five pilot
   documents plus `STRATEGY_AI_GATE.md`
+
+## Simple Business design-system contract
+
+- `.simple-business-design-system.json` pins the central UI source to commit
+  `e508cc2` and package version `0.1.0`; no rules are copied into this product.
+- Existing product-owned UI remains legacy and upstream Vendure UI is excluded.
+  Package/CI activation waits for the central GitHub Actions billing blocker.
