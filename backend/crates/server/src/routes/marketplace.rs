@@ -43,9 +43,9 @@ pub fn router() -> Router<AppState> {
         .route("/runs/{run_id}/raw", get(raw_document))
         .route("/strategy/status", get(strategy_status))
         .route(
-            "/analyses/{analysis_id}/strategy",
-            get(strategy_preview)
-                .post(create_strategy_assessment)
+            "/strategy/weekly",
+            get(weekly_strategy_preview)
+                .post(create_weekly_strategy_assessment)
                 .layer(DefaultBodyLimit::max(2 * 1024)),
         )
         .route("/analyses/{analysis_id}/export", get(export_analysis))
@@ -605,12 +605,20 @@ async fn raw_document(
 }
 
 #[derive(Debug, Serialize)]
-struct StrategyAssessmentView {
-    analysis_id: Uuid,
-    payload_sha256: String,
+struct WeeklyStrategyView {
+    anchor_analysis_id: Option<Uuid>,
+    current_payload_sha256: Option<String>,
+    assessment_payload_sha256: Option<String>,
     status: crate::strategy_ai::StrategyAiStatus,
+    can_run: bool,
+    block_reason: Option<&'static str>,
+    week_start: NaiveDate,
+    next_available_at: DateTime<Utc>,
+    source_analysis_count: usize,
+    previous_run_context: bool,
     cached: bool,
     assessment: Option<Value>,
+    assessment_week_start: Option<NaiveDate>,
     provider_request_id_redacted: Option<String>,
     input_tokens: Option<i64>,
     output_tokens: Option<i64>,
@@ -680,91 +688,148 @@ async fn strategy_status(
     Ok(Json(state.strategy_ai.status()))
 }
 
-async fn load_strategy_view(
-    state: &AppState,
-    analysis_id: Uuid,
-) -> Result<
-    (
-        crate::strategy_ai::PreparedStrategyInput,
-        Option<db::marketplace::AiStrategyAssessment>,
-    ),
-    StrategyRouteError,
-> {
-    let analysis = db::marketplace::analysis_result(&state.pool, analysis_id)
-        .await
-        .map_err(|_| StrategyRouteError::new(StatusCode::INTERNAL_SERVER_ERROR, "database_error"))?
-        .ok_or_else(|| StrategyRouteError::new(StatusCode::NOT_FOUND, "analysis_not_found"))?;
-    let prepared = crate::strategy_ai::prepare_strategy_input(&analysis.result).map_err(
-        |error| match error {
-            crate::strategy_ai::StrategyAiError::PayloadTooLarge => StrategyRouteError::new(
-                StatusCode::PAYLOAD_TOO_LARGE,
-                "aggregate_payload_too_large",
-            ),
-            _ => StrategyRouteError::new(
-                StatusCode::UNPROCESSABLE_ENTITY,
-                "aggregate_payload_invalid",
-            ),
-        },
-    )?;
-    let cached = db::marketplace::ai_strategy_assessment(
-        &state.pool,
-        analysis_id,
-        &prepared.payload_sha256,
-        state.strategy_ai.model(),
-        crate::strategy_ai::STRATEGY_PROMPT_VERSION,
-    )
-    .await
-    .map_err(|_| StrategyRouteError::new(StatusCode::INTERNAL_SERVER_ERROR, "database_error"))?;
-    Ok((prepared, cached))
+struct WeeklyStrategyContext {
+    week_start: NaiveDate,
+    next_available_at: DateTime<Utc>,
+    anchor_analysis_id: Option<Uuid>,
+    prepared: Option<crate::strategy_ai::PreparedStrategyInput>,
+    previous: Option<db::marketplace::AiStrategyAssessment>,
+    current: Option<db::marketplace::AiStrategyAssessment>,
 }
 
-fn strategy_view(
+async fn load_weekly_strategy_context(
     state: &AppState,
-    analysis_id: Uuid,
-    prepared: &crate::strategy_ai::PreparedStrategyInput,
-    assessment: Option<db::marketplace::AiStrategyAssessment>,
+) -> Result<WeeklyStrategyContext, StrategyRouteError> {
+    let (week_start, next_available_at) =
+        db::marketplace::current_mantle_strategy_week(&state.pool)
+            .await
+            .map_err(|_| {
+                StrategyRouteError::new(StatusCode::INTERNAL_SERVER_ERROR, "database_error")
+            })?;
+    let analyses = db::marketplace::recent_analysis_results_for_strategy(&state.pool)
+        .await
+        .map_err(|_| {
+            StrategyRouteError::new(StatusCode::INTERNAL_SERVER_ERROR, "database_error")
+        })?;
+    let previous =
+        db::marketplace::latest_ai_strategy_assessment_before_week(&state.pool, week_start)
+            .await
+            .map_err(|_| {
+                StrategyRouteError::new(StatusCode::INTERNAL_SERVER_ERROR, "database_error")
+            })?;
+    let current = db::marketplace::ai_strategy_assessment_for_week(&state.pool, week_start)
+        .await
+        .map_err(|_| {
+            StrategyRouteError::new(StatusCode::INTERNAL_SERVER_ERROR, "database_error")
+        })?;
+    let results = analyses
+        .iter()
+        .map(|analysis| analysis.result.clone())
+        .collect::<Vec<_>>();
+    let prepared = match crate::strategy_ai::prepare_weekly_strategy_input(
+        &results,
+        previous.as_ref().map(|record| &record.result),
+    ) {
+        Ok(prepared) => Some(prepared),
+        Err(crate::strategy_ai::StrategyAiError::InvalidResponse) => None,
+        Err(error) => {
+            return Err(match error {
+                crate::strategy_ai::StrategyAiError::PayloadTooLarge => StrategyRouteError::new(
+                    StatusCode::PAYLOAD_TOO_LARGE,
+                    "aggregate_payload_too_large",
+                ),
+                _ => StrategyRouteError::new(
+                    StatusCode::UNPROCESSABLE_ENTITY,
+                    "aggregate_payload_invalid",
+                ),
+            })
+        }
+    };
+    Ok(WeeklyStrategyContext {
+        week_start,
+        next_available_at,
+        anchor_analysis_id: analyses.first().map(|analysis| analysis.id),
+        prepared,
+        previous,
+        current,
+    })
+}
+
+fn weekly_strategy_view(
+    state: &AppState,
+    context: &WeeklyStrategyContext,
     cached: bool,
-) -> StrategyAssessmentView {
-    StrategyAssessmentView {
-        analysis_id,
-        payload_sha256: prepared.payload_sha256.clone(),
-        status: state.strategy_ai.status(),
-        cached,
-        assessment: assessment.as_ref().map(|record| record.result.clone()),
-        provider_request_id_redacted: assessment
+) -> WeeklyStrategyView {
+    let status = state.strategy_ai.status();
+    let displayed = context.current.as_ref().or(context.previous.as_ref());
+    let source_analysis_count = context
+        .prepared
+        .as_ref()
+        .and_then(|prepared| prepared.payload.get("analyses"))
+        .and_then(Value::as_array)
+        .map_or(0, Vec::len);
+    let block_reason = if context.current.is_some() {
+        Some("weekly_limit_reached")
+    } else if context.prepared.is_none() {
+        Some("no_analysis_data")
+    } else {
+        status.reason
+    };
+    WeeklyStrategyView {
+        anchor_analysis_id: context.anchor_analysis_id,
+        current_payload_sha256: context
+            .prepared
             .as_ref()
+            .map(|prepared| prepared.payload_sha256.clone()),
+        assessment_payload_sha256: displayed.map(|record| record.payload_sha256.clone()),
+        can_run: block_reason.is_none(),
+        block_reason,
+        week_start: context.week_start,
+        next_available_at: context.next_available_at,
+        source_analysis_count,
+        previous_run_context: context
+            .prepared
+            .as_ref()
+            .and_then(|prepared| prepared.payload.get("previous_ai_run"))
+            .is_some_and(|previous| !previous.is_null()),
+        status,
+        cached,
+        assessment: displayed.map(|record| record.result.clone()),
+        assessment_week_start: displayed.and_then(|record| record.week_start),
+        provider_request_id_redacted: displayed
             .and_then(|record| record.provider_request_id_redacted.clone()),
-        input_tokens: assessment.as_ref().and_then(|record| record.input_tokens),
-        output_tokens: assessment.as_ref().and_then(|record| record.output_tokens),
-        created_at: assessment.as_ref().map(|record| record.created_at),
+        input_tokens: displayed.and_then(|record| record.input_tokens),
+        output_tokens: displayed.and_then(|record| record.output_tokens),
+        created_at: displayed.map(|record| record.created_at),
     }
 }
 
-async fn strategy_preview(
+async fn weekly_strategy_preview(
     State(state): State<AppState>,
     AuthUser(user): AuthUser,
-    Path(analysis_id): Path<Uuid>,
-) -> Result<Json<StrategyAssessmentView>, StrategyRouteError> {
+) -> Result<Json<WeeklyStrategyView>, StrategyRouteError> {
     require_strategy_admin(&state, &user).await?;
-    let (prepared, cached) = load_strategy_view(&state, analysis_id).await?;
-    let is_cached = cached.is_some();
-    Ok(Json(strategy_view(
-        &state,
-        analysis_id,
-        &prepared,
-        cached,
-        is_cached,
-    )))
+    let context = load_weekly_strategy_context(&state).await?;
+    let cached = context.current.is_some();
+    Ok(Json(weekly_strategy_view(&state, &context, cached)))
 }
 
-async fn create_strategy_assessment(
+async fn create_weekly_strategy_assessment(
     State(state): State<AppState>,
     AuthUser(user): AuthUser,
-    Path(analysis_id): Path<Uuid>,
     Json(request): Json<StrategyAssessmentRequest>,
-) -> Result<Json<StrategyAssessmentView>, StrategyRouteError> {
+) -> Result<Json<WeeklyStrategyView>, StrategyRouteError> {
     require_strategy_admin(&state, &user).await?;
-    let (prepared, cached) = load_strategy_view(&state, analysis_id).await?;
+    let mut context = load_weekly_strategy_context(&state).await?;
+    if context.current.is_some() {
+        return Ok(Json(weekly_strategy_view(&state, &context, true)));
+    }
+    let prepared = context.prepared.as_ref().ok_or_else(|| {
+        StrategyRouteError::new(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "aggregate_payload_invalid",
+        )
+    })?;
     if !request.confirmed_aggregate_only
         || request.confirmed_payload_sha256 != prepared.payload_sha256
     {
@@ -773,18 +838,15 @@ async fn create_strategy_assessment(
             "aggregate_confirmation_mismatch",
         ));
     }
-    if cached.is_some() {
-        return Ok(Json(strategy_view(
-            &state,
-            analysis_id,
-            &prepared,
-            cached,
-            true,
-        )));
-    }
+    let analysis_id = context.anchor_analysis_id.ok_or_else(|| {
+        StrategyRouteError::new(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "aggregate_payload_invalid",
+        )
+    })?;
     let completion = state
         .strategy_ai
-        .assess(&prepared, &crate::strategy_ai::safety_identifier(user.id))
+        .assess(prepared, &crate::strategy_ai::safety_identifier(user.id))
         .await
         .map_err(strategy_provider_error)?;
     let result = serde_json::to_value(&completion.assessment).map_err(|_| {
@@ -802,6 +864,8 @@ async fn create_strategy_assessment(
         provider_request_id_redacted: completion.provider_request_id_redacted.as_deref(),
         input_tokens: completion.input_tokens,
         output_tokens: completion.output_tokens,
+        week_start: Some(context.week_start),
+        previous_assessment_id: context.previous.as_ref().map(|record| record.id),
         created_by: user.id,
     };
     let (stored, was_inserted) = db::marketplace::store_ai_strategy_assessment(&state.pool, &input)
@@ -809,13 +873,8 @@ async fn create_strategy_assessment(
         .map_err(|_| {
             StrategyRouteError::new(StatusCode::INTERNAL_SERVER_ERROR, "database_error")
         })?;
-    Ok(Json(strategy_view(
-        &state,
-        analysis_id,
-        &prepared,
-        Some(stored),
-        !was_inserted,
-    )))
+    context.current = Some(stored);
+    Ok(Json(weekly_strategy_view(&state, &context, !was_inserted)))
 }
 
 fn strategy_provider_error(error: crate::strategy_ai::StrategyAiError) -> StrategyRouteError {

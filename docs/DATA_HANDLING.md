@@ -54,19 +54,22 @@ current immutable-delete triggers.
 The live pilot defaults to no external AI request. The implemented strategy
 panel remains disabled until a separate privacy and API-credential gate is
 approved. When enabled, the only eligible input is an explicitly requested,
-hash-confirmed, closed aggregate DTO containing period/marketplace context,
-allowlisted metrics and deterministic deltas, freshness, bounded missing-field
-labels, and semantic evidence references. Raw bytes, raw rows, ASIN/SKU or
-customer identifiers, database evidence UUIDs, local paths, archive hashes,
-secrets, and free report text are prohibited.
+hash-confirmed, closed aggregate DTO containing up to eight distinct newest-first
+period/marketplace analyses, allowlisted metrics and deterministic deltas,
+freshness, bounded missing-field labels, semantic evidence references, and the
+last validated structured AI result as untrusted continuity context. Raw bytes,
+raw rows, ASIN/SKU or customer identifiers, old database evidence UUIDs, local
+paths, archive hashes, secrets, and free report text are prohibited.
 
 The provider key must be project-scoped and stored only in the host secret
 environment. Requests must disable provider-side response storage where the API
 supports it. Neither request nor response may be logged verbatim. Generated
 content is untrusted strategy assistance and is stored/displayed only inside a
 visibly separate AI block as assessment, hypotheses, possible measures,
-uncertainty, missing evidence, and open questions; it cannot alter Amazon or
-Merchant state. The immutable database row contains only validated structured
-output and redacted metadata, never the prompt or raw provider response. See
+uncertainty, missing evidence, open questions, and a fixed next-run handover; it
+cannot alter Amazon or Merchant state. Exactly one successful row is accepted
+per Europe/Berlin calendar week. The immutable database row contains only
+validated structured output and redacted metadata, never the prompt or raw
+provider response. See
 [STRATEGY_AI_GATE.md](STRATEGY_AI_GATE.md) for the exact contract and provider
 retention caveat.

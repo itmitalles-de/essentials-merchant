@@ -281,16 +281,20 @@ export function MarketplaceIntelligence({ aiFirst = false }: { aiFirst?: boolean
       </div>
       {analyses.length === 0 && (
         <div className="card">
-          Noch keine Analyse vorhanden. Importiere unten einen Zeitraum; für belastbare Deltas
-          anschließend einen kompatiblen zweiten Zeitraum.
+          <p>
+            Noch keine Analyse vorhanden. Importiere unten einen Zeitraum; für belastbare Deltas
+            anschließend einen kompatiblen zweiten Zeitraum.
+          </p>
+          <WeeklyStrategyPanel />
         </div>
       )}
-      {analyses.map((analysis) => (
+      {analyses.map((analysis, index) => (
         <AnalysisCard
           key={analysis.id}
           id={analysis.id}
           result={analysis.result}
           title={`Periodenvergleich · ${formatDate(analysis.created_at)}`}
+          showWeeklyStrategy={index === 0}
         />
       ))}
     </section>
@@ -815,6 +819,99 @@ function AnalysisItems({ items, emptyText }: { items: unknown[]; emptyText: stri
   );
 }
 
+const kpiDefinitions = [
+  { keys: ["ordered_product_sales"], label: "Umsatz" },
+  { keys: ["units_ordered"], label: "Bestellte Einheiten" },
+  { keys: ["sessions"], label: "Sessions" },
+  { keys: ["page_views"], label: "Page Views" },
+  { keys: ["unit_session_percentage", "conversion_rate"], label: "Conversion" },
+  { keys: ["buy_box_percentage"], label: "Buy Box" },
+  { keys: ["b2b_revenue_share", "b2b_share", "b2b_units_share"], label: "B2B-Anteil" },
+] as const;
+
+const numericValue = (value: unknown): number | null => {
+  const parsed = typeof value === "number" ? value : Number.parseFloat(String(value ?? ""));
+  return Number.isFinite(parsed) ? parsed : null;
+};
+
+const metricRecord = (items: unknown[], keys: readonly string[]) => items
+  .map((item) => typeof item === "object" && item !== null ? item as Record<string, unknown> : null)
+  .find((item) => item && keys.includes(String(item.metric))) ?? null;
+
+const metricValueLabel = (value: number | null, item: Record<string, unknown> | null) => {
+  if (value === null) return "–";
+  const formatted = new Intl.NumberFormat("de-DE", { maximumFractionDigits: 2 }).format(value);
+  const currency = typeof item?.currency === "string" ? item.currency : null;
+  const unit = typeof item?.unit === "string" ? item.unit : null;
+  if (currency) return `${formatted} ${currency}`;
+  if (unit === "percent" || unit === "%") return `${formatted} %`;
+  return formatted;
+};
+
+const barWidth = (value: number | null, maximum: number) => {
+  if (value === null || maximum <= 0) return 0;
+  return Math.max(4, Math.min(100, Math.abs(value) / maximum * 100));
+};
+
+function KpiComparisonChart({ result }: { result: Record<string, unknown> }) {
+  const changes = asArray(result.changes_since_last_run);
+  const facts = asArray(result.facts);
+  return (
+    <figure className="kpi-chart">
+      <figcaption>
+        <strong>KPI-Überblick</strong>
+        <span>Vorperiode und aktueller Zeitraum · feste Darstellung aus Serverfakten</span>
+      </figcaption>
+      <div className="kpi-chart-grid">
+        {kpiDefinitions.map((definition) => {
+          const change = metricRecord(changes, definition.keys);
+          const fact = metricRecord(facts, definition.keys);
+          const current = numericValue(change?.current ?? fact?.value);
+          const previous = numericValue(change?.previous);
+          const maximum = Math.max(Math.abs(current ?? 0), Math.abs(previous ?? 0));
+          const percent = numericValue(change?.percent_change);
+          const trend = String(change?.trend ?? (current === null ? "missing" : "current"));
+          const trendLabel = ({
+            up: "↑ gestiegen",
+            up_from_zero: "↑ neu",
+            down: "↓ gesunken",
+            down_to_zero: "↓ auf null",
+            stable: "→ stabil",
+            current: "nur aktuell",
+            missing: "nicht vorhanden",
+          } as Record<string, string>)[trend] ?? trend;
+          const valueSource = change ?? fact;
+          return (
+            <section className="kpi-tile" key={definition.label}>
+              <div className="kpi-tile-heading">
+                <h3>{definition.label}</h3>
+                <span className={`kpi-trend ${trend}`}>{trendLabel}</span>
+              </div>
+              <div
+                className="kpi-bars"
+                role="img"
+                aria-label={`${definition.label}: Vorperiode ${metricValueLabel(previous, valueSource)}, aktuell ${metricValueLabel(current, valueSource)}`}
+              >
+                <div><span>Vorher</span><i><b style={{ width: `${barWidth(previous, maximum)}%` }} /></i></div>
+                <div><span>Aktuell</span><i><b style={{ width: `${barWidth(current, maximum)}%` }} /></i></div>
+              </div>
+              <div className="kpi-values">
+                <span>{metricValueLabel(previous, valueSource)}</span>
+                <strong>{metricValueLabel(current, valueSource)}</strong>
+              </div>
+              <p>
+                {percent === null
+                  ? "Delta nicht bestimmbar"
+                  : `${percent >= 0 ? "+" : ""}${new Intl.NumberFormat("de-DE", { maximumFractionDigits: 2 }).format(percent)} %`}
+              </p>
+            </section>
+          );
+        })}
+      </div>
+    </figure>
+  );
+}
+
 const confidenceLabel = (value: MarketplaceStrategyFinding["confidence"]) => ({
   low: "niedrig",
   medium: "mittel",
@@ -923,8 +1020,42 @@ function StrategyResult({ view }: { view: MarketplaceStrategyView }) {
           <AnalysisItems items={assessment.limitations} emptyText="Keine zusätzliche Grenze benannt." />
         </section>
       </div>
+      <section className="strategy-section strategy-handover">
+        <h4>Handover bis zum nächsten Wochenlauf</h4>
+        {assessment.handover ? (
+          <>
+            <p>{assessment.handover.continuity_summary}</p>
+            <div className="strategy-grid">
+              <div>
+                <h5>Prioritäten</h5>
+                <AnalysisItems
+                  items={assessment.handover.priorities_until_next_run}
+                  emptyText="Keine Priorität übertragen."
+                />
+              </div>
+              <div>
+                <h5>Evidenz sammeln</h5>
+                <AnalysisItems
+                  items={assessment.handover.evidence_for_next_run}
+                  emptyText="Keine zusätzliche Evidenz angefordert."
+                />
+              </div>
+              <div>
+                <h5>Im nächsten Lauf prüfen</h5>
+                <AnalysisItems
+                  items={assessment.handover.next_run_checks}
+                  emptyText="Keine Folgeprüfung benannt."
+                />
+              </div>
+            </div>
+          </>
+        ) : (
+          <p className="marketplace-muted">Historischer Lauf ohne strukturiertes Handover.</p>
+        )}
+      </section>
       <p className="marketplace-muted strategy-metadata">
-        Modell {view.status.model} · Prompt {view.status.prompt_version} · erzeugt {formatDate(view.created_at)}
+        Modell {view.status.model} · Prompt {view.status.prompt_version} · Wochenlauf {view.assessment_week_start ?? "historisch"}
+        {" · "}erzeugt {formatDate(view.created_at)}
         {view.input_tokens !== null && ` · Input ${view.input_tokens} Tokens`}
         {view.output_tokens !== null && ` · Output ${view.output_tokens} Tokens`}
         {view.cached && " · unverändert wiederverwendet"}
@@ -943,6 +1074,8 @@ function strategyErrorMessage(error: unknown): string {
     openai_invalid_response: "OpenAI lieferte keine gültige strukturierte Einschätzung.",
     openai_unavailable: "OpenAI ist vorübergehend nicht erreichbar.",
     strategy_assessment_busy: "Eine Strategieeinschätzung läuft bereits.",
+    weekly_limit_reached: "Der Wochenlauf wurde bereits erstellt.",
+    no_analysis_data: "Es sind noch keine freigegebenen Amazon-Aggregatdaten vorhanden.",
     aggregate_confirmation_mismatch: "Die Aggregatdaten haben sich geändert. Bitte den neuen Hash prüfen.",
     aggregate_payload_invalid: "Diese Analyse enthält keine freigegebenen Aggregatdaten für die KI-Strategie.",
     aggregate_payload_too_large: "Die freigegebene Aggregatzusammenfassung ist zu groß.",
@@ -950,12 +1083,27 @@ function strategyErrorMessage(error: unknown): string {
   return messages[code] ?? `KI-Strategie konnte nicht geladen werden (${code}).`;
 }
 
-function StrategyPanel({ analysisId }: { analysisId: string }) {
+function weeklyBlockMessage(view: MarketplaceStrategyView): string | null {
+  if (view.block_reason === "weekly_limit_reached") {
+    return `Diese Kalenderwoche ist abgeschlossen. Die nächste Analyse ist ab ${formatDate(view.next_available_at)} möglich.`;
+  }
+  if (view.block_reason === "no_analysis_data") {
+    return "Importiere zuerst mindestens einen offiziellen Amazon-Report. Der Button verwendet danach alle freigegebenen Aggregatanalysen.";
+  }
+  if (view.block_reason === "api_key_missing") {
+    return "Der serverseitige Pay-per-use-API-Key fehlt. Import, Kennzahlen und Diagramme bleiben nutzbar.";
+  }
+  if (view.block_reason === "feature_disabled") {
+    return "Die externe KI-Strategie ist serverseitig noch nicht freigegeben.";
+  }
+  return null;
+}
+
+function WeeklyStrategyPanel() {
   const { role } = useAuth();
   const [view, setView] = useState<MarketplaceStrategyView | null>(null);
   const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
-  const [confirmed, setConfirmed] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -963,8 +1111,7 @@ function StrategyPanel({ analysisId }: { analysisId: string }) {
     let active = true;
     setLoading(true);
     setError(null);
-    setConfirmed(false);
-    api.get<MarketplaceStrategyView>(`/marketplace/analyses/${analysisId}/strategy`)
+    api.get<MarketplaceStrategyView>("/marketplace/strategy/weekly")
       .then((result) => {
         if (active) setView(result);
       })
@@ -977,32 +1124,28 @@ function StrategyPanel({ analysisId }: { analysisId: string }) {
     return () => {
       active = false;
     };
-  }, [analysisId, role]);
+  }, [role]);
 
   if (role !== "administrator") return null;
 
   const createAssessment = async () => {
-    if (!view || !confirmed || !view.status.available) return;
+    if (!view?.can_run || !view.current_payload_sha256) return;
     setSubmitting(true);
     setError(null);
     try {
       const result = await api.post<MarketplaceStrategyView>(
-        `/marketplace/analyses/${analysisId}/strategy`,
+        "/marketplace/strategy/weekly",
         {
-          confirmed_payload_sha256: view.payload_sha256,
+          confirmed_payload_sha256: view.current_payload_sha256,
           confirmed_aggregate_only: true,
         },
       );
       setView(result);
-      setConfirmed(false);
     } catch (reason) {
       setError(strategyErrorMessage(reason));
       try {
-        const refreshed = await api.get<MarketplaceStrategyView>(
-          `/marketplace/analyses/${analysisId}/strategy`,
-        );
+        const refreshed = await api.get<MarketplaceStrategyView>("/marketplace/strategy/weekly");
         setView(refreshed);
-        setConfirmed(false);
       } catch {
         // Keep the original actionable error and the last verified hash visible.
       }
@@ -1012,56 +1155,71 @@ function StrategyPanel({ analysisId }: { analysisId: string }) {
   };
 
   return (
-    <section className="strategy-panel" aria-labelledby={`strategy-${analysisId}`} aria-busy={loading || submitting}>
+    <section className="strategy-panel" aria-labelledby="weekly-strategy" aria-busy={loading || submitting}>
       <div className="marketplace-preview-header">
-        <h3 id={`strategy-${analysisId}`}>KI-Marketingstrategie</h3>
-        <span className="badge">optional · manuell ausgelöst</span>
+        <h3 id="weekly-strategy">Wöchentliche KI-Marketinganalyse</h3>
+        <span className="badge">maximal 1× pro Kalenderwoche</span>
       </div>
       <p>
-        OpenAI erhält nur Zeitraum, Marketplace-Dimension und verdichtete Kennzahlen/Deltas.
-        Keine Rohdatei, keine Reportzeile, keine ASIN/SKU, keine Buyer-/Order-PII und kein Secret.
+        Ein Klick verarbeitet alle aktuell freigegebenen Aggregatanalysen und nimmt das validierte
+        Handover des letzten Wochenlaufs als Kontext. OpenAI erhält keine Rohdatei, Reportzeile,
+        ASIN/SKU, Buyer-/Order-PII oder Secrets.
       </p>
       {loading && <p role="status">Aggregatgrenze wird geprüft …</p>}
       {error && <p className="marketplace-callout warning" role="alert">{error}</p>}
       {view && (
         <>
           <dl className="strategy-contract">
-            <div><dt>Aggregat-Hash</dt><dd><code className="marketplace-hash">{view.payload_sha256}</code></dd></div>
+            <div>
+              <dt>Aktueller Aggregat-Hash</dt>
+              <dd><code className="marketplace-hash">{view.current_payload_sha256 ?? "noch keine Daten"}</code></dd>
+            </div>
+            {view.assessment_payload_sha256 && (
+              <div>
+                <dt>Vom angezeigten KI-Lauf bewertet</dt>
+                <dd><code className="marketplace-hash">{view.assessment_payload_sha256}</code></dd>
+              </div>
+            )}
+            <div><dt>Eingelesene Analysen</dt><dd>{view.source_analysis_count}</dd></div>
+            <div><dt>Letzter Lauf als Kontext</dt><dd>{view.previous_run_context ? "ja" : "noch nicht vorhanden"}</dd></div>
+            <div><dt>Wochenfenster</dt><dd>ab {view.week_start} · Europe/Berlin</dd></div>
             <div><dt>Modell</dt><dd>{view.status.model}</dd></div>
             <div><dt>Speicherung bei Anfrage</dt><dd><code>store: false</code></dd></div>
             <div><dt>Amazon-Mutation</dt><dd>nicht vorhanden</dd></div>
           </dl>
-          {!view.assessment && !view.status.available && (
+          {weeklyBlockMessage(view) && (
+            <div
+              className={`marketplace-callout ${view.block_reason === "weekly_limit_reached" ? "success" : "warning"}`}
+              role="status"
+            >
+              <strong>
+                {view.block_reason === "weekly_limit_reached" ? "Wochenlimit aktiv" : "Analyse noch nicht ausführbar"}
+              </strong>
+              <p>{weeklyBlockMessage(view)}</p>
+            </div>
+          )}
+          {view.assessment && view.current_payload_sha256 !== view.assessment_payload_sha256 && (
             <div className="marketplace-callout warning" role="status">
-              <strong>Externes OpenAI-Gate</strong>
+              <strong>Neuere Importdaten vorhanden</strong>
               <p>
-                {view.status.reason === "api_key_missing"
-                  ? "Der serverseitige OpenAI-API-Key fehlt. Die regelbasierte Amazon-Analyse bleibt vollständig nutzbar."
-                  : "Die OpenAI-Strategiefunktion ist serverseitig noch nicht freigegeben."}
+                Die unten angezeigte KI-Antwort gehört zum bewerteten Hash. Neu importierte Daten
+                stehen im festen KPI-Bereich oben und fließen erst in den nächsten Wochenlauf ein.
               </p>
             </div>
           )}
-          {!view.assessment && (
-            <>
-              <label className="marketplace-checkbox" htmlFor={`confirm-strategy-${analysisId}`}>
-                <input
-                  id={`confirm-strategy-${analysisId}`}
-                  type="checkbox"
-                  checked={confirmed}
-                  disabled={!view.status.available || submitting}
-                  onChange={(event) => setConfirmed(event.target.checked)}
-                />
-                Ich habe den Aggregat-Hash geprüft und bestätige die einmalige Übermittlung an OpenAI.
-              </label>
-              <button
-                type="button"
-                disabled={!confirmed || !view.status.available || submitting}
-                onClick={() => void createAssessment()}
-              >
-                {submitting ? "Strategie wird erstellt …" : "KI-Strategie jetzt erstellen"}
-              </button>
-            </>
-          )}
+          <button
+            type="button"
+            className="weekly-analysis-button"
+            disabled={!view.can_run || submitting}
+            onClick={() => void createAssessment()}
+          >
+            {submitting ? "Analyse läuft …" : "Analyse"}
+          </button>
+          <p className="marketplace-muted">
+            Der Klick bestätigt die einmalige Übermittlung des angezeigten Aggregat-Hashes. Ein
+            fehlgeschlagener Provideraufruf verbraucht das Wochenfenster nicht; ein erfolgreich
+            gespeicherter Lauf sperrt es serverseitig bis zum nächsten Montag.
+          </p>
           <StrategyResult view={view} />
         </>
       )}
@@ -1077,10 +1235,12 @@ function AnalysisCard({
   id,
   result,
   title,
+  showWeeklyStrategy = false,
 }: {
   id: string;
   result: Record<string, unknown>;
   title: string;
+  showWeeklyStrategy?: boolean;
 }) {
   const context = typeof result.context === "object" && result.context !== null
     ? result.context as Record<string, unknown>
@@ -1128,6 +1288,7 @@ function AnalysisCard({
           <dd>{missingFields.length > 0 ? missingFields.map(describeAnalysisItem).join(", ") : "keine"}</dd>
         </div>
       </dl>
+      <KpiComparisonChart result={result} />
       <div className="analysis-separation">
         <section className="analysis-block">
           <h3>Fakten</h3>
@@ -1173,7 +1334,7 @@ function AnalysisCard({
           </ul>
         </>
       )}
-      <StrategyPanel analysisId={id} />
+      {showWeeklyStrategy && <WeeklyStrategyPanel />}
       <div className="marketplace-actions" aria-label="Zusammenfassung exportieren">
         <button
           type="button"

@@ -90,8 +90,10 @@ The Marketplace Intelligence page implements the following workflow:
 8. Upload a second compatible period.
 9. Review the deterministic comparison.
 10. Export an aggregate JSON, Markdown, or CSV summary.
-11. Optionally review and confirm the AI aggregate-input hash, then request a
-    visibly separated strategy assessment when the external OpenAI gate is active.
+11. Optionally click the single `Analyse` button. It uses every eligible bounded
+    aggregate analysis plus the last validated AI handover, renders the fixed
+    strategy structure below the deterministic analysis, and is disabled after
+    one successful Europe/Berlin calendar-week run.
 
 Raw report downloads are blocked by the Amazon read-only pilot middleware, even
 for administrators. The raw bytes are available only to the database backup and
@@ -119,10 +121,11 @@ available.
 Generative strategy synthesis is implemented behind a separate external gate.
 The rules engine remains the source of facts and supported derivations. The
 OpenAI adapter requires a separately funded, project-scoped server API key and
-receives only a stricter aggregate DTO after explicit hash confirmation. It
-cannot receive raw reports or product/customer identifiers, run automatically,
-or gain a mutation tool. Validated model output is immutable, idempotent by
-analysis/hash/model/prompt version, and remains visibly separate from facts and
+receives only a stricter aggregate-history DTO after the `Analyse` click
+confirms the displayed hash. It cannot receive raw reports or product/customer
+identifiers, run automatically, or gain a mutation tool. Validated model output
+is immutable, limited to one successful Mantle calendar-week row, includes a
+fixed handover for the next run, and remains visibly separate from facts and
 deterministic derivations. Full activation and data-control details are in
 [STRATEGY_AI_GATE.md](STRATEGY_AI_GATE.md).
 

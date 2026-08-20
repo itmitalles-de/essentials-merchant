@@ -169,6 +169,25 @@ archive attestation, exact seller/region/marketplace approval, and a manual `--e
 automatic scheduler is used. Until those external facts are provided, the gate is `BLOCKED` and no
 fixture or local run may be described as Amazon staging.
 
+### Weekly AI analysis
+
+The dashboard exposes one administrator-only `Analyse` button. It does not
+start an Amazon network request: it reads every currently eligible, bounded
+aggregate analysis already in PostgreSQL, includes the last validated AI
+handover, and calls the fixed OpenAI Responses endpoint once. A successful row
+sets the Europe/Berlin Monday `week_start`; the database unique index and UI
+then disable another successful run until the next Monday 00:00 local time.
+Provider failures create no row and leave retry possible.
+
+Before enabling the gate, provision the project-scoped pay-per-use key only in
+the mode-0600 host environment and set `OPENAI_STRATEGY_ENABLED=true`. Redeploy
+only the target backend, then verify the status endpoint, one synthetic
+aggregate run, the disabled same-week button, idempotent repeat response, fixed
+KPI/strategy/handover structure, redacted logs, and the immutable weekly row.
+Never print the environment or key. `Analyse` never substitutes for missing
+Amazon SP-API credentials; new Seller Central data still enters through manual
+import until that separate gate is approved.
+
 ## Mantle Amazon live deployment
 
 The Mantle service uses Compose project `essentials-merchant-amazon` and

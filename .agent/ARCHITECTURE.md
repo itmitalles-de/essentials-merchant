@@ -66,14 +66,17 @@ delta, trend, anomalies, hypotheses, possible actions, uncertainty, missing data
 Aggregate JSON, Markdown, and CSV exports recursively deny
 buyer/customer/address/email/order/comment/phone fields.
 Actions are never executed. An optional, manually triggered OpenAI adapter can receive only a
-second closed aggregate DTO after hash confirmation. It has a fixed Responses API POST, no tools,
-no Amazon transport authority, no automatic execution, and no raw/product/customer input.
+second closed aggregate-history DTO after the single weekly button confirms its hash. It contains
+at most eight distinct newest-first analyses and the previous validated strategy/handover as
+untrusted context. It has a fixed Responses API POST, no tools, no Amazon transport authority, no
+automatic execution, and no raw/product/customer input.
 
 Validated strategy output is stored separately in immutable
-`amazon_ai_strategy_assessments`, uniquely keyed by deterministic analysis, aggregate hash, model,
-and prompt version. Prompts, raw provider responses, API credentials, archive hashes, and internal
-evidence UUIDs are not stored there. The browser renders this output outside the canonical facts
-and deterministic-derivation blocks.
+`amazon_ai_strategy_assessments`. New weekly rows carry a Europe/Berlin Monday key with a partial
+unique index and an optional predecessor reference; legacy v1 rows retain a null week. Prompts, raw
+provider responses, API credentials, archive hashes, and internal evidence UUIDs are not stored
+there. The browser renders fixed deterministic KPI charts followed by the validated strategy and
+handover outside the canonical facts and deterministic-derivation blocks.
 
 ## Retained full-stack topology
 

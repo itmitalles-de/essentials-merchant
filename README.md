@@ -148,9 +148,11 @@ multi-tenancy, and Kubernetes are explicitly frozen for this milestone. See
 [deferred capabilities](docs/NICE_TO_HAVE.md).
 
 An optional administrator-triggered OpenAI strategy panel is implemented inside Marketplace
-Intelligence. It is disabled by default, accepts only a hash-confirmed closed aggregate DTO, uses
-no tools, and cannot mutate Amazon or Merchant. A separately billed project API key and explicit
-host activation are required; a ChatGPT subscription is not an API credential. See
+Intelligence. Its single `Analyse` button accepts only a hash-confirmed closed aggregate-history
+DTO, carries the last validated handover forward, and permits one successful Europe/Berlin
+calendar-week run. It is disabled by default, uses no tools, and cannot mutate Amazon or Merchant.
+A separately billed project API key and explicit host activation are required; a ChatGPT
+subscription is not an API credential. See
 [the strategy AI gate](docs/STRATEGY_AI_GATE.md).
 
 ## Verification

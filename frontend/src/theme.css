@@ -342,6 +342,116 @@ table caption {
   margin-top: 0.5rem;
 }
 
+.kpi-chart {
+  margin: 1.25rem 0;
+  padding: 1rem;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--accent) 3%, var(--bg-elevated));
+}
+
+.kpi-chart figcaption {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 0.35rem 1rem;
+  margin-bottom: 0.85rem;
+}
+
+.kpi-chart figcaption span {
+  color: var(--fg-muted);
+  font-size: 0.9rem;
+}
+
+.kpi-chart-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: 0.75rem;
+}
+
+.kpi-tile {
+  padding: 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-elevated);
+}
+
+.kpi-tile-heading,
+.kpi-values {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.kpi-tile h3 {
+  margin: 0;
+  font-size: 0.95rem;
+}
+
+.kpi-trend {
+  color: var(--fg-muted);
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+
+.kpi-trend.up,
+.kpi-trend.up_from_zero {
+  color: color-mix(in srgb, var(--success) 65%, var(--fg));
+}
+
+.kpi-trend.down,
+.kpi-trend.down_to_zero {
+  color: color-mix(in srgb, var(--danger) 65%, var(--fg));
+}
+
+.kpi-bars {
+  display: grid;
+  gap: 0.35rem;
+  margin: 0.7rem 0;
+}
+
+.kpi-bars > div {
+  display: grid;
+  grid-template-columns: 3.25rem 1fr;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.kpi-bars span {
+  color: var(--fg-muted);
+  font-size: 0.72rem;
+}
+
+.kpi-bars i {
+  display: block;
+  height: 0.55rem;
+  overflow: hidden;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--fg) 9%, transparent);
+}
+
+.kpi-bars b {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: color-mix(in srgb, var(--fg-muted) 70%, transparent);
+}
+
+.kpi-bars > div:last-child b {
+  background: var(--accent);
+}
+
+.kpi-values {
+  font-variant-numeric: tabular-nums;
+}
+
+.kpi-tile > p {
+  margin: 0.35rem 0 0;
+  color: var(--fg-muted);
+  font-size: 0.8rem;
+}
+
 .strategy-intro {
   margin-top: 1rem;
 }
@@ -407,6 +517,23 @@ table caption {
 
 .strategy-metadata {
   margin-bottom: 0;
+}
+
+.weekly-analysis-button {
+  min-width: 10rem;
+  padding: 0.75rem 1.5rem;
+  font-size: 1.05rem;
+}
+
+.strategy-handover {
+  margin-top: 0.75rem;
+  border-width: 2px;
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
+}
+
+.strategy-handover h5 {
+  margin: 0;
+  font-size: 0.9rem;
 }
 
 @media (max-width: 760px) {

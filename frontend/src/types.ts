@@ -446,7 +446,9 @@ export interface MarketplaceStrategyStatus {
   model: string;
   prompt_version: string;
   response_storage: "store_false";
-  input_boundary: "aggregate_analysis_only";
+  input_boundary: "aggregate_history_and_previous_handover_only";
+  cadence: "manual_weekly";
+  calendar_timezone: "Europe/Berlin";
   automatic_execution: false;
   mutation_capability: false;
 }
@@ -484,14 +486,28 @@ export interface MarketplaceStrategyAssessment {
   recommended_actions: MarketplaceStrategyAction[];
   open_questions: string[];
   limitations: string[];
+  handover: {
+    continuity_summary: string;
+    priorities_until_next_run: string[];
+    evidence_for_next_run: string[];
+    next_run_checks: string[];
+  };
 }
 
 export interface MarketplaceStrategyView {
-  analysis_id: string;
-  payload_sha256: string;
+  anchor_analysis_id: string | null;
+  current_payload_sha256: string | null;
+  assessment_payload_sha256: string | null;
   status: MarketplaceStrategyStatus;
+  can_run: boolean;
+  block_reason: "weekly_limit_reached" | "no_analysis_data" | "feature_disabled" | "api_key_missing" | null;
+  week_start: string;
+  next_available_at: string;
+  source_analysis_count: number;
+  previous_run_context: boolean;
   cached: boolean;
   assessment: MarketplaceStrategyAssessment | null;
+  assessment_week_start: string | null;
   provider_request_id_redacted: string | null;
   input_tokens: number | null;
   output_tokens: number | null;

@@ -84,11 +84,12 @@ All routes below are protected by `marketplace.amazon_intelligence`:
 - `GET /api/marketplace/analyses/{id}/export`: PII-minimized, allowlisted aggregate JSON.
 - `GET /api/marketplace/strategy/status`: administrator-only external-strategy gate metadata;
   never a credential value or secret shape.
-- `GET /api/marketplace/analyses/{id}/strategy`: administrator-only aggregate-input hash and an
-  exact cached structured strategy assessment when available.
-- `POST /api/marketplace/analyses/{id}/strategy`: administrator-only, explicitly confirmed,
-  aggregate-only OpenAI assessment. The current SHA-256 and `confirmed_aggregate_only=true` are
-  required; no report content is accepted from the browser.
+- `GET /api/marketplace/strategy/weekly`: administrator-only aggregate-history hash, input count,
+  Europe/Berlin week boundary, next eligible instant, previous-run context status, and latest
+  validated structured assessment.
+- `POST /api/marketplace/strategy/weekly`: administrator-only weekly OpenAI assessment. The current
+  SHA-256 and `confirmed_aggregate_only=true` are required; no report content is accepted from the
+  browser. A successful immutable row disables further provider calls until the next local Monday.
 
 Unknown `GET_*` report types are accepted only by the fixture connection, archived as raw bytes,
 and end as raw-only rather than successfully analysed. Live connections accept only registry types

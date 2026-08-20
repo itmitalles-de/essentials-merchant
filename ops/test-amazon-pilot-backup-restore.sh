@@ -98,15 +98,33 @@ VALUES
      "missing_data":[],"evidence_refs":["snapshot:44444444-4444-4444-8444-444444444444"]}');
 INSERT INTO amazon_ai_strategy_assessments
   (id, analysis_id, payload_sha256, model_name, prompt_version, result,
-   provider_request_id_redacted, input_tokens, output_tokens, created_by)
+   provider_request_id_redacted, input_tokens, output_tokens, week_start, created_by)
 SELECT
   '77777777-7777-4777-8777-777777777777',
-  '66666666-6666-4666-8666-666666666666', repeat('b', 64), 'gpt-5.6',
-  'mantle-amazon-strategy-v1',
-  '{"executive_summary":"synthetic only","assessment":"synthetic only",
+  '66666666-6666-4666-8666-666666666666', repeat('c', 64), 'gpt-5.6',
+  'mantle-amazon-weekly-strategy-v2',
+  '{"executive_summary":"synthetic previous week","assessment":"synthetic previous week",
     "opportunities":[],"risks":[],"hypotheses":[],"recommended_actions":[],
-    "open_questions":[],"limitations":["no real data"]}',
-  '0123456789ab', 100, 50, id
+    "open_questions":[],"limitations":["no real data"],
+    "handover":{"continuity_summary":"synthetic previous handover","priorities_until_next_run":[],
+      "evidence_for_next_run":[],"next_run_checks":[]}}',
+  'fedcba987654', 90, 40, '2026-08-10', id
+FROM users WHERE username = 'synthetic-admin';
+INSERT INTO amazon_ai_strategy_assessments
+  (id, analysis_id, payload_sha256, model_name, prompt_version, result,
+   provider_request_id_redacted, input_tokens, output_tokens, week_start,
+   previous_assessment_id, created_by)
+SELECT
+  '88888888-8888-4888-8888-888888888888',
+  '66666666-6666-4666-8666-666666666666', repeat('b', 64), 'gpt-5.6',
+  'mantle-amazon-weekly-strategy-v2',
+  '{"executive_summary":"synthetic current week","assessment":"synthetic current week",
+    "opportunities":[],"risks":[],"hypotheses":[],"recommended_actions":[],
+    "open_questions":[],"limitations":["no real data"],
+    "handover":{"continuity_summary":"synthetic current handover","priorities_until_next_run":[],
+      "evidence_for_next_run":[],"next_run_checks":[]}}',
+  '0123456789ab', 100, 50, '2026-08-17',
+  '77777777-7777-4777-8777-777777777777', id
 FROM users WHERE username = 'synthetic-admin';
 INSERT INTO amazon_transport_observations
   (run_id, operation, request_id_redacted, rate_limit_limit, retry_after_seconds)
@@ -172,6 +190,11 @@ test "$(compose "$restore_project" exec -T db psql -U erplite -d erplite -X -qAt
   "SELECT count(*) FROM pilot_backup_verifications WHERE outcome = 'passed'")" -ge 1
 test "$(compose "$restore_project" exec -T db psql -U erplite -d erplite -X -qAt -v ON_ERROR_STOP=1 -c \
   "SELECT count(*) FROM amazon_report_schedules WHERE enabled")" = 0
+test "$(compose "$restore_project" exec -T db psql -U erplite -d erplite -X -qAt -v ON_ERROR_STOP=1 -c \
+  "SELECT count(*) FROM amazon_ai_strategy_assessments
+   WHERE week_start = DATE '2026-08-17'
+     AND result ? 'handover'
+     AND previous_assessment_id = '77777777-7777-4777-8777-777777777777'")" = 1
 test "$(docker run --rm -v "${restore_project}_erplite_invoices:/source:ro" \
   postgres:16-alpine@sha256:cf78e76683b9ca8c5733cbbdce6c9262b45b6767934dd0a95e671f9a0fc20685 \
   cat /source/amazon-pilot/fixture.txt)" = 'synthetic pilot operations document'

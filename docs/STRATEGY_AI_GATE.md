@@ -2,11 +2,11 @@
 
 ## Purpose
 
-The optional strategy panel turns an existing deterministic Sales and Traffic
-analysis into a German-language decision aid. It does not parse reports, create
-facts, replace the deterministic comparison, or introduce another analysis
-system. It is an explicitly triggered interpretation step inside Marketplace
-Intelligence.
+The optional weekly strategy panel turns the available deterministic Sales and
+Traffic analyses into a German-language decision aid. It does not parse
+reports, create facts, replace the deterministic comparison, or introduce
+another analysis system. An administrator starts it with the single `Analyse`
+button; a successful result closes the Europe/Berlin calendar week.
 
 The Mantle target entry point is `https://ai-marketing.mantle-climbing.de`. It serves
 the same three-service `essentials-merchant-amazon` deployment and opens the
@@ -42,9 +42,13 @@ disabled with a visible external-gate reason.
 
 ## Exact data boundary
 
-The browser sends only the internal analysis ID, the displayed aggregate-input
-SHA-256, and an explicit confirmation boolean. The backend reloads the
-deterministic result and builds a second closed provider DTO.
+The browser sends only the displayed aggregate-input SHA-256 and an explicit
+aggregate-only confirmation boolean when the operator clicks `Analyse`. The
+backend reloads the newest deterministic results, reduces them through a second
+closed provider DTO, removes duplicates, and retains at most eight newest-first
+analysis documents. It also adds the previous immutable, validated AI result as
+untrusted continuity context. No browser-supplied report or analysis body is
+accepted.
 
 Eligible provider input is limited to:
 
@@ -57,8 +61,10 @@ Eligible provider input is limited to:
   class;
 - deterministic uncertainty, missing-data/evidence statements, and open
   questions authored by the server;
-- semantic references such as `fact:sessions` or
-  `change:ordered_product_sales`.
+- the preceding validated AI summary, findings, questions, actions, and
+  handover, with old evidence references removed;
+- semantic references such as `analysis:1:fact:sessions` or
+  `analysis:2:change:ordered_product_sales`.
 
 The request never contains raw report bytes or rows, filenames or paths,
 archive/report hashes, database UUID evidence references, ASIN/SKU, seller
@@ -77,7 +83,8 @@ The backend uses the OpenAI Responses API with:
 - `store: false`;
 - medium reasoning and a bounded output budget;
 - a strict JSON Schema for summary, assessment, opportunities, risks,
-  hypotheses, possible actions, open questions, and limitations;
+  hypotheses, possible actions, open questions, limitations, and the fixed
+  handover sections;
 - a one-way pseudonymous safety identifier derived from the internal user ID.
 
 OpenAI API data is not used for model training by default. `store: false`
@@ -95,27 +102,36 @@ strict typed schema, all counts and strings remain within bounds, and every
 evidence reference exists in the transmitted aggregate DTO. Refusals,
 incomplete responses, invalid JSON/schema, oversized responses, authentication
 errors, timeouts, 429s, and provider failures create no partial assessment.
-There is no automatic retry or scheduler.
+There is no automatic retry or scheduler. A failed provider call does not close
+the weekly window.
 
 Successful output is stored immutably in
-`amazon_ai_strategy_assessments`, keyed by analysis, aggregate payload hash,
-model, and prompt version. Repeating the same request returns that record
-without another provider call. Only the validated structured result, redacted
-request-reference hash, token counts, creator, and timestamps are stored. The
-prompt, provider request body, and raw provider response are not persisted or
-logged. Backups include the validated assessment but explicitly exclude API
-keys, prompts, and raw provider responses.
+`amazon_ai_strategy_assessments`. A partial unique index permits exactly one
+non-legacy row per Europe/Berlin calendar-week start. The row references the
+anchor deterministic analysis and, when available, its previous AI assessment;
+the validated result itself always contains a continuity summary, priorities,
+evidence to collect, and checks for the next run. Repeating a request after the
+weekly result exists returns the stored row without another provider call. Only
+the validated structured result, aggregate hash, redacted request-reference
+hash, token counts, creator, week, previous-row reference, and timestamps are
+stored. The prompt, provider request body, and raw provider response are not
+persisted or logged. Backups include the validated assessment but explicitly
+exclude API keys, prompts, and raw provider responses.
 
 ## Operator workflow
 
 1. Import one official Sales and Traffic report and review the deterministic
    facts, or import a compatible second period for a comparison.
-2. Review the AI panel's aggregate-input SHA-256 and privacy boundary.
-3. Confirm the one-time aggregate transmission.
-4. Trigger the assessment manually.
-5. Read AI content only inside its visibly labelled block. Facts and supported
-   deterministic derivations remain separate above it.
-6. Validate hypotheses with the named missing evidence before acting.
+2. Review the fixed KPI cards, comparison bars, aggregate-input SHA-256, input
+   count, and previous-run status.
+3. Click `Analyse`. The click confirms this one aggregate-only request.
+4. Read the fixed output sections below the deterministic analysis: summary,
+   assessment, chances, risks, hypotheses, possible actions, open questions,
+   limitations, and handover.
+5. Validate hypotheses with the named missing evidence before acting.
+6. Until the following Monday 00:00 Europe/Berlin, the button remains disabled
+   and the stored result remains visible. New imports are marked as not yet
+   covered by the assessed hash.
 
 The output is advice for a human decision. No OpenAI response can invoke or
 reach Amazon price, Ads, listing, inventory, order, payment, shipping, or any
@@ -126,10 +142,12 @@ other mutation.
 - `GET /api/marketplace/strategy/status` returns availability, reason, model,
   prompt version, storage mode, and immutable capability flags; never a key or
   secret shape.
-- `GET /api/marketplace/analyses/{id}/strategy` returns the current aggregate
-  hash and an exact cached assessment when one exists.
-- `POST /api/marketplace/analyses/{id}/strategy` requires administrator role,
-  the current hash, and explicit aggregate-only confirmation.
+- `GET /api/marketplace/strategy/weekly` returns the current aggregate hash,
+  weekly availability, next eligible time, input count, previous-run context
+  flag, and latest validated assessment.
+- `POST /api/marketplace/strategy/weekly` requires administrator role, the
+  current hash, and aggregate-only confirmation. Once a successful weekly row
+  exists, later repeat requests return it without another provider call.
 
 The read-only pilot middleware permits only that exact strategy POST path and
 rejects near-miss paths. The Amazon Reports transport enum and its five-operation

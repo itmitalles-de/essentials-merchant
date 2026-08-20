@@ -111,7 +111,7 @@ if ([...productionStrategyTransport.matchAll(/reqwest::Client::builder\s*\(/g)].
 for (const marker of [
   "Policy::none()",
   '"store": false',
-  'input_boundary: "aggregate_analysis_only"',
+  'input_boundary: "aggregate_history_and_previous_handover_only"',
   "MAX_INPUT_BYTES",
   "MAX_RESPONSE_BYTES",
   ".chunk()",

@@ -190,3 +190,24 @@ output schema, bounded payloads, and explicit aggregate-hash confirmation. Only 
 and redacted metadata are persisted immutably and idempotently; prompts/raw provider responses are
 not stored. Until the external credential gate exists, the deterministic path stays fully usable
 and the UI shows a disabled gate rather than simulating a provider result.
+
+## 2026-08-20 — Make Mantle strategy a single weekly continuity loop
+
+**Decision:** Mantle exposes exactly one `Analyse` button over the existing Marketplace
+Intelligence results. Each request uses at most eight distinct newest-first aggregate analyses and
+the last validated strategy result as untrusted continuity context. Every accepted response has the
+same strict structure and ends with a handover containing continuity, interim priorities, evidence
+to collect, and next-run checks. A successful immutable row is unique per Monday-based
+Europe/Berlin calendar week.
+
+**Reason:** The operator wants a stable weekly management ritual, not one unrelated model answer per
+report card. A server/database cadence boundary controls pay-per-use spend and accidental repeat
+clicks, while explicit handover preserves continuity without relying on provider-side conversation
+storage or exposing raw reports.
+
+**Consequences:** The UI has one button and one fixed KPI/strategy layout. KPI bars remain
+deterministic and are never model-generated. The browser posts only the current aggregate hash and
+confirmation; failed provider calls do not consume the week, while an accepted row disables another
+run until the next local Monday. New imports after a run are visibly marked as outside the assessed
+hash. This workflow reads imported aggregates only and does not bypass the separate SP-API
+credential gate.

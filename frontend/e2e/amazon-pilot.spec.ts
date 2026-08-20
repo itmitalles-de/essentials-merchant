@@ -64,8 +64,8 @@ test("administrator completes the synthetic read-only Amazon pilot flow", async 
   await expect(page.getByText(/Snapshot: day_child/)).toBeVisible();
   await expect(page.getByRole("heading", { name: "Delta-Analyse" })).toBeVisible();
   const defaultStrategyPanel = page.locator(".strategy-panel").first();
-  await expect(defaultStrategyPanel).toContainText("Externes OpenAI-Gate");
-  await expect(defaultStrategyPanel.getByRole("button", { name: "KI-Strategie jetzt erstellen" }))
+  await expect(defaultStrategyPanel).toContainText("Analyse noch nicht ausführbar");
+  await expect(defaultStrategyPanel.getByRole("button", { name: "Analyse", exact: true }))
     .toBeDisabled();
 
   const download = page.waitForEvent("download");
@@ -101,6 +101,7 @@ test("administrator completes the synthetic read-only Amazon pilot flow", async 
   await expect(page.locator(".marketplace-callout.success")).toContainText("Vergleichsanalyse");
 
   const manualAnalysis = page.locator(".analysis-card").filter({ hasText: uiMarketplace }).first();
+  await expect(manualAnalysis.getByText("KPI-Überblick")).toBeVisible();
   for (const heading of ["Fakten", "Belastbare Ableitungen", "Hypothesen", "Offene Fragen"]) {
     await expect(manualAnalysis.getByRole("heading", { name: heading })).toBeVisible();
   }
@@ -116,25 +117,34 @@ test("administrator completes the synthetic read-only Amazon pilot flow", async 
 
   let aggregateHash = "a".repeat(64);
   let rejectFirstStrategyPost = true;
-  await page.route(/\/api\/marketplace\/analyses\/[^/]+\/strategy$/, async (route) => {
-    const analysisId = new URL(route.request().url()).pathname.split("/").at(-2) ?? "synthetic";
+  await page.route(/\/api\/marketplace\/strategy\/weekly$/, async (route) => {
     const base = {
-      analysis_id: analysisId,
-      payload_sha256: aggregateHash,
+      anchor_analysis_id: "66666666-6666-4666-8666-666666666666",
+      current_payload_sha256: aggregateHash,
+      assessment_payload_sha256: null,
       status: {
         available: true,
         reason: null,
         provider: "openai",
         model: "gpt-5.6",
-        prompt_version: "mantle-amazon-strategy-v1",
+        prompt_version: "mantle-amazon-weekly-strategy-v2",
         response_storage: "store_false",
-        input_boundary: "aggregate_analysis_only",
+        input_boundary: "aggregate_history_and_previous_handover_only",
+        cadence: "manual_weekly",
+        calendar_timezone: "Europe/Berlin",
         automatic_execution: false,
         mutation_capability: false,
       },
+      can_run: true,
+      block_reason: null,
+      week_start: "2026-08-17",
+      next_available_at: "2026-08-23T22:00:00Z",
+      source_analysis_count: 2,
+      previous_run_context: true,
       provider_request_id_redacted: null,
       input_tokens: null,
       output_tokens: null,
+      assessment_week_start: null,
       created_at: null,
     };
     if (route.request().method() === "GET") {
@@ -158,9 +168,13 @@ test("administrator completes the synthetic read-only Amazon pilot flow", async 
     await route.fulfill({
       json: {
         ...base,
+        can_run: false,
+        block_reason: "weekly_limit_reached",
         cached: false,
+        assessment_payload_sha256: aggregateHash,
         input_tokens: 120,
         output_tokens: 60,
+        assessment_week_start: "2026-08-17",
         created_at: "2026-08-20T12:00:00Z",
         assessment: {
           executive_summary: "Synthetische KI-Zusammenfassung ohne Geschäftsdaten.",
@@ -169,7 +183,7 @@ test("administrator completes the synthetic read-only Amazon pilot flow", async 
             title: "Synthetische Chance",
             rationale: "Der Periodenvergleich zeigt ein messbares Signal.",
             confidence: "medium",
-            evidence_refs: ["fact:sessions"],
+            evidence_refs: ["analysis:1:fact:sessions"],
           }],
           risks: [],
           hypotheses: [{
@@ -189,26 +203,31 @@ test("administrator completes the synthetic read-only Amazon pilot flow", async 
           }],
           open_questions: ["Welche Kampagnen liefen?"],
           limitations: ["Keine Ads-, Preis- oder Bestandsdaten."],
+          handover: {
+            continuity_summary: "Traffic-Evidenz bleibt für den nächsten Wochenlauf offen.",
+            priorities_until_next_run: ["Ads-Evidenz sammeln"],
+            evidence_for_next_run: ["Aggregierter Ads-Bericht"],
+            next_run_checks: ["Sessions und Conversion erneut vergleichen"],
+          },
         },
       },
     });
   });
   await page.reload();
-  const strategyPanel = page.locator(".analysis-card").filter({ hasText: uiMarketplace })
-    .first().locator(".strategy-panel");
+  const strategyPanel = page.locator(".strategy-panel").first();
+  await expect(page.locator(".strategy-panel")).toHaveCount(1);
   await expect(strategyPanel).toContainText(aggregateHash);
-  const strategyConfirmation = strategyPanel.getByLabel(/Aggregat-Hash geprüft/);
-  const strategyButton = strategyPanel.getByRole("button", { name: "KI-Strategie jetzt erstellen" });
-  await strategyConfirmation.check();
+  const strategyButton = strategyPanel.getByRole("button", { name: "Analyse", exact: true });
   await strategyButton.click();
   await expect(strategyPanel).toContainText("b".repeat(64));
-  await expect(strategyConfirmation).not.toBeChecked();
-  await expect(strategyButton).toBeDisabled();
-  await strategyConfirmation.check();
+  await expect(strategyButton).toBeEnabled();
   await strategyButton.click();
+  await expect(strategyButton).toBeDisabled();
   await expect(strategyPanel.getByText("KI-generiert – keine Faktenquelle")).toBeVisible();
   await expect(strategyPanel).toContainText("Synthetische Chance");
   await expect(strategyPanel).toContainText("Hypothesen – nicht als Fakten behandeln");
+  await expect(strategyPanel).toContainText("Handover bis zum nächsten Wochenlauf");
+  await expect(strategyPanel).toContainText("Wochenlimit aktiv");
   await expect(manualAnalysis.locator(".analysis-block").first()).not.toContainText("Synthetische Chance");
 
   const statuses = await page.evaluate(async () => {

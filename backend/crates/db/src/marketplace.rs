@@ -4,7 +4,7 @@
 
 use std::collections::BTreeMap;
 
-use chrono::{DateTime, Duration, Utc};
+use chrono::{DateTime, Duration, NaiveDate, Utc};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -402,6 +402,8 @@ pub struct AiStrategyAssessment {
     pub provider_request_id_redacted: Option<String>,
     pub input_tokens: Option<i64>,
     pub output_tokens: Option<i64>,
+    pub week_start: Option<NaiveDate>,
+    pub previous_assessment_id: Option<Uuid>,
     pub created_by: Uuid,
     pub created_at: DateTime<Utc>,
 }
@@ -415,6 +417,8 @@ pub struct StoreAiStrategyAssessment<'a> {
     pub provider_request_id_redacted: Option<&'a str>,
     pub input_tokens: Option<i64>,
     pub output_tokens: Option<i64>,
+    pub week_start: Option<NaiveDate>,
+    pub previous_assessment_id: Option<Uuid>,
     pub created_by: Uuid,
 }
 
@@ -2025,6 +2029,71 @@ pub async fn analysis_result(
     .await
 }
 
+/// Return a bounded newest-first history for the weekly aggregate strategy
+/// input. The provider boundary applies its own closed field allowlist and
+/// never receives these database IDs or the raw result document.
+pub async fn recent_analysis_results_for_strategy(
+    pool: &PgPool,
+) -> Result<Vec<AnalysisResult>, sqlx::Error> {
+    sqlx::query_as::<_, AnalysisResult>(
+        "SELECT id, job_id, strategy, model_name, prompt_version, payload_sha256, result, created_at
+         FROM amazon_analysis_results
+         ORDER BY created_at DESC
+         LIMIT 20",
+    )
+    .fetch_all(pool)
+    .await
+}
+
+/// Mantle's weekly boundary follows the local operator calendar: Monday
+/// 00:00 Europe/Berlin through the following Monday. PostgreSQL performs the
+/// timezone conversion so DST transitions produce the correct UTC instant.
+pub async fn current_mantle_strategy_week(
+    pool: &PgPool,
+) -> Result<(NaiveDate, DateTime<Utc>), sqlx::Error> {
+    sqlx::query_as::<_, (NaiveDate, DateTime<Utc>)>(
+        "SELECT date_trunc('week', now() AT TIME ZONE 'Europe/Berlin')::date,
+                (date_trunc('week', now() AT TIME ZONE 'Europe/Berlin')
+                    + interval '7 days') AT TIME ZONE 'Europe/Berlin'",
+    )
+    .fetch_one(pool)
+    .await
+}
+
+pub async fn ai_strategy_assessment_for_week(
+    pool: &PgPool,
+    week_start: NaiveDate,
+) -> Result<Option<AiStrategyAssessment>, sqlx::Error> {
+    sqlx::query_as::<_, AiStrategyAssessment>(
+        "SELECT id, analysis_id, payload_sha256, model_name, prompt_version, result,
+                provider_request_id_redacted, input_tokens, output_tokens, week_start,
+                previous_assessment_id, created_by, created_at
+         FROM amazon_ai_strategy_assessments
+         WHERE week_start = $1",
+    )
+    .bind(week_start)
+    .fetch_optional(pool)
+    .await
+}
+
+pub async fn latest_ai_strategy_assessment_before_week(
+    pool: &PgPool,
+    week_start: NaiveDate,
+) -> Result<Option<AiStrategyAssessment>, sqlx::Error> {
+    sqlx::query_as::<_, AiStrategyAssessment>(
+        "SELECT id, analysis_id, payload_sha256, model_name, prompt_version, result,
+                provider_request_id_redacted, input_tokens, output_tokens, week_start,
+                previous_assessment_id, created_by, created_at
+         FROM amazon_ai_strategy_assessments
+         WHERE week_start IS NULL OR week_start < $1
+         ORDER BY created_at DESC
+         LIMIT 1",
+    )
+    .bind(week_start)
+    .fetch_optional(pool)
+    .await
+}
+
 pub async fn ai_strategy_assessment(
     pool: &PgPool,
     analysis_id: Uuid,
@@ -2034,7 +2103,8 @@ pub async fn ai_strategy_assessment(
 ) -> Result<Option<AiStrategyAssessment>, sqlx::Error> {
     sqlx::query_as::<_, AiStrategyAssessment>(
         "SELECT id, analysis_id, payload_sha256, model_name, prompt_version, result,
-                provider_request_id_redacted, input_tokens, output_tokens, created_by, created_at
+                provider_request_id_redacted, input_tokens, output_tokens, week_start,
+                previous_assessment_id, created_by, created_at
          FROM amazon_ai_strategy_assessments
          WHERE analysis_id = $1 AND payload_sha256 = $2
            AND model_name = $3 AND prompt_version = $4",
@@ -2058,11 +2128,13 @@ pub async fn store_ai_strategy_assessment(
     let inserted = sqlx::query_as::<_, AiStrategyAssessment>(
         "INSERT INTO amazon_ai_strategy_assessments
              (analysis_id, payload_sha256, model_name, prompt_version, result,
-              provider_request_id_redacted, input_tokens, output_tokens, created_by)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-         ON CONFLICT (analysis_id, payload_sha256, model_name, prompt_version) DO NOTHING
+              provider_request_id_redacted, input_tokens, output_tokens, week_start,
+              previous_assessment_id, created_by)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+         ON CONFLICT DO NOTHING
          RETURNING id, analysis_id, payload_sha256, model_name, prompt_version, result,
-                   provider_request_id_redacted, input_tokens, output_tokens, created_by, created_at",
+                   provider_request_id_redacted, input_tokens, output_tokens, week_start,
+                   previous_assessment_id, created_by, created_at",
     )
     .bind(input.analysis_id)
     .bind(input.payload_sha256)
@@ -2072,30 +2144,53 @@ pub async fn store_ai_strategy_assessment(
     .bind(input.provider_request_id_redacted)
     .bind(input.input_tokens)
     .bind(input.output_tokens)
+    .bind(input.week_start)
+    .bind(input.previous_assessment_id)
     .bind(input.created_by)
     .fetch_optional(&mut *tx)
     .await?;
     let was_inserted = inserted.is_some();
     let assessment = match inserted {
         Some(assessment) => assessment,
-        None => sqlx::query_as::<_, AiStrategyAssessment>(
-            "SELECT id, analysis_id, payload_sha256, model_name, prompt_version, result,
-                    provider_request_id_redacted, input_tokens, output_tokens, created_by, created_at
-             FROM amazon_ai_strategy_assessments
-             WHERE analysis_id = $1 AND payload_sha256 = $2
-               AND model_name = $3 AND prompt_version = $4",
-        )
-        .bind(input.analysis_id)
-        .bind(input.payload_sha256)
-        .bind(input.model_name)
-        .bind(input.prompt_version)
-        .fetch_one(&mut *tx)
-        .await?,
+        None => {
+            if let Some(week_start) = input.week_start {
+                sqlx::query_as::<_, AiStrategyAssessment>(
+                    "SELECT id, analysis_id, payload_sha256, model_name, prompt_version, result,
+                            provider_request_id_redacted, input_tokens, output_tokens, week_start,
+                            previous_assessment_id, created_by, created_at
+                     FROM amazon_ai_strategy_assessments
+                     WHERE week_start = $1",
+                )
+                .bind(week_start)
+                .fetch_one(&mut *tx)
+                .await?
+            } else {
+                sqlx::query_as::<_, AiStrategyAssessment>(
+                    "SELECT id, analysis_id, payload_sha256, model_name, prompt_version, result,
+                            provider_request_id_redacted, input_tokens, output_tokens, week_start,
+                            previous_assessment_id, created_by, created_at
+                     FROM amazon_ai_strategy_assessments
+                     WHERE analysis_id = $1 AND payload_sha256 = $2
+                       AND model_name = $3 AND prompt_version = $4",
+                )
+                .bind(input.analysis_id)
+                .bind(input.payload_sha256)
+                .bind(input.model_name)
+                .bind(input.prompt_version)
+                .fetch_one(&mut *tx)
+                .await?
+            }
+        }
     };
     if was_inserted {
-        let idempotency_key = format!(
-            "amazon-ai-strategy:{}:{}:{}:{}",
-            input.analysis_id, input.payload_sha256, input.model_name, input.prompt_version
+        let idempotency_key = input.week_start.map_or_else(
+            || {
+                format!(
+                    "amazon-ai-strategy:{}:{}:{}:{}",
+                    input.analysis_id, input.payload_sha256, input.model_name, input.prompt_version
+                )
+            },
+            |week_start| format!("amazon-ai-weekly:{week_start}"),
         );
         sqlx::query(
             "INSERT INTO administrative_audit_log
@@ -2110,6 +2205,8 @@ pub async fn store_ai_strategy_assessment(
             "payload_sha256": input.payload_sha256,
             "model_name": input.model_name,
             "prompt_version": input.prompt_version,
+            "week_start": input.week_start,
+            "previous_run_context": input.previous_assessment_id.is_some(),
             "aggregate_only": true,
             "response_storage": "store_false",
             "amazon_mutation": false,
@@ -2592,11 +2689,13 @@ mod tests {
             analysis_id,
             payload_sha256: &payload_sha256,
             model_name: "gpt-5.6",
-            prompt_version: "mantle-amazon-strategy-v1",
+            prompt_version: "mantle-amazon-weekly-strategy-v2",
             result: &result,
             provider_request_id_redacted: Some("0123456789ab"),
             input_tokens: Some(100),
             output_tokens: Some(50),
+            week_start: Some(NaiveDate::from_ymd_opt(2026, 8, 17).unwrap()),
+            previous_assessment_id: None,
             created_by,
         };
         let (first, first_inserted) = store_ai_strategy_assessment(&pool, &input).await.unwrap();
@@ -2605,6 +2704,26 @@ mod tests {
         assert!(!second_inserted);
         assert_eq!(first.id, second.id);
         assert_eq!(first.result, result);
+        assert_eq!(first.week_start, input.week_start);
+        let different_payload = "c".repeat(64);
+        let same_week_input = StoreAiStrategyAssessment {
+            analysis_id,
+            payload_sha256: &different_payload,
+            model_name: "gpt-5.6",
+            prompt_version: "mantle-amazon-weekly-strategy-v2",
+            result: &result,
+            provider_request_id_redacted: None,
+            input_tokens: Some(90),
+            output_tokens: Some(40),
+            week_start: input.week_start,
+            previous_assessment_id: None,
+            created_by,
+        };
+        let (same_week, same_week_inserted) = store_ai_strategy_assessment(&pool, &same_week_input)
+            .await
+            .unwrap();
+        assert!(!same_week_inserted);
+        assert_eq!(same_week.id, first.id);
         assert!(
             sqlx::query("DELETE FROM amazon_ai_strategy_assessments WHERE id = $1")
                 .bind(first.id)
