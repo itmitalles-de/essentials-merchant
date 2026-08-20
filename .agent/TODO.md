@@ -25,6 +25,12 @@ competing root task list.
   `gpt-5.6` assessment. Verify polling/backoff, archive/download/parser hashes,
   deterministic analysis, 15 bounded public sources, fixed output/handover,
   weekly caching, request-ID redaction, and absence of Buyer/Order PII.
+- [x] Backfill one contiguous 91-day real Sales and Traffic baseline as 13
+  comparable seven-day periods, persist the 13-snapshot aggregate, and
+  re-anchor the latest period for chronological incremental weekly context.
+- [x] Handle Amazon's valid child-ASIN parent-reassignment edge case without
+  accepting exact duplicates; retry the affected report and validate the fix
+  with all 21 isolated Marketplace tests.
 - [x] Resolve the exact-route proxy timeout, provider timeout, and invalid
   structured-output failures; verify the final live weekly result.
 - [x] Pass focused Rust/DB/frontend/Chromium/security/operation-boundary tests,

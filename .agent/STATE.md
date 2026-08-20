@@ -48,16 +48,14 @@
 ## Verified live state on 2026-08-20
 
 - Host `192.168.178.15`, Compose project `essentials-merchant-amazon`, exactly
-  PostgreSQL/backend/frontend. The host checkout and frontend are
-  `77a2608f222bdc099d696518784cc95052fc9b33`; the backend intentionally uses
-  `04808832d4a88982a750df9636f488662eb253f6`. Parent revision
-  `d53581fe5a00b1c39b4b923ac65264af80251938` adds only the pinned Simple
-  Business UI contract and is not a runtime deployment.
+  PostgreSQL/backend/frontend. The host checkout and backend are
+  `2812c0d85c864bdb58fe88dfcf2453989b4a8ce0`; the unchanged frontend remains
+  `77a2608f222bdc099d696518784cc95052fc9b33`.
 - Live image IDs:
   - PostgreSQL:
     `sha256:75f5a96988cdf694a215073c3e9c001b706b371e2f94df3967f2efdec2787f6b`
   - backend:
-    `sha256:36c34249b6833b7aa0401e4bd007c462601bd4f9b9db9ca4c826533755a03caf`
+    `sha256:fd81da095cf87b80c73644a7c91bf89a78cb3e083f1257e464a49be676b7c7e7`
   - frontend:
     `sha256:10871780498e12fb16f90e8359a22439d07112a6c6040b60eff688a1955074c2`
 - The route returns HTTPS 200. PostgreSQL is healthy at schema 21. Live counts:
@@ -72,6 +70,17 @@
   `mantle-amazon-weekly-strategy-v4`, with a validated handover. A repeat POST
   returned the cached row and made no second provider call. The next eligible
   action is Monday, 2026-08-24 at 00:00 Europe/Berlin.
+- A one-time real 91-day baseline from 2026-05-21 through 2026-08-19 now
+  contains 13 distinct, contiguous seven-day periods and one persisted
+  13-snapshot aggregate. The current period was re-anchored after the
+  historical backfill, so the bounded eight-result weekly context is in exact
+  newest-first chronological order. No automatic schedule or second paid AI
+  call was created; the existing weekly lock and handover remain intact.
+- Amazon returned one legitimate edge case in which a child ASIN had two
+  different parent relationships within the same report period. Commit
+  `2812c0d` keeps exact duplicates fail-closed while disambiguating only those
+  parent-partitioned rows. The retry succeeded. Raw values and identifiers were
+  not logged or committed, and the original failed archive remains immutable.
 - The successful first result used 15 bounded public sources and retained the
   fixed competitor, category, global-event/crisis, risks, opportunities,
   actions, uncertainties, and handover sections. `previous_run_context` is
@@ -90,6 +99,11 @@
   strategy tests 8/8, isolated DB suite 65/65, frontend build/lint, focused
   Chromium/axe E2E 3/3, Nginx config test, Amazon operation allowlist, secret
   scan, synthetic JSON/CSV/TSV import/comparison/export, and idempotence.
+- The baseline parser hotfix additionally passed the focused regression test,
+  all 21 Marketplace tests against an isolated disposable PostgreSQL instance,
+  and Clippy with warnings denied. Production log scanning after deployment
+  found zero secret markers. Only the backend container changed identity;
+  PostgreSQL, frontend, Caddy, and every unrelated container retained theirs.
 - Verified final live backup:
   `/opt/essentials-merchant-amazon-backups/live-ai-context-77a2608-20260820T1540Z`,
   mode `0700`, manifest SHA-256
