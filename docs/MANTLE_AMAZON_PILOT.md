@@ -19,7 +19,7 @@ that never receives internal Amazon evidence.
 
 ## Current Mantle deployment
 
-The accepted live revision is `608691bc5b3f490568d2d3f05561e007eb0977df`
+The accepted live revision is `7c7f7dafc69be789ed7cfb95e8f30207ca410015`
 in Compose project `essentials-merchant-amazon` on `192.168.178.15`. Internal
 operators use `https://ai-marketing.mantle-climbing.de`; the retained fallback is
 `https://merchant.mantle-climbing.de/ai-marketing`. Both names resolve internally
@@ -54,13 +54,18 @@ fail-closed with `api_key_missing` and no provider request has succeeded.
 The live image IDs are:
 
 - PostgreSQL: `sha256:75f5a96988cdf694a215073c3e9c001b706b371e2f94df3967f2efdec2787f6b`
-- backend: `sha256:fe11bc5f0a45fcc6131319d62b6924d54121b02cc16a6fd92896d239c49c86e9`
-- frontend: `sha256:831b5063853f5e25587687b65473552e28cf57aa8616d08b2e8ea8bef660ab8c`
+- backend: `sha256:ad6594b44fff4e7bca650b64c929e295cc8d9b600b1b7e3cb501edddacf290ff`
+- frontend: `sha256:c6142da17061cde07af52dfc80af7acd58b80d5b8f0e0fc929b7059576f645bc`
 
 Exact-head CI run `32363658273` passed all seven jobs for runtime parent
 `9c6f8ba30c829c42255f33311fcd838e9f761049`. Live revision `608691b` adds only
 the exact two-report backup allowlist, its recovery fixture, security assertion,
 and documentation. Its Sales+Ads backup/empty-target restore passed locally.
+Live safeguard `7c7f7da` excludes `SYNTHETIC-` analyses from weekly provider
+context; all 21 DB tests, DB Clippy with warnings denied, and the workspace
+all-target check passed locally. The deployed endpoint sees all six retained
+acceptance analyses but returns `source_analysis_count: 0` and
+`no_analysis_data`.
 GitHub did not start any job for run `32365245827`: every job was rejected before
 checkout because recent account payments failed or the Actions spending limit
 must be increased. This is an external CI-account gate, not a test failure; it

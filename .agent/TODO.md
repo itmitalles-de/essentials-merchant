@@ -46,15 +46,21 @@ competing root task list.
   the exact live commit and image IDs here.
 - [x] Extend the exact backup allowlist and empty-target recovery proof to
   Sales and Traffic plus aggregate Sponsored Products evidence.
+- [x] Exclude the reserved `SYNTHETIC-` acceptance namespace at the weekly AI
+  database boundary and verify the live provider source count is zero before
+  credential entry.
 
 ## External GitHub Actions gate
 
 - [ ] Fix the GitHub account payment/Actions spending-limit issue, then rerun
-  all seven jobs for live revision `608691b` and keep draft PR #5 unmerged until
-  they pass. Run `32365245827` started no job and produced no test log.
+  all seven jobs for the exact PR #5 head and keep the PR draft until they pass.
+  Run `32365245827` for the earlier live revision started no job and produced no
+  test log.
 
 ## External OpenAI gate
 
+- The operator reports that the real key is available; it is not yet stored or
+  validated by the live service. Never paste it into Git, logs, or chat.
 - [ ] In the OpenAI Platform, create a dedicated project with pay-per-use
   billing/budget and a project/service-account API key. ChatGPT Pro is separate.
 - [ ] Approve the applicable provider data controls; `store:false` removes
@@ -65,6 +71,8 @@ competing root task list.
 
 ## External Amazon gate
 
+- The operator reports that the credential set is available; none of its values
+  has yet been stored or validated by the live service.
 - [ ] Register and self-authorize a private SP-API app with only the required
   Reports/Brand Analytics access; obtain LWA Client ID/Secret, Refresh Token,
   Seller ID, Marketplace ID, and region.

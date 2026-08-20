@@ -50,28 +50,31 @@
   import/comparison/export passed.
 - Exact runtime parent `9c6f8ba30c829c42255f33311fcd838e9f761049`
   passed all seven jobs in GitHub Actions run `32363658273`.
-- Live revision `608691bc5b3f490568d2d3f05561e007eb0977df`
-  changes only the backup report allowlist, its Sales+Ads recovery fixture, a
-  static security assertion, and operations documentation. The exact local
-  empty-target backup/restore passed with two raw hashes/two parser versions,
-  zero provider secrets, and zero schedules.
+- Live revision `7c7f7dafc69be789ed7cfb95e8f30207ca410015` adds a
+  fail-closed database boundary that excludes the reserved `SYNTHETIC-`
+  acceptance namespace from weekly AI context. Its full DB suite passed 21/21,
+  DB Clippy passed with warnings denied, and the workspace all-target check
+  passed. The earlier `608691b` backup extension passed its exact local
+  Sales+Ads empty-target restore with two raw hashes/two parser versions, zero
+  provider secrets, and zero schedules.
 - GitHub run `32365245827` did not start any job. Every job was rejected before
   checkout because the account has failed recent payments or needs a higher
   Actions spending limit. Treat this as an external CI-account gate and keep PR
   #5 draft until it can be rerun successfully.
 - No real report, Amazon credential, OpenAI key, provider call, or business
-  metric was used.
+  metric was used. The operator reports that both provider credential sets are
+  available, but neither has yet been entered or validated by the service.
 
 ## Accepted live state
 
 - Host `192.168.178.15`, Compose project `essentials-merchant-amazon`, exactly
   PostgreSQL/backend/frontend, runs revision
-  `608691bc5b3f490568d2d3f05561e007eb0977df`, schema 20, the seven-module
+  `7c7f7dafc69be789ed7cfb95e8f30207ca410015`, schema 20, the seven-module
   allowlist, and zero automatic schedules.
 - Image IDs: PostgreSQL
   `sha256:75f5a96988cdf694a215073c3e9c001b706b371e2f94df3967f2efdec2787f6b`,
-  backend `sha256:fe11bc5f0a45fcc6131319d62b6924d54121b02cc16a6fd92896d239c49c86e9`,
-  frontend `sha256:831b5063853f5e25587687b65473552e28cf57aa8616d08b2e8ea8bef660ab8c`.
+  backend `sha256:ad6594b44fff4e7bca650b64c929e295cc8d9b600b1b7e3cb501edddacf290ff`,
+  frontend `sha256:c6142da17061cde07af52dfc80af7acd58b80d5b8f0e0fc929b7059576f645bc`.
 - `https://ai-marketing.mantle-climbing.de` redirects inside the SPA to
   `/ai-marketing`. Live Chromium found zero login headings/buttons, exactly one
   `Analyse` button, the rising-market icon/favicon, and the Ads import.
@@ -88,7 +91,9 @@
   aggregate Sponsored Products campaign periods, raw-hash idempotence,
   comparisons, JSON/Markdown/CSV export, identifier/search-term rejection,
   blocked raw download, and blocked business mutation. No report bytes were
-  written to a host file.
+  written to a host file. All six retained analyses are synthetic; the live
+  weekly endpoint now reports `source_analysis_count: 0` and
+  `no_analysis_data`, proving they are ineligible for a provider request.
 - Frontend access logging omits all query parameters. Final scanning found zero
   upload filenames, sentinel values, query strings, secrets, or fatal markers.
 - Verified live backup:
@@ -99,6 +104,10 @@
   production restore was run.
 - No live OpenAI or Amazon credential exists. The write-only store is available;
   manual analysis remains fully usable while both provider gates are external.
+- The `7c7f7da` safeguard deployment recreated only this project's backend and
+  frontend. PostgreSQL and Caddy retained their container IDs and restart
+  counts; all 26 non-target containers retained the pre-deploy baseline SHA-256
+  `d488f4591c34316d32034ea64faff2cdc96c18366ef5349c7a4491dd2e63cd95`.
 
 ## Authoritative files
 
