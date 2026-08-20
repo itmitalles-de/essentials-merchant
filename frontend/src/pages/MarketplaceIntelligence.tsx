@@ -345,7 +345,10 @@ export function MarketplaceIntelligence({ aiFirst = false }: { aiFirst?: boolean
   return (
     <div className="marketplace-flow">
       <section className="card">
-        <h1>{aiFirst ? "Amazon AI Marketing" : "Amazon Intelligence"}</h1>
+        <div className={aiFirst ? "ai-marketing-title" : undefined}>
+          {aiFirst && <img src="/ai-marketing-icon.svg" alt="" width="48" height="48" />}
+          <h1>{aiFirst ? "Amazon AI Marketing" : "Amazon Intelligence"}</h1>
+        </div>
         <p>
           Internes read-only Analysewerkzeug für offizielle Amazon-Reports. Uploads erzeugen
           nachvollziehbare Kennzahlen und Empfehlungen, ergänzt um öffentliche Markt-, Wettbewerbs-

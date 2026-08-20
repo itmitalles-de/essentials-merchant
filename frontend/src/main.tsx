@@ -5,7 +5,15 @@ import App from "./App";
 import { ThemeProvider } from "./contexts/ThemeContext";
 import { LanguageProvider } from "./contexts/LanguageContext";
 import { AuthProvider } from "./contexts/AuthContext";
+import { isMantlePilotExperience } from "./pilot";
 import "./theme.css";
+
+if (isMantlePilotExperience()) {
+  document.title = "Mantle · AI Marketing";
+  document
+    .querySelector<HTMLLinkElement>('link[rel="icon"]')
+    ?.setAttribute("href", "/ai-marketing-icon.svg");
+}
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>

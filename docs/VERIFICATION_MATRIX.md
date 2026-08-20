@@ -49,7 +49,7 @@ real `.env`, production database, or buyer dataset.
   documents and disabled schedules. Keys, prompts and raw provider responses remain excluded.
 - Upgrade: migration-10 synthetic invoice/report data reaches migration 20 losslessly, preserves
   the weekly AI uniqueness boundary, and extends the immutable manual receipt constraint for Ads.
-- Security: Amazon/OpenAI transport contracts, repository secret scan (266 files), dependency gate and
+- Security: Amazon/OpenAI transport contracts, repository secret scan (267 files), dependency gate and
   both lockfile-derived CycloneDX inventories pass. Frontend production audit is 0. Retained
   Commerce audit is intentionally non-green: 12 affected package nodes (6 moderate, 6 high,
   0 critical), representing 11 individually triaged GHSAs. No forced fix was applied.

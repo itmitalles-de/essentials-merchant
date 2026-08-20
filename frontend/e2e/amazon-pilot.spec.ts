@@ -347,7 +347,10 @@ test("Mantle route opens without login and provider values stay write-only", asy
     localStorage.setItem("erplite-token", "stale-token-must-be-replaced");
   });
   await page.goto("/ai-marketing");
+  await expect(page).toHaveTitle("Mantle · AI Marketing");
+  await expect(page.locator('link[rel="icon"]')).toHaveAttribute("href", "/ai-marketing-icon.svg");
   await expect(page.getByRole("heading", { name: "Amazon AI Marketing" })).toBeVisible();
+  await expect(page.locator('img[src="/ai-marketing-icon.svg"]')).toHaveCount(2);
   await expect(page.getByRole("heading", { name: "Zugänge" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Abmelden" })).toHaveCount(0);
 

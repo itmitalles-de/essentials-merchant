@@ -34,8 +34,9 @@ export function Layout() {
           gap: "0.4rem",
         }}
       >
-        <div style={{ fontWeight: 700, marginBottom: "0.8rem" }}>
-          {pilotExperience ? "Mantle · AI Marketing" : "Essentials+ Merchant"}
+        <div className={pilotExperience ? "pilot-brand" : undefined} style={{ fontWeight: 700, marginBottom: "0.8rem" }}>
+          {pilotExperience && <img src="/ai-marketing-icon.svg" alt="" width="34" height="34" />}
+          <span>{pilotExperience ? "Mantle · AI Marketing" : "Essentials+ Merchant"}</span>
         </div>
         {pilotExperience ? (
           <NavItem to="/ai-marketing">Amazon Analyse</NavItem>

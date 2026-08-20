@@ -59,6 +59,23 @@ a {
   text-decoration: none;
 }
 
+.pilot-brand,
+.ai-marketing-title {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+}
+
+.pilot-brand img,
+.ai-marketing-title img {
+  flex: 0 0 auto;
+  border-radius: 22%;
+}
+
+.ai-marketing-title h1 {
+  margin: 0;
+}
+
 a.btn {
   display: inline-flex;
   align-items: center;
