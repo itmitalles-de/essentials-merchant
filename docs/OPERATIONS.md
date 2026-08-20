@@ -175,8 +175,10 @@ The Mantle service uses Compose project `essentials-merchant-amazon` and
 `compose.mantle-amazon.yml`. Its service allowlist is exactly `db`, `backend`,
 and `frontend`. Backend and frontend image tags must equal the full deployed Git
 SHA; the PostgreSQL image is pinned by digest. The frontend binds only to
-`127.0.0.1:18090` by default and must be published through an existing Caddy
-route restricted to private/LAN/VPN source ranges.
+`127.0.0.1:18090` by default and additionally joins the existing external
+`proxy_net` so Caddy can reach the unique alias
+`essentials-merchant-amazon-frontend`. Publish
+it only through a Caddy route restricted to private/LAN/VPN source ranges.
 
 Before every deployment, capture without rendering environment values:
 

@@ -64,7 +64,18 @@ services:
         condition: service_healthy
     ports:
       - "127.0.0.1:${MANTLE_AMAZON_FRONTEND_PORT:-18090}:80"
+    networks:
+      default:
+      proxy_net:
+        aliases:
+          - essentials-merchant-amazon-frontend
 
 volumes:
   erplite_db_data:
   erplite_invoices:
+
+networks:
+  default:
+  proxy_net:
+    external: true
+    name: proxy_net
