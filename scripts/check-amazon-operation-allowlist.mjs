@@ -4,6 +4,8 @@ import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+const frontendProxyPath = join(root, "frontend/nginx.conf");
+const frontendProxy = readFileSync(frontendProxyPath, "utf8");
 const transportPath = join(root, "backend/crates/server/src/marketplace.rs");
 const transport = readFileSync(transportPath, "utf8");
 const productionTransport = transport.split("#[cfg(test)]\nmod tests")[0];
@@ -21,6 +23,18 @@ const expectedVariants = [
 function fail(message) {
   process.stderr.write(`${message}\n`);
   process.exitCode = 1;
+}
+
+const privacySafeLogFormat = frontendProxy.match(
+  /log_format\s+privacy_safe\s+([\s\S]*?);/,
+)?.[1] ?? "";
+if (!privacySafeLogFormat.includes("$request_method")
+    || !privacySafeLogFormat.includes("$uri")
+    || !frontendProxy.includes("access_log /var/log/nginx/access.log privacy_safe;")) {
+  fail("Frontend proxy must use the reviewed query-free access log format");
+}
+if (/\$(?:args|query_string|request_uri)\b|\$request(?:\s|['"])/.test(privacySafeLogFormat)) {
+  fail("Frontend access logs must not record upload query parameters");
 }
 
 const enumBody = transport.match(/pub enum AmazonOperation\s*\{([\s\S]*?)\n\}/)?.[1] ?? "";
