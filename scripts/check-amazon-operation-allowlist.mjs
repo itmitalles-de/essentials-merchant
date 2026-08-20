@@ -30,7 +30,8 @@ const privacySafeLogFormat = frontendProxy.match(
 )?.[1] ?? "";
 if (!privacySafeLogFormat.includes("$request_method")
     || !privacySafeLogFormat.includes("$uri")
-    || !frontendProxy.includes("access_log /var/log/nginx/access.log privacy_safe;")) {
+    || !/server\s*\{\s*(?:listen[^;]*;\s*server_name[^;]*;\s*)?access_log \/var\/log\/nginx\/access\.log privacy_safe;/.test(frontendProxy)
+    || [...frontendProxy.matchAll(/access_log\s+\/var\/log\/nginx\/access\.log\s+privacy_safe;/g)].length !== 1) {
   fail("Frontend proxy must use the reviewed query-free access log format");
 }
 if (/\$(?:args|query_string|request_uri)\b|\$request(?:\s|['"])/.test(privacySafeLogFormat)) {
