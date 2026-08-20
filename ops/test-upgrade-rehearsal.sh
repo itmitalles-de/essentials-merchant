@@ -17,10 +17,21 @@ docker run --rm -d --name "$container" \
     -p 127.0.0.1::5432 postgres:16-alpine@sha256:cf78e76683b9ca8c5733cbbdce6c9262b45b6767934dd0a95e671f9a0fc20685 >/dev/null
 
 attempt=0
+until docker logs "$container" 2>&1 \
+    | grep -Fq 'PostgreSQL init process complete; ready for start up.'; do
+    attempt=$((attempt + 1))
+    if [ "$attempt" -ge 100 ]; then
+        echo 'upgrade rehearsal database initialization did not complete' >&2
+        exit 1
+    fi
+    sleep 0.2
+done
+
+attempt=0
 until docker exec "$container" pg_isready -U merchant_upgrade -d merchant_upgrade >/dev/null 2>&1; do
     attempt=$((attempt + 1))
     if [ "$attempt" -ge 100 ]; then
-        echo 'upgrade rehearsal database did not become ready' >&2
+        echo 'upgrade rehearsal database did not become ready after initialization' >&2
         exit 1
     fi
     sleep 0.2
