@@ -194,8 +194,11 @@ Provider failures create no row and leave retry possible.
 
 Set `OPENAI_STRATEGY_ENABLED=true`, keep the 32-byte provider master key only in
 the mode-0600 host environment, then enter the project-scoped pay-per-use key
-through the write-only GUI. Verify the status endpoint, one synthetic
-aggregate run, the disabled same-week button, idempotent repeat response, fixed
+through the write-only GUI. Before the first provider call, verify that a stack
+containing only `SYNTHETIC-` acceptance marketplaces reports
+`no_analysis_data`; synthetic evidence is never eligible provider context.
+Then use one explicitly authorized real aggregate analysis to verify the status
+endpoint, the disabled same-week button, idempotent repeat response, fixed
 KPI/strategy/public-context/source/handover structure, redacted logs, and the
 immutable weekly row. One weekly click can incur two Responses requests plus up
 to three web-search tool calls, so set the OpenAI project budget accordingly.

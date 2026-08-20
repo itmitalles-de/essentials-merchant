@@ -38,7 +38,9 @@ Traffic JSON/CSV/TSV plus two aggregate Sponsored Products campaign periods,
 retry idempotence, two-period comparisons, all summary formats, search-term and
 identifier rejection, and business-mutation blocking passed. Raw bytes were
 sent directly to the upload endpoints and were not written to host files. No
-authorized real report has been imported.
+authorized real report has been imported. The reserved `SYNTHETIC-` marketplace
+namespace is excluded before weekly provider-context construction, so these
+retained acceptance analyses can never become evidence in a real AI run.
 
 The weekly AI mini-tool renders one `Analyse` button, the fixed KPI/public
 context/strategy/handover structure, and a rising-market icon and favicon. The

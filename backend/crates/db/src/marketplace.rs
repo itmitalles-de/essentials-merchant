@@ -2034,14 +2034,19 @@ pub async fn analysis_result(
 
 /// Return a bounded newest-first history for the weekly aggregate strategy
 /// input. The provider boundary applies its own closed field allowlist and
-/// never receives these database IDs or the raw result document.
+/// never receives these database IDs or the raw result document. Synthetic
+/// acceptance marketplaces use the reserved `SYNTHETIC-` prefix and must
+/// never become evidence for a real strategy assessment.
 pub async fn recent_analysis_results_for_strategy(
     pool: &PgPool,
 ) -> Result<Vec<AnalysisResult>, sqlx::Error> {
     sqlx::query_as::<_, AnalysisResult>(
-        "SELECT id, job_id, strategy, model_name, prompt_version, payload_sha256, result, created_at
-         FROM amazon_analysis_results
-         ORDER BY created_at DESC
+        "SELECT result.id, result.job_id, result.strategy, result.model_name,
+                result.prompt_version, result.payload_sha256, result.result, result.created_at
+         FROM amazon_analysis_results result
+         JOIN amazon_analysis_jobs job ON job.id = result.job_id
+         WHERE NOT starts_with(job.marketplace_id, 'SYNTHETIC-')
+         ORDER BY result.created_at DESC
          LIMIT 20",
     )
     .fetch_all(pool)
@@ -2818,5 +2823,55 @@ mod tests {
         let audit_text = audit.to_string();
         assert!(!audit_text.contains("executive_summary"));
         assert!(!audit_text.contains("Synthetic aggregate assessment"));
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn strategy_history_excludes_synthetic_acceptance_analyses(pool: PgPool) {
+        let connection_id: Uuid = sqlx::query_scalar(
+            "SELECT id FROM amazon_connections WHERE seller_id = 'manual-report-import'",
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+
+        for (marketplace_id, payload_sha256) in [
+            ("A1PA6795UKMFR9", "a".repeat(64)),
+            ("SYNTHETIC-ACCEPTANCE-MARKETPLACE", "b".repeat(64)),
+        ] {
+            let job_id: Uuid = sqlx::query_scalar(
+                "INSERT INTO amazon_analysis_jobs
+                     (connection_id, marketplace_id, report_type, analysis_type, status,
+                      completed_at)
+                 VALUES ($1, $2, $3, 'delta', 'completed', now())
+                 RETURNING id",
+            )
+            .bind(connection_id)
+            .bind(marketplace_id)
+            .bind(SALES_AND_TRAFFIC)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+            sqlx::query(
+                "INSERT INTO amazon_analysis_results
+                     (job_id, strategy, model_name, prompt_version, payload_sha256, result)
+                 VALUES ($1, 'deterministic_rules', NULL, 'rules-v1', $2, $3)",
+            )
+            .bind(job_id)
+            .bind(payload_sha256)
+            .bind(json!({
+                "facts": [{"metric": "sessions", "marketplace_id": marketplace_id}],
+            }))
+            .execute(&pool)
+            .await
+            .unwrap();
+        }
+
+        let history = recent_analysis_results_for_strategy(&pool).await.unwrap();
+        assert_eq!(history.len(), 1);
+        assert_eq!(history[0].payload_sha256, "a".repeat(64));
+        assert_eq!(
+            history[0].result["facts"][0]["marketplace_id"],
+            "A1PA6795UKMFR9"
+        );
     }
 }

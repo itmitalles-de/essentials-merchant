@@ -74,6 +74,12 @@ untrusted continuity context. Raw bytes, raw rows, ASIN/SKU, campaign, or
 customer identifiers, old database evidence UUIDs, local paths, archive hashes,
 secrets, and free report text are prohibited.
 
+Synthetic acceptance marketplaces occupy the reserved `SYNTHETIC-` namespace.
+Their deterministic analyses remain visible for operational evidence but are
+excluded at the database query boundary before the weekly provider DTO is
+built. A system containing only acceptance data therefore reports
+`no_analysis_data` and cannot send those fixtures to OpenAI.
+
 The provider key must be project-scoped. The browser sends it once over the
 internal HTTPS route; the backend encrypts it with the host-only
 `PILOT_SECRETS_KEY` and the API can subsequently report only configured state,
