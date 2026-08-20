@@ -59,8 +59,8 @@ competing root task list.
 
 ## External OpenAI gate
 
-- The operator reports that the real key is available; it is not yet stored or
-  validated by the live service. Never paste it into Git, logs, or chat.
+- [x] Store the real project key through the live write-only GUI and verify only
+  the non-sensitive configured flag. Never paste it into Git, logs, or chat.
 - [ ] In the OpenAI Platform, create a dedicated project with pay-per-use
   billing/budget and a project/service-account API key. ChatGPT Pro is separate.
 - [ ] Approve the applicable provider data controls; `store:false` removes
@@ -71,13 +71,12 @@ competing root task list.
 
 ## External Amazon gate
 
-- The operator reports that the credential set is available; none of its values
-  has yet been stored or validated by the live service.
+- [x] Store all six expected Amazon fields through the live write-only GUI;
+  verify the encrypted row, read-only approval, EU connection, one marketplace,
+  and zero schedules without reading any value.
 - [ ] Register and self-authorize a private SP-API app with only the required
   Reports/Brand Analytics access; obtain LWA Client ID/Secret, Refresh Token,
   Seller ID, Marketplace ID, and region.
-- [ ] Enter those values only through the internal write-only GUI and confirm
-  Mantle authorization/read-only scope. Do not create fake credentials.
 - [ ] Run exactly one completed seven-day Sales and Traffic acquisition through
   the weekly button; verify request-ID redaction, polling/backoff, hashes,
   parser, analysis, and absence of Buyer/Order PII.

@@ -61,9 +61,12 @@
   checkout because the account has failed recent payments or needs a higher
   Actions spending limit. Treat this as an external CI-account gate and keep PR
   #5 draft until it can be rerun successfully.
-- No real report, Amazon credential, OpenAI key, provider call, or business
-  metric was used. The operator reports that both provider credential sets are
-  available, but neither has yet been entered or validated by the service.
+- No real report, provider call, or business metric has yet been used. On
+  2026-08-20 the operator entered both provider credential sets through the
+  write-only GUI. Live status verifies OpenAI configured with one expected
+  field and Amazon configured with all six expected fields, read-only approval,
+  region `eu`, one marketplace, one encrypted row per provider, and zero
+  schedules; secret values were neither read nor logged.
 
 ## Accepted live state
 
@@ -102,8 +105,10 @@
   `58eb2cd3375624159e717a08ca7fecb68b6a5a46e488d0d2ead0a99caa716bc0`.
   The empty-target recovery proof was local/disposable; no additional
   production restore was run.
-- No live OpenAI or Amazon credential exists. The write-only store is available;
-  manual analysis remains fully usable while both provider gates are external.
+- Live OpenAI and Amazon credential records now exist only in the encrypted
+  write-only store and are excluded from backups. No provider request has yet
+  tested their validity; the first paid weekly run remains an explicit operator
+  action.
 - The `7c7f7da` safeguard deployment recreated only this project's backend and
   frontend. PostgreSQL and Caddy retained their container IDs and restart
   counts; all 26 non-target containers retained the pre-deploy baseline SHA-256
