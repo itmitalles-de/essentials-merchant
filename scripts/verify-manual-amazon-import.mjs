@@ -8,6 +8,7 @@ const password = process.env.MANTLE_AMAZON_ADMIN_PASSWORD;
 const timezone = process.env.MANTLE_AMAZON_TIMEZONE || "Europe/Berlin";
 const marketplace = "SYNTHETIC-MARKETPLACE";
 const reportType = "GET_SALES_AND_TRAFFIC_REPORT";
+const adsReportType = "AMAZON_ADS_SPONSORED_PRODUCTS_CAMPAIGN_REPORT";
 
 function required(name) {
   const value = process.env[name];
@@ -122,6 +123,49 @@ async function importReport(token, filename, raw, parsed) {
   return JSON.parse(Buffer.from(result.bytes).toString("utf8"));
 }
 
+function syntheticAdsReport(startDate, endDate, suffix, spend, attributedSales) {
+  return Buffer.from(
+    "Start Date,End Date,Marketplace ID,Ad Product,Campaign Name,Impressions,Clicks,Spend,Currency,14 Day Total Sales,14 Day Total Orders (#),14 Day Total Units (#)\n" +
+      `${startDate},${endDate},${marketplace},Sponsored Products,SYNTHETIC-ADS-${suffix},1000,50,EUR ${spend.toFixed(2)},EUR,EUR ${attributedSales.toFixed(2)},8,10\n`,
+  );
+}
+
+async function previewAds(token, filename, raw) {
+  const result = await request(
+    `/api/marketplace/imports/ads/preview?${query(filename)}`,
+    {
+      method: "POST",
+      token,
+      body: raw,
+      contentType: "application/octet-stream",
+    },
+  );
+  return JSON.parse(Buffer.from(result.bytes).toString("utf8"));
+}
+
+async function importAds(token, filename, raw, parsed) {
+  const confirmation = {
+    confirm_hash: parsed.sha256,
+    confirm_marketplace_id: parsed.marketplace_id,
+    confirm_currency_code: parsed.currency_code,
+    confirm_period_start: parsed.period_start,
+    confirm_period_end: parsed.period_end,
+    confirm_granularity: parsed.granularity,
+    confirm_report_type: parsed.report_type,
+    confirm_attribution_window_days: parsed.attribution_window_days,
+  };
+  const result = await request(
+    `/api/marketplace/imports/ads?${query(filename, confirmation)}`,
+    {
+      method: "POST",
+      token,
+      body: raw,
+      contentType: "application/octet-stream",
+    },
+  );
+  return JSON.parse(Buffer.from(result.bytes).toString("utf8"));
+}
+
 async function authenticate() {
   try {
     const session = await request("/api/auth/pilot-session", { method: "POST" });
@@ -204,6 +248,110 @@ for (const fixture of flatFixtures) {
     sha256: sha256(fixture.raw),
     run_id: imported.run_id,
   };
+}
+
+// Aggregate Sponsored Products evidence follows the same immutable receipt
+// boundary. Campaign labels exist only in these in-memory synthetic raw bytes.
+const newerAdsRaw = syntheticAdsReport("2026-07-15", "2026-07-21", "NEWER", 25, 100);
+const olderAdsRaw = syntheticAdsReport("2026-07-08", "2026-07-14", "OLDER", 20, 60);
+const newerAdsPreview = await previewAds(
+  token,
+  "SYNTHETIC-sponsored-products-newer.csv",
+  newerAdsRaw,
+);
+const serializedAdsPreview = JSON.stringify(newerAdsPreview);
+if (
+  newerAdsPreview.report_type !== adsReportType ||
+  newerAdsPreview.attribution_window_days !== 14 ||
+  newerAdsPreview.confirmation_required ||
+  serializedAdsPreview.includes("SYNTHETIC-ADS-NEWER")
+) {
+  throw new Error("Ads preview lost report, attribution, confirmation, or identifier boundaries");
+}
+const adsMetrics = new Map(
+  newerAdsPreview.metrics.map((metric) => [metric.metric_name, metric.value_numeric]),
+);
+for (const requiredMetric of ["ads_impressions", "ads_clicks", "ads_spend", "ads_ctr", "ads_cpc", "ads_roas", "ads_acos"]) {
+  if (!adsMetrics.has(requiredMetric)) {
+    throw new Error(`Ads preview lacks ${requiredMetric}`);
+  }
+}
+const newerAdsFirst = await importAds(
+  token,
+  "SYNTHETIC-sponsored-products-newer.csv",
+  newerAdsRaw,
+  newerAdsPreview,
+);
+const newerAdsRepeat = await importAds(
+  token,
+  "SYNTHETIC-sponsored-products-newer.csv",
+  newerAdsRaw,
+  newerAdsPreview,
+);
+const olderAdsPreview = await previewAds(
+  token,
+  "SYNTHETIC-sponsored-products-older.csv",
+  olderAdsRaw,
+);
+const olderAdsSecond = await importAds(
+  token,
+  "SYNTHETIC-sponsored-products-older.csv",
+  olderAdsRaw,
+  olderAdsPreview,
+);
+if (
+  !["imported", "already_imported"].includes(newerAdsFirst.outcome) ||
+  newerAdsRepeat.outcome !== "already_imported" ||
+  newerAdsRepeat.run_id !== newerAdsFirst.run_id ||
+  !["imported", "already_imported"].includes(olderAdsSecond.outcome) ||
+  !olderAdsSecond.comparison_generated ||
+  !olderAdsSecond.analysis_id
+) {
+  throw new Error("Ads import did not prove baseline, idempotence, and period comparison");
+}
+
+const adsExportHashes = {};
+for (const format of ["json", "markdown", "csv"]) {
+  const exported = await request(
+    `/api/marketplace/analyses/${olderAdsSecond.analysis_id}/export?format=${format}`,
+    { token },
+  );
+  const exportText = Buffer.from(exported.bytes).toString("utf8");
+  for (const forbidden of ["SYNTHETIC-ADS-NEWER", "SYNTHETIC-ADS-OLDER", "campaignId", "campaignName"]) {
+    if (exportText.includes(forbidden)) {
+      throw new Error(`${format} Ads export leaked a campaign identifier`);
+    }
+  }
+  if (format === "json") {
+    const result = JSON.parse(exportText).result;
+    const factNames = new Set(result.facts.map((fact) => fact.metric));
+    for (const requiredMetric of ["ads_impressions", "ads_clicks", "ads_spend", "ads_roas", "ads_acos"]) {
+      if (!factNames.has(requiredMetric)) {
+        throw new Error(`Ads comparison export lacks ${requiredMetric}`);
+      }
+    }
+  }
+  adsExportHashes[format] = sha256(exported.bytes);
+}
+
+const rejectedAds = Buffer.from(
+  "Date,Campaign Name,Search Term,Impressions,Clicks,Spend\n" +
+    "2026-07-22,SYNTHETIC-REJECTED,SYNTHETIC-TERM,10,1,1.00\n",
+);
+const rejectedResponse = await fetch(
+  `${baseUrl}/api/marketplace/imports/ads/preview?${query("SYNTHETIC-search-term-rejected.csv")}`,
+  {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/octet-stream",
+    },
+    body: rejectedAds,
+  },
+);
+await rejectedResponse.arrayBuffer();
+if (rejectedResponse.status !== 422) {
+  throw new Error("search-term Ads report was not rejected before persistence");
 }
 
 if (
@@ -336,6 +484,20 @@ process.stdout.write(
       comparison_analysis_id: olderSecond.analysis_id,
       flat_imports: flatImports,
       export_sha256: exportHashes,
+      ads: {
+        report_type: adsReportType,
+        formats: ["csv"],
+        newer_sha256: sha256(newerAdsRaw),
+        older_sha256: sha256(olderAdsRaw),
+        baseline_run_id: newerAdsFirst.run_id,
+        idempotent_run_id: newerAdsRepeat.run_id,
+        comparison_run_id: olderAdsSecond.run_id,
+        comparison_analysis_id: olderAdsSecond.analysis_id,
+        aggregate_metrics_verified: [...adsMetrics.keys()].sort(),
+        export_sha256: adsExportHashes,
+        campaign_identifiers_excluded: true,
+        search_term_report_rejected: true,
+      },
       raw_download_blocked: true,
       business_mutations_blocked: true,
     },
