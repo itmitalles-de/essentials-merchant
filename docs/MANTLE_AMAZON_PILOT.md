@@ -19,11 +19,11 @@ that never receives internal Amazon evidence.
 
 ## Current Mantle deployment
 
-The checked-out and backend live revision is
-`f984cd3e5bb2268d5c7523dbe497e60c70b32e06` in Compose project
-`essentials-merchant-amazon` on `192.168.178.15`. The unchanged running
-frontend was built from UI revision
-`998d4864a75dd4349496e3ded5ad757886479f0c`. Internal operators use
+The checked-out live revision is
+`0703a88666abe20229244043d93039b93fa0f8b8` in Compose project
+`essentials-merchant-amazon` on `192.168.178.15`. The unchanged running backend
+was built from `f984cd3e5bb2268d5c7523dbe497e60c70b32e06`; the running frontend was
+built from `0703a88666abe20229244043d93039b93fa0f8b8`. Internal operators use
 `https://ai-marketing.mantle-climbing.de`; the retained fallback is
 `https://merchant.mantle-climbing.de/ai-marketing`. Both names resolve
 internally to the Docker host. This hostname has its own Caddy source matcher
@@ -59,6 +59,11 @@ not only by the button. Public web research is a separate, public-only request;
 its bounded citations are then combined with aggregate Amazon history and the
 last validated handover in a tool-free synthesis.
 
+The analysis route itself contains no credential forms. A gear beside the
+light/dark switch opens `/ai-marketing/settings`, which owns provider setup and
+the read-only system boundary. The analysis action appears before the pipeline;
+hash, model, storage, and other technical metadata are collapsed by default.
+
 Both provider credential sets are now present only in the encrypted write-only
 store. The first real Amazon attempt proved LWA refresh, report creation, and
 polling through Amazon `DONE`. It stopped locally before document retrieval
@@ -72,7 +77,7 @@ The live image IDs are:
 
 - PostgreSQL: `sha256:75f5a96988cdf694a215073c3e9c001b706b371e2f94df3967f2efdec2787f6b`
 - backend: `sha256:3491f32cd921a3f97aa8e6417998815f7d99cd9e2a4479a994807e0d0a0bd99c`
-- frontend: `sha256:62d7cba7bd114208820651c02e1db3b3208e7978b66ba8fcbf9c21e8d98256c6`
+- frontend: `sha256:b0ac13937b72772b994bd18ac4346703322340ca741f16bb75905a42390bdc5d`
 
 Exact-head CI run `32363658273` passed all seven jobs for runtime parent
 `9c6f8ba30c829c42255f33311fcd838e9f761049`. Live revision `608691b` adds only
@@ -87,6 +92,9 @@ UI revision `998d486` passed its frontend build, lint, focused Chromium pipeline
 test, and live light/dark/no-secret/no-synthetic-card check. Backend revision
 `f984cd3` passed the dotted-ID unit test, the fake-SP-API transport test, and
 server Clippy with warnings denied.
+UI revision `0703a88` passed frontend build/lint, both focused Chromium tests,
+and live analysis/settings separation with the primary button above the fold
+and zero readable secret values.
 GitHub did not start any job for run `32365245827`: every job was rejected before
 checkout because recent account payments failed or the Actions spending limit
 must be increased. This is an external CI-account gate, not a test failure; it

@@ -15,6 +15,9 @@ competing root task list.
 - [x] Put the weekly action before result history, hide synthetic acceptance
   cards on the Mantle route, and add a light/dark switch plus a truthful
   five-phase live activity display without fabricated percentages.
+- [x] Remove provider/configuration clutter from the analysis route, expose it
+  through a gear-linked `/ai-marketing/settings` page, put the action before the
+  pipeline, and collapse technical run metadata by default.
 - [x] Preserve the closed aggregate DTO, previous validated handover, fixed
   graphical/section layout, one-success-per-Berlin-week database boundary, and
   zero Amazon/Merchant mutations.
