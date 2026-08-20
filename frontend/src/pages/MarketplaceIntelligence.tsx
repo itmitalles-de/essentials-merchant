@@ -1603,6 +1603,62 @@ function strategyActivityEntry(
   };
 }
 
+function restoredStrategyActivity(result: MarketplaceStrategyView): StrategyActivityEntry[] {
+  const entries = [
+    strategyActivityEntry(
+      "SYSTEM",
+      `OpenAI ${result.status.model} ist ${result.status.available ? "bereit" : "nicht verfügbar"}.`,
+      result.status.available ? "success" : "warning",
+    ),
+    strategyActivityEntry(
+      "WISSEN",
+      result.business_knowledge_imported
+        ? `${result.business_knowledge_entry_count} kuratierte Einträge aus ${result.business_knowledge_source_count} Wiki-/Notes-Quellen sind eingebunden.`
+        : "Die einmalige Mantle-/Sphagnum-Wissensbasis fehlt.",
+      result.business_knowledge_imported ? "success" : "warning",
+    ),
+    strategyActivityEntry(
+      "DATEN",
+      `${result.source_analysis_count} freigegebene Amazon-Aggregatanalyse(n) gefunden.`,
+      result.source_analysis_count > 0 ? "success" : "warning",
+    ),
+  ];
+  if (!result.assessment) return entries;
+  const createdAt = result.created_at
+    ? new Intl.DateTimeFormat("de-DE", { dateStyle: "medium", timeStyle: "medium" })
+      .format(new Date(result.created_at))
+    : "dieser Kalenderwoche";
+  entries.push(
+    strategyActivityEntry(
+      "HISTORIE",
+      `Gespeicherter Wochenlauf vom ${createdAt} wurde unverändert geladen.`,
+      "success",
+    ),
+    strategyActivityEntry(
+      "QUELLEN",
+      `${result.assessment.public_sources?.length ?? 0} öffentliche Quellen sind validiert und verlinkt.`,
+      "success",
+    ),
+    strategyActivityEntry(
+      "OPENAI",
+      `Strukturierte Antwort von ${result.assessment_model ?? result.status.model} mit Prompt ${result.assessment_prompt_version ?? result.status.prompt_version}; store=false.`,
+      "success",
+    ),
+  );
+  if (result.input_tokens !== null || result.output_tokens !== null) {
+    entries.push(strategyActivityEntry(
+      "TOKEN",
+      `Verbrauch: ${result.input_tokens ?? 0} Input- und ${result.output_tokens ?? 0} Output-Tokens.`,
+    ));
+  }
+  entries.push(strategyActivityEntry(
+    "ERGEBNIS",
+    "Validierte Strategie, Evidenzreferenzen und Wochen-Handover sind geladen.",
+    "success",
+  ));
+  return entries;
+}
+
 const amazonRunActivity: Record<string, string> = {
   queued: "Amazon-Report ist in der internen Warteschlange.",
   requesting: "Read-only Reports-API wird aufgerufen.",
@@ -1628,7 +1684,7 @@ function StrategyActivityLog({
   return (
     <section className="strategy-activity" aria-label="Bereinigtes Live-Protokoll">
       <div className="strategy-activity-head">
-        <strong>{running ? "Live-Protokoll" : "Protokoll des letzten Versuchs"}</strong>
+        <strong>{running ? "Live-Protokoll" : "Bereinigtes Laufprotokoll"}</strong>
         <span>{running ? "● aktiv" : "● beendet"}</span>
       </div>
       <div className="strategy-terminal" role="log" aria-live="polite" aria-relevant="additions">
@@ -1804,25 +1860,7 @@ function WeeklyStrategyPanel({
       .then((result) => {
         if (active) {
           setView(result);
-          setActivity((entries) => entries.length > 0 ? entries : [
-            strategyActivityEntry(
-              "SYSTEM",
-              `OpenAI ${result.status.model} ist ${result.status.available ? "bereit" : "nicht verfügbar"}.`,
-              result.status.available ? "success" : "warning",
-            ),
-            strategyActivityEntry(
-              "WISSEN",
-              result.business_knowledge_imported
-                ? `${result.business_knowledge_entry_count} kuratierte Einträge aus ${result.business_knowledge_source_count} Wiki-/Notes-Quellen sind eingebunden.`
-                : "Die einmalige Mantle-/Sphagnum-Wissensbasis fehlt.",
-              result.business_knowledge_imported ? "success" : "warning",
-            ),
-            strategyActivityEntry(
-              "DATEN",
-              `${result.source_analysis_count} freigegebene Amazon-Aggregatanalyse(n) gefunden.`,
-              result.source_analysis_count > 0 ? "success" : "warning",
-            ),
-          ]);
+          setActivity((entries) => entries.length > 0 ? entries : restoredStrategyActivity(result));
         }
       })
       .catch((reason) => {
