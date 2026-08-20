@@ -25,7 +25,7 @@ competing root task list.
   Compose project `essentials-merchant-amazon`, and preserve every non-target
   container ID/restart count.
 - [x] Verify no-login route, scoped ERP denial, write-only empty status, schema
-  19, zero schedules, logs without secrets, synthetic import/comparison/export,
+  20, zero schedules, logs without secrets, synthetic import/comparison/export,
   backup, and empty-target restore on the deployed SHA.
 - [x] Record exact live commit, image IDs, backup/restore evidence, and remaining
   external gates in this handoff and `docs/MANTLE_AMAZON_PILOT.md`.
@@ -39,11 +39,19 @@ competing root task list.
   uncertain consumption effects.
 - [x] Keep the synthesis fixed-structure, handover-aware, aggregate-only,
   tool-free, weekly, and incapable of Amazon or Merchant mutation.
-- [ ] Commit and push the exact extension head, require all seven CI jobs green,
-  and deploy only `essentials-merchant-amazon` with Git-SHA image tags.
-- [ ] Run live synthetic Ads import/comparison/idempotence/export acceptance,
+- [x] Commit, push, and deploy only `essentials-merchant-amazon` with Git-SHA
+  image tags. Runtime parent `9c6f8ba` passed all seven CI jobs.
+- [x] Run live synthetic Ads import/comparison/idempotence/export acceptance,
   verify schema 20/no-login/scoped denials/logs/non-target baseline, and record
   the exact live commit and image IDs here.
+- [x] Extend the exact backup allowlist and empty-target recovery proof to
+  Sales and Traffic plus aggregate Sponsored Products evidence.
+
+## External GitHub Actions gate
+
+- [ ] Fix the GitHub account payment/Actions spending-limit issue, then rerun
+  all seven jobs for live revision `608691b` and keep draft PR #5 unmerged until
+  they pass. Run `32365245827` started no job and produced no test log.
 
 ## External OpenAI gate
 

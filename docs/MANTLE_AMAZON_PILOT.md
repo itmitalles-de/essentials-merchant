@@ -19,7 +19,7 @@ that never receives internal Amazon evidence.
 
 ## Current Mantle deployment
 
-The accepted live application revision is `9b8edc6e6099e9d85c44a2b6d797f00f5c88ffe8`
+The accepted live revision is `608691bc5b3f490568d2d3f05561e007eb0977df`
 in Compose project `essentials-merchant-amazon` on `192.168.178.15`. Internal
 operators use `https://ai-marketing.mantle-climbing.de`; the retained fallback is
 `https://merchant.mantle-climbing.de/ai-marketing`. Both names resolve internally
@@ -33,40 +33,58 @@ Amazon route. The regular login endpoint is disabled in this profile. Anyone
 inside the allowed LAN/VPN boundary can run the weekly analysis or replace
 write-only credentials, so the Caddy/source-network restriction is mandatory.
 
-The first live acceptance used only visibly synthetic, in-memory reports. JSON,
-CSV, TSV, retry idempotence, two-period comparison, all summary formats,
-business-mutation blocking, backup, and empty-target restore passed. No
+The live acceptance used only visibly synthetic, in-memory reports. Sales and
+Traffic JSON/CSV/TSV plus two aggregate Sponsored Products campaign periods,
+retry idempotence, two-period comparisons, all summary formats, search-term and
+identifier rejection, and business-mutation blocking passed. Raw bytes were
+sent directly to the upload endpoints and were not written to host files. No
 authorized real report has been imported.
 
-The weekly AI mini-tool acceptance reused the four stored synthetic aggregate
-analyses, produced a stable closed-input hash, rendered the fixed KPI and
-handover structure, and proved that a failed provider call creates no weekly
-assessment. The successful-run gate is enforced by a Monday-based database
-unique index in `Europe/Berlin`, not only by the button. Because no separately
-billed OpenAI API key is provisioned, the live external status remains
-fail-closed and no provider request has succeeded.
+The weekly AI mini-tool renders one `Analyse` button, the fixed KPI/public
+context/strategy/handover structure, and a rising-market icon and favicon. The
+successful-run gate is enforced by a Monday-based database unique index in
+`Europe/Berlin`, not only by the button. Public web research is a separate,
+public-only request; its bounded citations are then combined with aggregate
+Amazon history and the last validated handover in a tool-free synthesis. No
+separately billed OpenAI key is provisioned, so the live strategy status is
+fail-closed with `api_key_missing` and no provider request has succeeded.
 
 The live image IDs are:
 
 - PostgreSQL: `sha256:75f5a96988cdf694a215073c3e9c001b706b371e2f94df3967f2efdec2787f6b`
-- backend: `sha256:dd1619471558012bc4d724e85dfc417161239dfb3f8eecc27504892158f89e51`
-- frontend: `sha256:cbb7f2a45b73a785fd0738b265f11e7815a23be6d11d43fa9782b444c5f94025`
+- backend: `sha256:fe11bc5f0a45fcc6131319d62b6924d54121b02cc16a6fd92896d239c49c86e9`
+- frontend: `sha256:831b5063853f5e25587687b65473552e28cf57aa8616d08b2e8ea8bef660ab8c`
 
-Exact-head CI run `32349661359` passed all seven jobs. The deployment preserved
-the PostgreSQL container and every non-target container ID/restart count; Caddy
-was not changed or reloaded. Live Chromium reached `/ai-marketing` with zero
-login inputs, and the regular login plus scoped ERP access returned 403.
+Exact-head CI run `32363658273` passed all seven jobs for runtime parent
+`9c6f8ba30c829c42255f33311fcd838e9f761049`. Live revision `608691b` adds only
+the exact two-report backup allowlist, its recovery fixture, security assertion,
+and documentation. Its Sales+Ads backup/empty-target restore passed locally.
+GitHub did not start any job for run `32365245827`: every job was rejected before
+checkout because recent account payments failed or the Actions spending limit
+must be increased. This is an external CI-account gate, not a test failure; it
+must be cleared before PR #5 can leave draft.
 
-The final live backup was generated and verified through the repository-owned,
-digest-pinned Node container fallback, so the host does not need a Node.js
-installation. Empty-target restore acceptance matched raw archive hashes,
-normalized metrics, deterministic analyses, schema 19, module state, HTTP
-readiness, zero schedules, and zero restored provider-secret rows. The accepted
-post-deployment backup is
-`/opt/essentials-merchant-amazon-backups/live-weekly-ai-9b8edc6-20260820T085753Z`.
-The isolated restore containers/network were removed after acceptance without
-deleting the retained restore volumes. Live logs contained no configured secret
-value or raw/secret field marker.
+The deployment preserved the PostgreSQL container and all 26 non-target
+container identities, images, restart counts, and start times; their exact
+baseline SHA-256 remained
+`becf4957d74030debf19035fce8bf2489a102d9c1f6b9eba8cabb1eb83b85212`.
+Caddy was not changed or reloaded. Live Chromium reached `/ai-marketing` with
+zero login headings/buttons, exactly one `Analyse` button, the branded favicon,
+and the Ads import. Schema 20 is active and automatic schedules remain zero.
+The frontend access-log format deliberately omits query parameters; the final
+synthetic run produced zero filename, sentinel, query, secret, or fatal log
+matches.
+
+The final live backup is
+`/opt/essentials-merchant-amazon-backups/live-market-context-608691b-20260820T1146Z`.
+It was created with mode `0700`, verified six checksummed artifacts, registered
+manifest SHA-256
+`58eb2cd3375624159e717a08ca7fecb68b6a5a46e488d0d2ead0a99caa716bc0`
+against live revision `608691b`, and excludes all provider-secret rows. The
+isolated local empty-target restore matched both Sales and Ads raw hashes,
+snapshots and parser versions, retained the AI handover chain, restored zero
+provider secrets and zero schedules, and removed its disposable containers and
+volumes afterward. No additional restore was run against production.
 
 ## Relationship to the Mantle wiki toolchain
 
@@ -185,6 +203,6 @@ data-control details are in
 [STRATEGY_AI_GATE.md](STRATEGY_AI_GATE.md).
 
 Until a real key is entered, strategy status is
-`externally_blocked_missing_pay_per_use_api_key`. Manual report import,
+`api_key_missing` (shown in the UI as an external pay-per-use gate). Manual report import,
 deterministic analysis, comparison, and export remain available; no fake key or
 provider success may be claimed.
