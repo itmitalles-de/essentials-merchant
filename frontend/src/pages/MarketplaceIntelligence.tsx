@@ -7,7 +7,6 @@ import {
 } from "../api";
 import { useAuth } from "../contexts/AuthContext";
 import { usePilotStatus } from "../hooks/usePilotStatus";
-import { ProviderSettingsPanel } from "../components/ProviderSettingsPanel";
 import type {
   AmazonConnectionSummary,
   AmazonReportRun,
@@ -140,7 +139,6 @@ export function MarketplaceIntelligence({ aiFirst = false }: { aiFirst?: boolean
   const [confirmed, setConfirmed] = useState(false);
   const [importResult, setImportResult] = useState<MarketplaceImportResult | null>(null);
   const [sessionImports, setSessionImports] = useState<MarketplaceImportResult[]>([]);
-  const [credentialRevision, setCredentialRevision] = useState(0);
 
   const reload = async () => {
     try {
@@ -345,7 +343,6 @@ export function MarketplaceIntelligence({ aiFirst = false }: { aiFirst?: boolean
           </p>
         )}
         <WeeklyStrategyPanel
-          key={`weekly-${credentialRevision}`}
           liveConnection={realSpApiReady ? connection : null}
           marketplaceId={realSpApiReady ? marketplaceId : null}
           recentRuns={recentRuns}
@@ -365,38 +362,17 @@ export function MarketplaceIntelligence({ aiFirst = false }: { aiFirst?: boolean
 
   return (
     <div className="marketplace-flow">
-      <section className="card">
+      <header className={aiFirst ? "ai-marketing-compact-header" : "card"}>
         <div className={aiFirst ? "ai-marketing-title" : undefined}>
           {aiFirst && <img src="/ai-marketing-icon.svg" alt="" width="48" height="48" />}
           <h1>{aiFirst ? "Amazon AI Marketing" : "Amazon Intelligence"}</h1>
         </div>
-        <p>
-          Internes read-only Analysewerkzeug für offizielle Amazon-Reports. Uploads erzeugen
-          nachvollziehbare Kennzahlen und Empfehlungen, ergänzt um öffentliche Markt-, Wettbewerbs-
-          und Krisensignale, aber keine Preis-, Ads-, Listing-,
-          Bestands- oder Bestelländerung.
+        <p>{aiFirst
+          ? "Amazon-Performance, Markt, Wettbewerb und globale Entwicklungen – als feste wöchentliche Strategieauswertung."
+          : "Internes read-only Analysewerkzeug für offizielle Amazon-Reports. Uploads erzeugen nachvollziehbare Kennzahlen und Empfehlungen, aber keine Amazon-Änderung."}
         </p>
-        {aiFirst && (
-          <div className="marketplace-callout strategy-intro">
-            <strong>Interne Strategiehilfe für Mantle</strong>
-            <p>
-              Zuerst bleiben Fakten und regelbasierte Ableitungen sichtbar. Eine externe
-              KI-Einschätzung wird nur nach deiner ausdrücklichen Hash-Bestätigung erzeugt. Öffentliche
-              Web-Recherche und interne Amazon-Aggregate bleiben technisch getrennt.
-            </p>
-          </div>
-        )}
         {message && <p className="marketplace-status" role="status">{message}</p>}
-      </section>
-
-      {aiFirst && (
-        <ProviderSettingsPanel
-          onConfigured={async () => {
-            setCredentialRevision((value) => value + 1);
-            await reload();
-          }}
-        />
-      )}
+      </header>
 
       {aiFirst && analysisSection}
 
@@ -629,7 +605,7 @@ export function MarketplaceIntelligence({ aiFirst = false }: { aiFirst?: boolean
 
       {!aiFirst && analysisSection}
 
-      <section className="card" aria-labelledby="sp-api-heading">
+      {!aiFirst && <section className="card" aria-labelledby="sp-api-heading">
         <h2 id="sp-api-heading">Optionaler SP-API-Abruf</h2>
         {!realSpApiReady && (
           <div className="marketplace-callout warning">
@@ -675,7 +651,7 @@ export function MarketplaceIntelligence({ aiFirst = false }: { aiFirst?: boolean
             </ul>
           </details>
         )}
-      </section>
+      </section>}
 
       <section className="card">
         <h2>Reportverlauf</h2>
@@ -1803,48 +1779,14 @@ function WeeklyStrategyPanel({
         <h3 id="weekly-strategy">Wöchentliche KI-Marketinganalyse</h3>
         <span className="badge">maximal 1× pro Kalenderwoche</span>
       </div>
-      <p>
-        Ein Klick holt bei konfigurierter SP-API genau einen read-only Sales-&amp;-Traffic-Bericht
-        für die letzten sieben abgeschlossenen Tage, verarbeitet alle freigegebenen
-        Aggregatanalysen und nimmt das validierte Handover des letzten Wochenlaufs als Kontext.
-        Eine vorgelagerte Web-Recherche sieht nur Mantles öffentliches Branchenprofil; interne
-        Amazon-Zahlen erreichen keine Suchanfrage. OpenAI erhält keine Rohdatei, Reportzeile,
-        ASIN/SKU, Buyer-/Order-PII oder Secrets.
+      <p className="strategy-lead">
+        Ein Klick lädt den letzten abgeschlossenen Sieben-Tage-Report, vergleicht ihn mit dem
+        letzten Lauf und erstellt Markt-, Krisen- und Strategieanalyse samt Handover.
       </p>
-      <StrategyProgress
-        phase={progressPhase}
-        failedPhase={failedPhase}
-        completed={view?.block_reason === "weekly_limit_reached"}
-        usesLiveAmazon={Boolean(liveConnection)}
-      />
       {loading && <p role="status">Aggregatgrenze wird geprüft …</p>}
-      {progressPhase && (
-        <p className="marketplace-status strategy-phase-message" role="status" aria-live="polite">
-          {strategyPhaseMessages[progressPhase]}
-        </p>
-      )}
       {error && <p className="marketplace-callout warning" role="alert">{error}</p>}
       {view && (
         <>
-          <dl className="strategy-contract">
-            <div>
-              <dt>Aktueller Aggregat-Hash</dt>
-              <dd><code className="marketplace-hash">{view.current_payload_sha256 ?? "noch keine Daten"}</code></dd>
-            </div>
-            {view.assessment_payload_sha256 && (
-              <div>
-                <dt>Vom angezeigten KI-Lauf bewertet</dt>
-                <dd><code className="marketplace-hash">{view.assessment_payload_sha256}</code></dd>
-              </div>
-            )}
-            <div><dt>Eingelesene Analysen</dt><dd>{view.source_analysis_count}</dd></div>
-            <div><dt>Letzter Lauf als Kontext</dt><dd>{view.previous_run_context ? "ja" : "noch nicht vorhanden"}</dd></div>
-            <div><dt>Wochenfenster</dt><dd>ab {view.week_start} · Europe/Berlin</dd></div>
-            <div><dt>Modell</dt><dd>{view.status.model}</dd></div>
-            <div><dt>Öffentliche Web-Recherche</dt><dd>maximal {view.status.max_web_search_calls} Suchaufrufe</dd></div>
-            <div><dt>Speicherung bei Anfrage</dt><dd><code>store: false</code></dd></div>
-            <div><dt>Amazon-Mutation</dt><dd>nicht vorhanden</dd></div>
-          </dl>
           {weeklyBlockMessage(view) && !(liveConnection && view.block_reason === "no_analysis_data") && (
             <div
               className={`marketplace-callout ${view.block_reason === "weekly_limit_reached" ? "success" : "warning"}`}
@@ -1854,15 +1796,6 @@ function WeeklyStrategyPanel({
                 {view.block_reason === "weekly_limit_reached" ? "Wochenlimit aktiv" : "Analyse noch nicht ausführbar"}
               </strong>
               <p>{weeklyBlockMessage(view)}</p>
-            </div>
-          )}
-          {view.assessment && view.current_payload_sha256 !== view.assessment_payload_sha256 && (
-            <div className="marketplace-callout warning" role="status">
-              <strong>Neuere Importdaten vorhanden</strong>
-              <p>
-                Die unten angezeigte KI-Antwort gehört zum bewerteten Hash. Neu importierte Daten
-                stehen im festen KPI-Bereich oben und fließen erst in den nächsten Wochenlauf ein.
-              </p>
             </div>
           )}
           <button
@@ -1878,22 +1811,63 @@ function WeeklyStrategyPanel({
           >
             {submitting ? "Analyse läuft …" : "Analyse"}
           </button>
-          <p className="marketplace-muted">
-            Der Klick bestätigt den Amazon-read-only-Abruf und die einmalige Übermittlung des danach
-            angezeigten Aggregat-Hashes. Ohne Amazon-Zugang werden vorhandene manuelle Importe
-            verwendet. Ein Lauf nutzt eine öffentliche Recherche-Response und eine getrennte
-            Synthese-Response im Pay-per-use-Projekt; die Recherche darf höchstens drei
-            Web-Suchaufrufe auslösen. Ein fehlgeschlagener Provideraufruf verbraucht das
-            Wochenfenster nicht; ein erfolgreich gespeicherter Lauf sperrt es serverseitig bis zum
-            nächsten Montag.
+          <p className="marketplace-muted strategy-action-note">
+            Read-only: keine Rohreports oder PII an OpenAI, keine Amazon-Änderung. Erst ein
+            erfolgreicher Lauf sperrt den Button bis Montag.
           </p>
-          <StrategyResult view={view} />
         </>
       )}
-      <p className="marketplace-muted">
-        Die Ausgabe ist eine Entscheidungshilfe. Es wird keine Preis-, Ads-, Listing-, Bestands-
-        oder sonstige Amazon-Änderung ausgeführt.
-      </p>
+      <StrategyProgress
+        phase={progressPhase}
+        failedPhase={failedPhase}
+        completed={view?.block_reason === "weekly_limit_reached"}
+        usesLiveAmazon={Boolean(liveConnection)}
+      />
+      {progressPhase && (
+        <p className="marketplace-status strategy-phase-message" role="status" aria-live="polite">
+          {strategyPhaseMessages[progressPhase]}
+        </p>
+      )}
+      {view && (
+        <>
+          {view.assessment && view.current_payload_sha256 !== view.assessment_payload_sha256 && (
+            <div className="marketplace-callout warning" role="status">
+              <strong>Neuere Importdaten vorhanden</strong>
+              <p>
+                Die angezeigte KI-Antwort gehört zum bewerteten Hash. Neuere Daten fließen in den
+                nächsten Wochenlauf ein.
+              </p>
+            </div>
+          )}
+          <StrategyResult view={view} />
+          <details className="strategy-technical-details">
+            <summary>Technische Laufdetails</summary>
+            <dl className="strategy-contract">
+              <div>
+                <dt>Aktueller Aggregat-Hash</dt>
+                <dd><code className="marketplace-hash">{view.current_payload_sha256 ?? "noch keine Daten"}</code></dd>
+              </div>
+              {view.assessment_payload_sha256 && (
+                <div>
+                  <dt>Vom angezeigten KI-Lauf bewertet</dt>
+                  <dd><code className="marketplace-hash">{view.assessment_payload_sha256}</code></dd>
+                </div>
+              )}
+              <div><dt>Eingelesene Analysen</dt><dd>{view.source_analysis_count}</dd></div>
+              <div><dt>Letzter Lauf als Kontext</dt><dd>{view.previous_run_context ? "ja" : "noch nicht vorhanden"}</dd></div>
+              <div><dt>Wochenfenster</dt><dd>ab {view.week_start} · Europe/Berlin</dd></div>
+              <div><dt>Modell</dt><dd>{view.status.model}</dd></div>
+              <div><dt>Öffentliche Web-Recherche</dt><dd>maximal {view.status.max_web_search_calls} Suchaufrufe</dd></div>
+              <div><dt>Speicherung bei Anfrage</dt><dd><code>store: false</code></dd></div>
+              <div><dt>Amazon-Mutation</dt><dd>nicht vorhanden</dd></div>
+            </dl>
+            <p className="marketplace-muted">
+              Öffentliche Web-Recherche und interne Amazon-Aggregate bleiben getrennt. Ein
+              fehlgeschlagener Provideraufruf verbraucht das Wochenfenster nicht.
+            </p>
+          </details>
+        </>
+      )}
     </section>
   );
 }

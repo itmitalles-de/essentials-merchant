@@ -39,7 +39,7 @@ export function Layout() {
           <span>{pilotExperience ? "Mantle · AI Marketing" : "Essentials+ Merchant"}</span>
         </div>
         {pilotExperience ? (
-          <NavItem to="/ai-marketing">Amazon Analyse</NavItem>
+          <NavItem to="/ai-marketing" end>Amazon Analyse</NavItem>
         ) : (
           <>
             <NavItem to="/">{t("nav.dashboard")}</NavItem>
@@ -67,10 +67,20 @@ export function Layout() {
         {pilotExperience && (
           <div className="pilot-toolbar" aria-label="Darstellung">
             <span className="pilot-toolbar-label">Mantle intern · Read-only</span>
+            <NavLink
+              to="/ai-marketing/settings"
+              className={({ isActive }) => `pilot-settings-link${isActive ? " is-active" : ""}`}
+              aria-label="Einstellungen öffnen"
+              title="Einstellungen"
+            >
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M12 8.6a3.4 3.4 0 1 0 0 6.8 3.4 3.4 0 0 0 0-6.8Zm8.2 4.6v-2.4l-2.1-.7a7 7 0 0 0-.6-1.4l1-2-1.7-1.7-2 1a7 7 0 0 0-1.4-.6l-.7-2.1h-2.4l-.7 2.1a7 7 0 0 0-1.4.6l-2-1-1.7 1.7 1 2a7 7 0 0 0-.6 1.4l-2.1.7v2.4l2.1.7a7 7 0 0 0 .6 1.4l-1 2L6.2 19l2-1a7 7 0 0 0 1.4.6l.7 2.1h2.4l.7-2.1a7 7 0 0 0 1.4-.6l2 1 1.7-1.7-1-2a7 7 0 0 0 .6-1.4l2.1-.7Z" />
+              </svg>
+            </NavLink>
             <ThemeToggle variant="switch" />
           </div>
         )}
-        {pilot?.enabled && (
+        {pilot?.enabled && !pilotExperience && (
           <div className="card" role="status" data-testid="pilot-banner" style={{ borderColor: pilot.compliant ? "var(--accent)" : "var(--danger)", marginBottom: "1rem" }}>
             <strong>{pilot.title}</strong>
             <div style={{ color: "var(--fg-muted)", marginTop: "0.25rem" }}>
@@ -84,11 +94,11 @@ export function Layout() {
   );
 }
 
-function NavItem({ to, children }: { to: string; children: ReactNode }) {
+function NavItem({ to, children, end = false }: { to: string; children: ReactNode; end?: boolean }) {
   return (
     <NavLink
       to={to}
-      end={to === "/"}
+      end={to === "/" || end}
       style={({ isActive }) => ({
         padding: "0.5rem 0.6rem",
         borderRadius: 6,

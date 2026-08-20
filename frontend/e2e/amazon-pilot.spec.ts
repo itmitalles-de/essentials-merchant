@@ -33,10 +33,8 @@ function syntheticManualReport(date: string, revenue: number, units: number, ses
 test("scoped Mantle session completes the synthetic read-only Amazon pilot flow", async ({ page }) => {
   await page.goto("/ai-marketing");
 
-  await expect(page.getByTestId("pilot-banner")).toContainText(
-    "Essentials+ Merchant - Amazon Intelligence Pilot - Read-only",
-  );
-  await expect(page.getByTestId("pilot-banner")).toContainText("Fail-closed Pilotprofil aktiv");
+  await expect(page.getByTestId("pilot-banner")).toHaveCount(0);
+  await expect(page.getByRole("link", { name: "Einstellungen öffnen" })).toBeVisible();
 
   const pilotStatus = await page.evaluate(async () => {
     const token = localStorage.getItem("erplite-token");
@@ -347,7 +345,8 @@ test("scoped Mantle session completes the synthetic read-only Amazon pilot flow"
 
   await page.goto("/ai-marketing");
   await expect(page.getByRole("heading", { name: "Amazon AI Marketing" })).toBeVisible();
-  await expect(page.getByText("Interne Strategiehilfe für Mantle")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Wöchentliche KI-Marketinganalyse" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Zugänge" })).toHaveCount(0);
   await expect(page.locator("body")).not.toContainText(/refresh_token|client_secret|access_token/i);
   const accessibility = await new AxeBuilder({ page }).analyze();
   expect(
@@ -365,7 +364,7 @@ test("Mantle route opens without login and provider values stay write-only", asy
   await expect(page.locator('link[rel="icon"]')).toHaveAttribute("href", "/ai-marketing-icon.svg");
   await expect(page.getByRole("heading", { name: "Amazon AI Marketing" })).toBeVisible();
   await expect(page.locator('img[src="/ai-marketing-icon.svg"]')).toHaveCount(2);
-  await expect(page.getByRole("heading", { name: "Zugänge" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Zugänge" })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Abmelden" })).toHaveCount(0);
   const themeSwitch = page.getByTestId("theme-switch");
   await expect(themeSwitch).toBeVisible();
@@ -393,6 +392,12 @@ test("Mantle route opens without login and provider values stay write-only", asy
     }).then((response) => response.status)
   ));
   expect(loginStatus).toBe(403);
+
+  await page.getByRole("link", { name: "Einstellungen öffnen" }).click();
+  await expect(page).toHaveURL(/\/ai-marketing\/settings$/);
+  await expect(page.getByRole("heading", { name: "Einstellungen" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Zugänge" })).toBeVisible();
+  await expect(page.getByText("Read-only-Systemgrenze aktiv")).toBeVisible();
 
   const syntheticKey = `sk-proj-${"synthetic".repeat(4)}`;
   await page.getByLabel("Neuer Project API-Key").fill(syntheticKey);
@@ -512,6 +517,16 @@ test("Mantle shell hides acceptance data and renders truthful live pipeline stat
 
   await page.goto("/ai-marketing");
   await expect(page.locator(".analysis-card")).toHaveCount(0);
+  await expect(page.getByRole("heading", { name: "Zugänge" })).toHaveCount(0);
+  const analysisPanel = page.getByRole("heading", { name: "Wöchentliche KI-Marketinganalyse" });
+  const manualImport = page.getByRole("heading", { name: "Manueller Sales-&-Traffic-Import" });
+  const [analysisBox, importBox] = await Promise.all([
+    analysisPanel.boundingBox(),
+    manualImport.boundingBox(),
+  ]);
+  expect(analysisBox).not.toBeNull();
+  expect(importBox).not.toBeNull();
+  expect(analysisBox!.y).toBeLessThan(importBox!.y);
   await expect(page.getByRole("cell", { name: "Noch keine Reportläufe." })).toBeVisible();
   const pipeline = page.getByLabel("Ablauf der wöchentlichen Analyse");
   const button = page.getByRole("button", { name: "Analyse", exact: true });

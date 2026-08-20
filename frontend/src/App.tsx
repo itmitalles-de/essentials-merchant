@@ -14,6 +14,7 @@ import { SalesOrderDetail } from "./pages/SalesOrderDetail";
 import { Settings } from "./pages/Settings";
 import { AdminCenter } from "./pages/AdminCenter";
 import { MarketplaceIntelligence } from "./pages/MarketplaceIntelligence";
+import { PilotProviderSettings } from "./pages/PilotProviderSettings";
 import { IntegrationDiagnostics } from "./pages/IntegrationDiagnostics";
 import { isMantlePilotExperience } from "./pilot";
 
@@ -73,6 +74,9 @@ export default function App() {
             : <MarketplaceIntelligence />}
         />
         <Route path="ai-marketing" element={<MarketplaceIntelligence aiFirst />} />
+        {pilotExperience && (
+          <Route path="ai-marketing/settings" element={<PilotProviderSettings />} />
+        )}
         {pilotExperience && <Route path="*" element={<Navigate to="/ai-marketing" replace />} />}
       </Route>
     </Routes>
