@@ -69,11 +69,14 @@ Git-SHA image tags, and a loopback-only frontend port. Its launcher is
 
 ## Manual report path
 
-The immediately usable path accepts official `GET_SALES_AND_TRAFFIC_REPORT` JSON, CSV, or TSV up
-to 10 MiB. Preview is side-effect-free and exposes the detected format, SHA-256, report type,
-period, marketplace, granularity, timezone, currency, parser version, missing fields, and aggregate
-metrics. The operator confirms those values before one atomic transaction stores the immutable raw
-bytes, provenance, snapshot, metrics, and analysis job.
+The immediately usable path accepts official `GET_SALES_AND_TRAFFIC_REPORT` and aggregate
+Sponsored Products campaign-report JSON, CSV, or TSV up to 10 MiB. Preview is side-effect-free and
+exposes the detected format, SHA-256, report type, period, marketplace, granularity, timezone,
+currency, parser version, missing fields, and aggregate metrics. Ads imports additionally require
+an explicit 7-, 14-, or 30-day attribution window. The operator confirms those values before one
+atomic transaction stores the immutable raw bytes, provenance, snapshot, metrics, and analysis
+job. Search-term, keyword, targeting, ASIN, SKU, and product-level Ads reports are rejected;
+campaign identifiers never leave the raw archive.
 
 Byte-identical retries return the original run. Different bytes for the same semantic period are
 rejected as a conflict. Two non-overlapping periods compare only when marketplace, report type,
@@ -154,10 +157,14 @@ short-lived session is restricted to Amazon pilot routes. With approved SP-API
 credentials, the click first requests one seven-day Sales and Traffic report;
 otherwise it uses manual imports. It sends only a hash-confirmed closed
 aggregate-history DTO, carries the last validated handover forward, and permits
-one successful Europe/Berlin calendar-week run. It uses no tools and cannot
-mutate Amazon or Merchant. Provider values are entered write-only and encrypted
-under a host-only key. A separately billed project API key is required; a
-ChatGPT subscription is not an API credential. See
+one successful Europe/Berlin calendar-week run. A separate first Responses call
+uses at most three built-in web-search calls with only Mantle's public category
+brief to research competitors, category demand, global trends, and crises. The
+second, tool-free call combines the server-validated public sources with the
+closed aggregate history. Internal Amazon evidence never enters a web query,
+and neither call can mutate Amazon or Merchant. Provider values are entered
+write-only and encrypted under a host-only key. A separately billed project API
+key is required; a ChatGPT subscription is not an API credential. See
 [the strategy AI gate](docs/STRATEGY_AI_GATE.md).
 
 ## Verification
@@ -235,7 +242,8 @@ and review date is recorded in [docs/security/VENDURE_ADVISORIES.md](docs/securi
 
 ## Next safe external action
 
-Use the manual Sales & Traffic import immediately. If an authorized operator later supplies the
-ignored SP-API secret and approval files, run the staging gate in validation mode. Only after every
-local and authorization check passes may that operator invoke one explicit network request. No
-scheduler or write integration is enabled.
+Use the manual Sales & Traffic and aggregate Sponsored Products campaign-report imports
+immediately. If an authorized operator later supplies the ignored SP-API secret and approval files,
+run the staging gate in validation mode. Only after every local and authorization check passes may
+that operator invoke one explicit network request. Amazon Ads API access is a separate future gate;
+the current Ads path is manual report evidence only. No scheduler or write integration is enabled.

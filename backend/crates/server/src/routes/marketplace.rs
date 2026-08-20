@@ -31,6 +31,18 @@ pub fn router() -> Router<AppState> {
                 crate::manual_import::MAX_MANUAL_REPORT_BYTES,
             )),
         )
+        .route(
+            "/imports/ads/preview",
+            post(preview_manual_ads_import).layer(DefaultBodyLimit::max(
+                crate::manual_import::MAX_MANUAL_REPORT_BYTES,
+            )),
+        )
+        .route(
+            "/imports/ads",
+            post(execute_manual_ads_import).layer(DefaultBodyLimit::max(
+                crate::manual_import::MAX_MANUAL_REPORT_BYTES,
+            )),
+        )
         .route("/connections/{connection_id}/runs", post(create_run))
         .route(
             "/connections/{connection_id}/schedules",
@@ -151,6 +163,7 @@ struct ManualImportQuery {
     confirm_period_end: Option<String>,
     confirm_granularity: Option<String>,
     confirm_report_type: Option<String>,
+    confirm_attribution_window_days: Option<u16>,
 }
 
 type ManualApiError = (StatusCode, Json<Value>);
@@ -210,6 +223,25 @@ fn manual_metadata(
         )?,
         reporting_timezone: Some(validated_timezone(&query.timezone)?),
         currency_code: query.confirm_currency_code.clone(),
+    })
+}
+
+fn manual_ads_metadata(
+    query: &ManualImportQuery,
+) -> Result<crate::manual_import::ManualAdsImportMetadata, ManualApiError> {
+    Ok(crate::manual_import::ManualAdsImportMetadata {
+        marketplace_id: query.confirm_marketplace_id.clone(),
+        period_start: parse_confirmation_date(
+            query.confirm_period_start.as_deref(),
+            "confirm_period_start",
+        )?,
+        period_end: parse_confirmation_date(
+            query.confirm_period_end.as_deref(),
+            "confirm_period_end",
+        )?,
+        reporting_timezone: Some(validated_timezone(&query.timezone)?),
+        currency_code: query.confirm_currency_code.clone(),
+        attribution_window_days: query.confirm_attribution_window_days,
     })
 }
 
@@ -454,6 +486,197 @@ async fn execute_manual_import(
     })))
 }
 
+fn ads_preview_json(preview: &crate::manual_import::ManualAdsImportPreview) -> Value {
+    json!({
+        "sha256": preview.raw_sha256,
+        "raw_bytes": preview.raw_bytes,
+        "detected_format": format_name(preview.format),
+        "report_type": preview.report_type,
+        "parser_version": preview.parser_version,
+        "marketplace_id": preview.marketplace_id.clone().unwrap_or_default(),
+        "period_start": preview.period_start.map(|value| value.to_string()).unwrap_or_default(),
+        "period_end": preview.period_end.map(|value| value.to_string()).unwrap_or_default(),
+        "granularity": preview.snapshot.granularity,
+        "date_granularity": preview.date_granularity,
+        "timezone": preview.reporting_timezone.clone().unwrap_or_default(),
+        "currency_code": preview.currency_code.clone().unwrap_or_default(),
+        "data_freshness": preview.period_end.map(|value| value.to_string()),
+        "ad_product": "SPONSORED_PRODUCTS",
+        "report_level": "campaign",
+        "attribution_window_days": preview.attribution_window_days,
+        "confirmation_required": preview.confirmation_required,
+        "operator_confirmed": preview.operator_confirmed,
+        "metadata_provenance": preview.metadata_provenance,
+        "missing_fields": preview.missing_fields,
+        "warnings": preview.warnings,
+        "metrics": preview.snapshot.metrics.iter()
+            .filter(|metric| metric.dimension_type == "catalog")
+            .map(|metric| json!({
+                "metric_name": metric.metric_name,
+                "dimension_type": metric.dimension_type,
+                "dimension_key": metric.dimension_key,
+                "value_numeric": metric.value_numeric.to_string(),
+                "unit": metric.unit,
+                "currency_code": metric.currency_code,
+            }))
+            .collect::<Vec<_>>(),
+    })
+}
+
+async fn preview_manual_ads_import(
+    State(state): State<AppState>,
+    AuthUser(user): AuthUser,
+    Query(query): Query<ManualImportQuery>,
+    raw: Bytes,
+) -> Result<Json<Value>, ManualApiError> {
+    require_marketplace(&state, &user, true)
+        .await
+        .map_err(|status| manual_api_error(status, "Marketplace Intelligence is not available"))?;
+    let metadata = manual_ads_metadata(&query)?;
+    let preview = crate::manual_import::parse_manual_ads_campaign(&raw, &metadata)
+        .map_err(|error| manual_api_error(StatusCode::UNPROCESSABLE_ENTITY, error.to_string()))?;
+    validate_filename(&query.filename, preview.format)?;
+    Ok(Json(ads_preview_json(&preview)))
+}
+
+async fn execute_manual_ads_import(
+    State(state): State<AppState>,
+    AuthUser(user): AuthUser,
+    Query(query): Query<ManualImportQuery>,
+    raw: Bytes,
+) -> Result<Json<Value>, ManualApiError> {
+    require_marketplace(&state, &user, true)
+        .await
+        .map_err(|status| manual_api_error(status, "Marketplace Intelligence is not available"))?;
+    let expected_hash = query.confirm_hash.as_deref().ok_or_else(|| {
+        manual_api_error(
+            StatusCode::PRECONDITION_REQUIRED,
+            "confirm_hash is required",
+        )
+    })?;
+    let expected_granularity = query.confirm_granularity.as_deref().ok_or_else(|| {
+        manual_api_error(
+            StatusCode::PRECONDITION_REQUIRED,
+            "confirm_granularity is required",
+        )
+    })?;
+    let expected_report_type = query.confirm_report_type.as_deref().ok_or_else(|| {
+        manual_api_error(
+            StatusCode::PRECONDITION_REQUIRED,
+            "confirm_report_type is required",
+        )
+    })?;
+    if query
+        .confirm_marketplace_id
+        .as_deref()
+        .is_none_or(str::is_empty)
+        || query
+            .confirm_currency_code
+            .as_deref()
+            .is_none_or(str::is_empty)
+        || query.confirm_period_start.is_none()
+        || query.confirm_period_end.is_none()
+        || query.confirm_attribution_window_days.is_none()
+    {
+        return Err(manual_api_error(
+            StatusCode::PRECONDITION_REQUIRED,
+            "marketplace, currency, period, attribution window, report type, granularity and hash must be confirmed",
+        ));
+    }
+    let metadata = manual_ads_metadata(&query)?;
+    let preview = crate::manual_import::parse_manual_ads_campaign(&raw, &metadata)
+        .map_err(|error| manual_api_error(StatusCode::UNPROCESSABLE_ENTITY, error.to_string()))?;
+    validate_filename(&query.filename, preview.format)?;
+    preview
+        .ensure_ready_for_import()
+        .map_err(|error| manual_api_error(StatusCode::PRECONDITION_REQUIRED, error.to_string()))?;
+    if expected_hash != preview.raw_sha256
+        || expected_report_type != preview.report_type
+        || expected_granularity != preview.snapshot.granularity
+    {
+        return Err(manual_api_error(
+            StatusCode::PRECONDITION_FAILED,
+            "confirmed hash, report type, or granularity does not match the validated report",
+        ));
+    }
+    let marketplace_id = preview.marketplace_id.as_deref().ok_or_else(|| {
+        manual_api_error(
+            StatusCode::PRECONDITION_REQUIRED,
+            "marketplace confirmation is missing",
+        )
+    })?;
+    let timezone = preview.reporting_timezone.as_deref().ok_or_else(|| {
+        manual_api_error(
+            StatusCode::PRECONDITION_REQUIRED,
+            "timezone confirmation is missing",
+        )
+    })?;
+    let currency = preview.currency_code.as_deref().ok_or_else(|| {
+        manual_api_error(
+            StatusCode::PRECONDITION_REQUIRED,
+            "currency confirmation is missing",
+        )
+    })?;
+    let content_type = match preview.format {
+        crate::manual_import::ManualReportFormat::Json => "application/json",
+        crate::manual_import::ManualReportFormat::Csv => "text/csv",
+        crate::manual_import::ManualReportFormat::Tsv => "text/tab-separated-values",
+    };
+    let stored = db::marketplace::store_manual_import(
+        &state.pool,
+        &db::marketplace::ManualImportStoreInput {
+            uploaded_by: user.id,
+            raw_sha256: &preview.raw_sha256,
+            raw_content: &raw,
+            content_type,
+            detected_format: format_name(preview.format),
+            marketplace_id,
+            report_type: &preview.report_type,
+            date_granularity: &preview.date_granularity,
+            source_timezone: timezone,
+            currency_code: Some(currency),
+            parsed: &preview.snapshot,
+        },
+    )
+    .await
+    .map_err(|error| match error {
+        db::marketplace::ManualImportStoreError::InvalidInput(message) => {
+            manual_api_error(StatusCode::UNPROCESSABLE_ENTITY, message)
+        }
+        db::marketplace::ManualImportStoreError::MetadataConflict => manual_api_error(
+            StatusCode::CONFLICT,
+            "identical report bytes already exist with different confirmed metadata",
+        ),
+        db::marketplace::ManualImportStoreError::DuplicatePeriod => manual_api_error(
+            StatusCode::CONFLICT,
+            "a different report is already archived for this exact marketplace and comparison period",
+        ),
+        db::marketplace::ManualImportStoreError::Database(_) => manual_api_error(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "validated report could not be committed atomically",
+        ),
+    })?;
+    if let Err(error) = state.marketplace_worker.cycle(&state.pool).await {
+        tracing::warn!(%error, run_id = %stored.run_id, "manual Ads import analysis will retry asynchronously");
+    }
+    let analysis_id = db::marketplace::analysis_result_for_job(&state.pool, stored.analysis_job_id)
+        .await
+        .map_err(|_| {
+            manual_api_error(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "imported Ads report detail could not be loaded",
+            )
+        })?
+        .map(|analysis| analysis.id);
+    Ok(Json(json!({
+        "outcome": if stored.imported { "imported" } else { "already_imported" },
+        "run_id": stored.run_id,
+        "analysis_id": analysis_id,
+        "comparison_generated": stored.comparison_generated,
+        "preview": ads_preview_json(&preview),
+    })))
+}
+
 async fn create_run(
     State(state): State<AppState>,
     AuthUser(user): AuthUser,
@@ -633,6 +856,8 @@ struct WeeklyStrategyView {
     cached: bool,
     assessment: Option<Value>,
     assessment_week_start: Option<NaiveDate>,
+    assessment_model: Option<String>,
+    assessment_prompt_version: Option<String>,
     provider_request_id_redacted: Option<String>,
     input_tokens: Option<i64>,
     output_tokens: Option<i64>,
@@ -824,6 +1049,8 @@ fn weekly_strategy_view(
         cached,
         assessment: displayed.map(|record| record.result.clone()),
         assessment_week_start: displayed.and_then(|record| record.week_start),
+        assessment_model: displayed.map(|record| record.model_name.clone()),
+        assessment_prompt_version: displayed.map(|record| record.prompt_version.clone()),
         provider_request_id_redacted: displayed
             .and_then(|record| record.provider_request_id_redacted.clone()),
         input_tokens: displayed.and_then(|record| record.input_tokens),

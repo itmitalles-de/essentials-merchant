@@ -183,7 +183,11 @@ connection is configured, the click first requests exactly one Sales and
 Traffic report for the last seven completed UTC days and waits for the bounded
 worker pipeline. Otherwise it uses existing manual imports. It then reads every
 currently eligible bounded aggregate analysis, includes the last validated AI
-handover, and calls the fixed OpenAI Responses endpoint once. A successful row
+handover, and runs two separated requests against the fixed OpenAI Responses
+endpoint. The first can make at most three built-in web-search calls and sees
+only Mantle's public company/category brief. The second has no tools and
+receives the closed internal aggregate DTO plus the bounded, cited public
+research. A successful row
 sets the Europe/Berlin Monday `week_start`; the database unique index and UI
 then disable another successful run until the next Monday 00:00 local time.
 Provider failures create no row and leave retry possible.
@@ -192,7 +196,9 @@ Set `OPENAI_STRATEGY_ENABLED=true`, keep the 32-byte provider master key only in
 the mode-0600 host environment, then enter the project-scoped pay-per-use key
 through the write-only GUI. Verify the status endpoint, one synthetic
 aggregate run, the disabled same-week button, idempotent repeat response, fixed
-KPI/strategy/handover structure, redacted logs, and the immutable weekly row.
+KPI/strategy/public-context/source/handover structure, redacted logs, and the
+immutable weekly row. One weekly click can incur two Responses requests plus up
+to three web-search tool calls, so set the OpenAI project budget accordingly.
 Never print the environment or key. Without Amazon SP-API credentials, new
 Seller Central data still enters through manual import.
 
@@ -312,6 +318,13 @@ CSV and one TSV probe, all marked as synthetic. It must verify the first import
 is idempotent, produce a comparison, and generate JSON, Markdown, and CSV
 exports without writing raw report bytes to disk. Record only hashes, run IDs,
 aggregate test values, export hashes, and the deployed Git/image IDs.
+
+Also import two in-memory synthetic Sponsored Products campaign CSV periods,
+confirm the attribution window, verify derived CTR/CPC/ROAS/ACOS, generate a
+comparison, and repeat the second byte stream to prove idempotence. Confirm that
+the UI and summary payload contain no campaign name/ID and that search-term or
+product-level reports are rejected. This manual Ads acceptance must not call an
+Ads API or require Ads credentials.
 
 Run `scripts/verify-manual-amazon-import.mjs` with the internal base URL. It
 obtains the same scoped no-login pilot session first and only falls back to

@@ -35,9 +35,11 @@ global policy.
 
 ## Amazon acquisition and data boundary
 
-The default acquisition path is a manual official Sales and Traffic upload. A side-effect-free
-JSON/CSV/TSV parser validates at most 10 MiB, computes the raw hash, rejects PII-like schemas, and
-returns confirmable provenance. Only a confirmation-complete preview crosses one PostgreSQL
+The default acquisition path is a manual official Sales and Traffic or aggregate Sponsored
+Products campaign-report upload. Side-effect-free JSON/CSV/TSV parsers validate at most 10 MiB,
+compute the raw hash, reject PII-like schemas, and return confirmable provenance. The Ads parser
+also rejects search-term, keyword, targeting, ASIN/SKU, and product dimensions and discards
+campaign identifiers before normalization. Only a confirmation-complete preview crosses one PostgreSQL
 transaction containing raw archive, immutable receipt, normalized snapshot/metrics, and analysis
 job. Raw-hash and semantic-period advisory locks make retries idempotent and reject ambiguous
 duplicate periods. The existing deterministic analysis/export pipeline is reused; there is no
@@ -67,13 +69,17 @@ produce normalized decimals and explicit missing fields. Deterministic analysis 
 delta, trend, anomalies, hypotheses, possible actions, uncertainty, missing data, and evidence.
 Aggregate JSON, Markdown, and CSV exports recursively deny
 buyer/customer/address/email/order/comment/phone fields.
-Actions are never executed. The manually triggered OpenAI adapter can receive only a
-second closed aggregate-history DTO after the single weekly button confirms its hash. When the
+Actions are never executed. The manually triggered OpenAI adapter uses two separated Responses
+requests after the single weekly button confirms the aggregate hash. The first receives only a
+fixed public Mantle/category brief and may use at most three built-in web-search calls. The second
+has no tools and receives the bounded, server-validated public research with canonical sources and
+citation excerpts in provider citation order, plus a closed
+aggregate-history DTO. Internal metrics never enter a web query. When the
 approved live connection exists, that same click first creates or reuses exactly one seven-day
 Sales and Traffic run and waits for the normal immutable parser/analysis pipeline. The DTO contains
 at most eight distinct newest-first analyses and the previous validated strategy/handover as
-untrusted context. It has a fixed Responses API POST, no tools, no Amazon transport authority, no
-automatic execution, and no raw/product/customer input.
+untrusted context. Both calls use the fixed Responses API POST and have no Amazon transport
+authority, automatic execution, or raw/product/customer/campaign input.
 
 Validated strategy output is stored separately in immutable
 `amazon_ai_strategy_assessments`. New weekly rows carry a Europe/Berlin Monday key with a partial

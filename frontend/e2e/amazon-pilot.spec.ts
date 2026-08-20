@@ -118,6 +118,39 @@ test("scoped Mantle session completes the synthetic read-only Amazon pilot flow"
     expect((await exportDownload).suggestedFilename()).toMatch(new RegExp(`\\.${extension}$`));
   }
 
+  await page.goto("/ai-marketing");
+  const adsCard = page.locator("section.card").filter({
+    has: page.getByRole("heading", { name: "Read-only Amazon-Ads-Evidenz" }),
+  });
+  const uploadAds = async (name: string, start: string, end: string, spend: number, sales: number) => {
+    const report = Buffer.from(
+      "Start Date,End Date,Marketplace ID,Ad Product,Campaign Name,Impressions,Clicks,Spend,Currency,14 Day Total Sales,14 Day Total Orders (#),14 Day Total Units (#)\n"
+      + `${start},${end},${uiMarketplace},Sponsored Products,SYNTHETIC-E2E,1000,50,EUR ${spend.toFixed(2)},EUR,EUR ${sales.toFixed(2)},8,10\n`,
+    );
+    await adsCard.getByLabel("Offizieller Ads-Kampagnenbericht").setInputFiles({
+      name,
+      mimeType: "text/csv",
+      buffer: report,
+    });
+    await adsCard.getByLabel("Report-Zeitzone").fill("Europe/Berlin");
+    await adsCard.getByRole("button", { name: "Ads-Importvorschau erstellen" }).click();
+    await expect(adsCard.getByRole("heading", { name: "Geprüfte Ads-Vorschau" })).toBeVisible();
+    await expect(adsCard.getByRole("table", { name: "Identifierfreie Ads-Aggregate" }))
+      .toContainText("ads_roas");
+    await expect(adsCard).not.toContainText("SYNTHETIC-E2E");
+    await adsCard.getByLabel(/Hash, Kampagnenreport, Marketplace/).check();
+    await adsCard.getByRole("button", { name: "Bestätigten Ads-Import ausführen" }).click();
+    await expect(adsCard.locator(".marketplace-callout.success")).toBeVisible();
+  };
+
+  await uploadAds("SYNTHETIC-ads-older.csv", "2026-05-01", "2026-05-07", 20, 60);
+  await adsCard.getByRole("button", { name: "Weiteren Ads-Zeitraum importieren" }).click();
+  await uploadAds("SYNTHETIC-ads-newer.csv", "2026-05-08", "2026-05-14", 25, 100);
+  await expect(adsCard.getByRole("status")).toContainText("Periodenvergleich erzeugt");
+  await adsCard.getByRole("button", { name: "Weiteren Ads-Zeitraum importieren" }).click();
+  await uploadAds("SYNTHETIC-ads-newer.csv", "2026-05-08", "2026-05-14", 25, 100);
+  await expect(adsCard.getByRole("status")).toContainText("bereits unverändert importiert");
+
   let aggregateHash = "a".repeat(64);
   let rejectFirstStrategyPost = true;
   await page.route(/\/api\/marketplace\/strategy\/weekly$/, async (route) => {
@@ -130,13 +163,15 @@ test("scoped Mantle session completes the synthetic read-only Amazon pilot flow"
         reason: null,
         provider: "openai",
         model: "gpt-5.6",
-        prompt_version: "mantle-amazon-weekly-strategy-v2",
+        prompt_version: "mantle-amazon-weekly-strategy-v3",
         response_storage: "store_false",
-        input_boundary: "aggregate_history_and_previous_handover_only",
+        input_boundary: "separate_public_research_then_aggregate_history_and_handover",
         cadence: "manual_weekly",
         calendar_timezone: "Europe/Berlin",
         automatic_execution: false,
         mutation_capability: false,
+        public_web_research: true,
+        max_web_search_calls: 3,
       },
       can_run: true,
       block_reason: null,
@@ -148,6 +183,8 @@ test("scoped Mantle session completes the synthetic read-only Amazon pilot flow"
       input_tokens: null,
       output_tokens: null,
       assessment_week_start: null,
+      assessment_model: null,
+      assessment_prompt_version: null,
       created_at: null,
     };
     if (route.request().method() === "GET") {
@@ -178,6 +215,8 @@ test("scoped Mantle session completes the synthetic read-only Amazon pilot flow"
         input_tokens: 120,
         output_tokens: 60,
         assessment_week_start: "2026-08-17",
+        assessment_model: "gpt-5.6",
+        assessment_prompt_version: "mantle-amazon-weekly-strategy-v3",
         created_at: "2026-08-20T12:00:00Z",
         assessment: {
           executive_summary: "Synthetische KI-Zusammenfassung ohne Geschäftsdaten.",
@@ -204,6 +243,37 @@ test("scoped Mantle session completes the synthetic read-only Amazon pilot flow"
             risks: ["Scheinkorrelation"],
             evidence_refs: [],
           }],
+          public_context: {
+            competitor_signals: [{
+              title: "Synthetisches Wettbewerbersignal",
+              observed_fact: "Eine synthetische öffentliche Quelle zeigt ein Marktangebot.",
+              possible_consumption_impact: "Die Vergleichsintensität könnte steigen.",
+              confidence: "medium",
+              uncertainty: "Keine Wirkung auf interne Zahlen ist belegt.",
+              evidence_refs: ["public:1"],
+            }],
+            category_trends: [{
+              title: "Synthetischer Kategorietrend",
+              observed_fact: "Eine synthetische Quelle beschreibt die Kategorie.",
+              possible_consumption_impact: "Die Preisempfindlichkeit könnte sich verändern.",
+              confidence: "low",
+              uncertainty: "Die Kategorieübertragung ist unsicher.",
+              evidence_refs: ["public:2"],
+            }],
+            global_events_and_crises: [{
+              title: "Synthetisches globales Signal",
+              observed_fact: "Eine synthetische Institution meldet ein globales Risiko.",
+              possible_consumption_impact: "Diskretionärer Konsum könnte zurückgehen.",
+              confidence: "low",
+              uncertainty: "Keine Kausalität zu Amazon-Daten.",
+              evidence_refs: ["public:3"],
+            }],
+          },
+          public_sources: [
+            { ref: "public:1", title: "Quelle Wettbewerb", url: "https://example.test/rival" },
+            { ref: "public:2", title: "Quelle Markt", url: "https://example.test/market" },
+            { ref: "public:3", title: "Quelle Krise", url: "https://example.test/crisis" },
+          ],
           open_questions: ["Welche Kampagnen liefen?"],
           limitations: ["Keine Ads-, Preis- oder Bestandsdaten."],
           handover: {
@@ -228,6 +298,8 @@ test("scoped Mantle session completes the synthetic read-only Amazon pilot flow"
   await expect(strategyButton).toBeDisabled();
   await expect(strategyPanel.getByText("KI-generiert – keine Faktenquelle")).toBeVisible();
   await expect(strategyPanel).toContainText("Synthetische Chance");
+  await expect(strategyPanel).toContainText("Globale Trends und Krisen");
+  await expect(strategyPanel.getByRole("link", { name: "Quelle Krise" })).toHaveAttribute("href", "https://example.test/crisis");
   await expect(strategyPanel).toContainText("Hypothesen – nicht als Fakten behandeln");
   await expect(strategyPanel).toContainText("Handover bis zum nächsten Wochenlauf");
   await expect(strategyPanel).toContainText("Wochenlimit aktiv");

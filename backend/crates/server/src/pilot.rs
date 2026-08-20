@@ -197,6 +197,8 @@ fn pilot_request_allowed(method: &Method, path: &str) -> bool {
             | "/api/marketplace/demo"
             | "/api/marketplace/imports"
             | "/api/marketplace/imports/preview"
+            | "/api/marketplace/imports/ads"
+            | "/api/marketplace/imports/ads/preview"
             | "/api/pilot/provider-secrets/openai"
             | "/api/pilot/provider-secrets/amazon"
     ) {
@@ -237,6 +239,8 @@ pub(crate) fn anonymous_pilot_request_allowed(method: &Method, path: &str) -> bo
             | "/api/marketplace/demo"
             | "/api/marketplace/imports"
             | "/api/marketplace/imports/preview"
+            | "/api/marketplace/imports/ads"
+            | "/api/marketplace/imports/ads/preview"
             | "/api/marketplace/strategy/weekly"
             | "/api/pilot/provider-secrets/openai"
             | "/api/pilot/provider-secrets/amazon"
@@ -313,6 +317,8 @@ mod tests {
             "/api/marketplace/connections/id/analyses",
             "/api/marketplace/imports/preview",
             "/api/marketplace/imports",
+            "/api/marketplace/imports/ads/preview",
+            "/api/marketplace/imports/ads",
             "/api/marketplace/strategy/weekly",
             "/api/pilot/provider-secrets/openai",
             "/api/pilot/provider-secrets/amazon",
@@ -350,6 +356,8 @@ mod tests {
             ),
             (Method::POST, "/api/marketplace/imports/preview"),
             (Method::POST, "/api/marketplace/imports"),
+            (Method::POST, "/api/marketplace/imports/ads/preview"),
+            (Method::POST, "/api/marketplace/imports/ads"),
             (Method::POST, "/api/marketplace/strategy/weekly"),
             (Method::POST, "/api/pilot/provider-secrets/openai"),
             (Method::POST, "/api/pilot/provider-secrets/amazon"),

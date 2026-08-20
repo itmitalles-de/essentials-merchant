@@ -2212,6 +2212,31 @@ async fn deterministic_delta_for_snapshots(
         })
         .collect::<Vec<_>>();
     let hypotheses = hypotheses_for_changes(&changes);
+    let (missing_evidence, open_questions) = if current.report_type
+        == marketplace::ADS_SPONSORED_PRODUCTS_CAMPAIGN
+    {
+        (
+                vec![
+                    "The aggregate campaign report contains no search terms, product identifiers, placement detail, organic attribution, competitor activity, price, listing, or inventory evidence.",
+                    "Attributed advertising metrics use the confirmed attribution window and support correlation, not causal attribution to total sales.",
+                ],
+                vec![
+                    "Were campaign budget, bids, targeting, placements or creative changed between the periods?",
+                    "Do the Ads period, currency, marketplace and attribution window align with the Sales and Traffic evidence?",
+                ],
+            )
+    } else {
+        (
+                vec![
+                    "Price, promotion, advertising, listing, availability and competitor changes are not contained in Sales and Traffic reports.",
+                    "The report supports correlation and deterministic deltas, not causal attribution.",
+                ],
+                vec![
+                    "Were price, promotions, advertising, availability or listing content changed between the periods?",
+                    "Was Seller Central report coverage complete and final for both periods?",
+                ],
+            )
+    };
     Ok(json!({
         "context": context,
         "facts": facts,
@@ -2223,14 +2248,8 @@ async fn deterministic_delta_for_snapshots(
         "options": options,
         "uncertainty": if anomalies.is_empty() { "medium" } else { "medium; material changes need operational validation" },
         "missing_data": missing_data_for_metrics(&current_metrics),
-        "missing_evidence": [
-            "Price, promotion, advertising, listing, availability and competitor changes are not contained in Sales and Traffic reports.",
-            "The report supports correlation and deterministic deltas, not causal attribution."
-        ],
-        "open_questions": [
-            "Were price, promotions, advertising, availability or listing content changed between the periods?",
-            "Was Seller Central report coverage complete and final for both periods?"
-        ],
+        "missing_evidence": missing_evidence,
+        "open_questions": open_questions,
         "recommendation_notice": "Recommendations only; Essentials+ Merchant does not make Amazon changes.",
     }))
 }
@@ -2371,6 +2390,19 @@ fn options_for_metrics(metrics: &[NormalizedMetric]) -> Vec<Value> {
             "uncertainty": "high",
         }));
     }
+    if let Some(ads_spend) = metrics
+        .iter()
+        .find(|metric| metric.metric_name == "ads_spend" && metric.dimension_type == "catalog")
+    {
+        options.push(json!({
+            "action": "Review aggregate campaign efficiency alongside the matching Sales and Traffic period",
+            "expected_effect": "Helps distinguish advertising correlation from organic or conversion movement without changing campaigns.",
+            "effort": "low",
+            "risks": ["Attribution windows and total sales are not interchangeable; correlation is not causality."],
+            "evidence_refs": [format!("snapshot:{}:metric:{}", ads_spend.snapshot_id, ads_spend.id)],
+            "uncertainty": "medium",
+        }));
+    }
     options.truncate(5);
     options
 }
@@ -2400,13 +2432,22 @@ fn hypotheses_for_changes(changes: &[Value]) -> Vec<Value> {
                 | "b2b_units_ordered" => {
                     "The mix of business-customer demand may have changed between periods."
                 }
+                "ads_impressions" | "ads_clicks" | "ads_spend" => {
+                    "Campaign delivery, budget, bids, targeting, placements, competition or demand may have changed."
+                }
+                "ads_attributed_sales" | "ads_attributed_orders" | "ads_attributed_units" => {
+                    "Attributed campaign outcomes may have moved with delivery, conversion or the confirmed attribution window."
+                }
+                "ads_ctr" | "ads_cpc" | "ads_roas" | "ads_acos" => {
+                    "Aggregate campaign efficiency may have changed, but product, query, placement and organic evidence are intentionally absent."
+                }
                 _ => return None,
             };
             Some(json!({
                 "hypothesis": hypothesis,
                 "metric": metric,
                 "evidence_refs": change.get("evidence_refs").cloned().unwrap_or_else(|| json!([])),
-                "uncertainty": "high; Sales and Traffic reports do not establish causality.",
+                "uncertainty": "high; aggregate Amazon reports do not establish causality.",
             }))
         })
         .take(5)
@@ -2419,6 +2460,19 @@ fn missing_data_for_metrics(metrics: &[NormalizedMetric]) -> Vec<&'static str> {
         .map(|metric| metric.metric_name.as_str())
         .collect::<Vec<_>>();
     let mut missing = Vec::new();
+    if names.iter().any(|name| name.starts_with("ads_")) {
+        if !names.contains(&"ads_attributed_sales") {
+            missing.push("Attributed advertising sales are not present in this campaign report.");
+        }
+        if !names.contains(&"ads_attributed_orders") {
+            missing.push("Attributed advertising orders are not present in this campaign report.");
+        }
+        if !names.contains(&"ads_attributed_units") {
+            missing.push("Attributed advertising units are not present in this campaign report.");
+        }
+        missing.push("Total Sales and Traffic, organic attribution, product/query detail, price, listing and inventory evidence are outside this report.");
+        return missing;
+    }
     if !names.contains(&"ordered_product_sales") {
         missing.push("Revenue and conversion are not present in this report type.");
     }
@@ -2459,6 +2513,16 @@ pub fn pii_safe_analysis_export(result: &Value) -> Value {
         "available_inventory",
         "units_shipped_t30",
         "stock_cover_days",
+        "ads_impressions",
+        "ads_clicks",
+        "ads_spend",
+        "ads_attributed_sales",
+        "ads_attributed_orders",
+        "ads_attributed_units",
+        "ads_ctr",
+        "ads_cpc",
+        "ads_roas",
+        "ads_acos",
     ];
     let facts = result
         .get("facts")

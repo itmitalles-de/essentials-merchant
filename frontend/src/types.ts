@@ -428,6 +428,16 @@ export interface MarketplaceImportResult {
   preview: MarketplaceImportPreview;
 }
 
+export interface MarketplaceAdsImportPreview extends MarketplaceImportPreview {
+  ad_product: "SPONSORED_PRODUCTS";
+  report_level: "campaign";
+  attribution_window_days: 7 | 14 | 30 | null;
+}
+
+export interface MarketplaceAdsImportResult extends Omit<MarketplaceImportResult, "preview"> {
+  preview: MarketplaceAdsImportPreview;
+}
+
 export interface MarketplaceAnalysisSummary {
   id: string;
   job_id: string;
@@ -446,11 +456,13 @@ export interface MarketplaceStrategyStatus {
   model: string;
   prompt_version: string;
   response_storage: "store_false";
-  input_boundary: "aggregate_history_and_previous_handover_only";
+  input_boundary: "separate_public_research_then_aggregate_history_and_handover";
   cadence: "manual_weekly";
   calendar_timezone: "Europe/Berlin";
   automatic_execution: false;
   mutation_capability: false;
+  public_web_research: true;
+  max_web_search_calls: number;
 }
 
 export interface MarketplaceStrategyFinding {
@@ -477,6 +489,21 @@ export interface MarketplaceStrategyAction {
   evidence_refs: string[];
 }
 
+export interface MarketplaceStrategyPublicSignal {
+  title: string;
+  observed_fact: string;
+  possible_consumption_impact: string;
+  confidence: "low" | "medium" | "high";
+  uncertainty: string;
+  evidence_refs: string[];
+}
+
+export interface MarketplaceStrategyPublicSource {
+  ref: string;
+  title: string;
+  url: string;
+}
+
 export interface MarketplaceStrategyAssessment {
   executive_summary: string;
   assessment: string;
@@ -484,6 +511,12 @@ export interface MarketplaceStrategyAssessment {
   risks: MarketplaceStrategyFinding[];
   hypotheses: MarketplaceStrategyHypothesis[];
   recommended_actions: MarketplaceStrategyAction[];
+  public_context?: {
+    competitor_signals: MarketplaceStrategyPublicSignal[];
+    category_trends: MarketplaceStrategyPublicSignal[];
+    global_events_and_crises: MarketplaceStrategyPublicSignal[];
+  };
+  public_sources?: MarketplaceStrategyPublicSource[];
   open_questions: string[];
   limitations: string[];
   handover: {
@@ -508,6 +541,8 @@ export interface MarketplaceStrategyView {
   cached: boolean;
   assessment: MarketplaceStrategyAssessment | null;
   assessment_week_start: string | null;
+  assessment_model?: string | null;
+  assessment_prompt_version?: string | null;
   provider_request_id_redacted: string | null;
   input_tokens: number | null;
   output_tokens: number | null;

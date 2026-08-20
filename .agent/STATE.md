@@ -60,6 +60,25 @@
   GitHub Actions run `32349661359`: frontend, backend, Amazon pilot, Commerce,
   recovery, Docker, and security.
 
+## Current extension candidate
+
+- The same mini-tool now has a manual aggregate Sponsored Products campaign
+  import for JSON/CSV/TSV. It requires campaign-level report shape, sums only
+  impressions/clicks/spend and optional attributed outcomes, discards campaign
+  identifiers before normalization, and preserves attribution-window semantics.
+- Weekly AI prompt v3 performs a separate public-only web-research request for
+  competitor signals, category/market trends, and global events or crises. The
+  synthesis receives canonical `public:*` sources and citation excerpts in
+  provider citation order; internal Amazon aggregates never enter web search.
+- Local candidate verification passed migration 1–20, SQLx, v10-to-v20 upgrade,
+  all 103 Rust tests after final citation/report-shape hardening, Clippy with
+  warnings denied, frontend
+  build/lint, Chromium/axe, operation allowlist, dependency/audit/secret gates,
+  synthetic import/comparison/export, and empty-target backup/restore.
+- Production still runs the accepted revision and schema 19 recorded below.
+  The extension is not live until its exact commit passes all CI jobs and the
+  target-only rollout/acceptance updates this handoff.
+
 ## Accepted live state
 
 - Host `192.168.178.15`, Compose project `essentials-merchant-amazon`, exactly

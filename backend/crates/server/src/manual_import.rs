@@ -8,7 +8,9 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 use chrono::{DateTime, Datelike, Duration, NaiveDate, TimeZone, Utc};
 use csv::{ReaderBuilder, StringRecord, Trim};
-use db::marketplace::{ParsedMetric, ParsedSnapshot, SALES_AND_TRAFFIC};
+use db::marketplace::{
+    ParsedMetric, ParsedSnapshot, ADS_SPONSORED_PRODUCTS_CAMPAIGN, SALES_AND_TRAFFIC,
+};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -17,6 +19,7 @@ use thiserror::Error;
 
 pub const MAX_MANUAL_REPORT_BYTES: usize = 10 * 1024 * 1024;
 pub const MANUAL_SALES_TRAFFIC_PARSER_VERSION: &str = "manual-sales-traffic-v1";
+pub const MANUAL_ADS_CAMPAIGN_PARSER_VERSION: &str = "manual-ads-sp-campaign-v1";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -68,6 +71,54 @@ pub struct ManualImportPreview {
     pub missing_fields: Vec<String>,
     pub warnings: Vec<String>,
     pub snapshot: ParsedSnapshot,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ManualAdsImportMetadata {
+    pub marketplace_id: Option<String>,
+    pub period_start: Option<NaiveDate>,
+    pub period_end: Option<NaiveDate>,
+    pub reporting_timezone: Option<String>,
+    pub currency_code: Option<String>,
+    pub attribution_window_days: Option<u16>,
+}
+
+#[derive(Debug, Clone)]
+pub struct ManualAdsImportPreview {
+    pub format: ManualReportFormat,
+    pub raw_sha256: String,
+    pub raw_bytes: usize,
+    pub report_type: String,
+    pub marketplace_id: Option<String>,
+    pub period_start: Option<NaiveDate>,
+    pub period_end: Option<NaiveDate>,
+    pub date_granularity: String,
+    pub parser_version: &'static str,
+    pub reporting_timezone: Option<String>,
+    pub currency_code: Option<String>,
+    pub attribution_window_days: Option<u16>,
+    pub confirmation_required: bool,
+    pub operator_confirmed: Vec<String>,
+    pub metadata_provenance: BTreeMap<String, MetadataProvenance>,
+    pub missing_fields: Vec<String>,
+    pub warnings: Vec<String>,
+    pub snapshot: ParsedSnapshot,
+}
+
+impl ManualAdsImportPreview {
+    pub fn ensure_ready_for_import(&self) -> Result<(), ManualImportError> {
+        if self.confirmation_required {
+            let fields = self
+                .metadata_provenance
+                .iter()
+                .filter(|(_, provenance)| **provenance == MetadataProvenance::Missing)
+                .map(|(field, _)| field.as_str())
+                .collect::<Vec<_>>()
+                .join(", ");
+            return Err(ManualImportError::MetadataRequired(fields));
+        }
+        Ok(())
+    }
 }
 
 impl ManualImportPreview {
@@ -146,6 +197,50 @@ pub fn parse_manual_sales_and_traffic(
     match detected.format {
         ManualReportFormat::Json => parse_json_report(raw, metadata, raw_sha256),
         ManualReportFormat::Csv | ManualReportFormat::Tsv => parse_flat_report(
+            raw,
+            metadata,
+            raw_sha256,
+            detected.format,
+            detected.delimiter.expect("flat format has a delimiter"),
+        ),
+    }
+}
+
+pub fn parse_manual_ads_campaign(
+    raw: &[u8],
+    metadata: &ManualAdsImportMetadata,
+) -> Result<ManualAdsImportPreview, ManualImportError> {
+    if raw.is_empty() {
+        return Err(ManualImportError::Empty);
+    }
+    if raw.len() > MAX_MANUAL_REPORT_BYTES {
+        return Err(ManualImportError::TooLarge {
+            actual: raw.len(),
+            maximum: MAX_MANUAL_REPORT_BYTES,
+        });
+    }
+    let common = ManualImportMetadata {
+        marketplace_id: metadata.marketplace_id.clone(),
+        period_start: metadata.period_start,
+        period_end: metadata.period_end,
+        reporting_timezone: metadata.reporting_timezone.clone(),
+        currency_code: metadata.currency_code.clone(),
+    };
+    validate_metadata(&common)?;
+    if metadata
+        .attribution_window_days
+        .is_some_and(|days| !matches!(days, 7 | 14 | 30))
+    {
+        return Err(ManualImportError::InvalidField {
+            field: "attribution_window_days".to_owned(),
+            reason: "supported windows are 7, 14 or 30 days".to_owned(),
+        });
+    }
+    let detected = detect_format(raw)?;
+    let raw_sha256 = sha256_hex(raw);
+    match detected.format {
+        ManualReportFormat::Json => parse_ads_json(raw, metadata, raw_sha256),
+        ManualReportFormat::Csv | ManualReportFormat::Tsv => parse_ads_flat(
             raw,
             metadata,
             raw_sha256,
@@ -2113,6 +2208,1083 @@ fn build_preview(mut input: PreviewInput) -> Result<ManualImportPreview, ManualI
     })
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+enum AdsField {
+    Date,
+    StartDate,
+    EndDate,
+    Marketplace,
+    Currency,
+    AdProduct,
+    Impressions,
+    Clicks,
+    Spend,
+    AttributedSales,
+    AttributedOrders,
+    AttributedUnits,
+}
+
+#[derive(Debug, Default)]
+struct AdsTotals {
+    impressions: Decimal,
+    clicks: Decimal,
+    spend: Decimal,
+    attributed_sales: Decimal,
+    attributed_sales_present: bool,
+    attributed_orders: Decimal,
+    attributed_orders_present: bool,
+    attributed_units: Decimal,
+    attributed_units_present: bool,
+    marketplaces: BTreeSet<String>,
+    currencies: BTreeSet<String>,
+    attribution_windows: BTreeSet<u16>,
+    dates: Vec<NaiveDate>,
+    periods: BTreeSet<(NaiveDate, NaiveDate)>,
+    dated_rows: usize,
+    period_rows: usize,
+    undated_rows: usize,
+    attributed_rows_with_window: usize,
+    attributed_rows_without_window: usize,
+    daily: bool,
+    rows: usize,
+}
+
+struct AdsRow {
+    impressions: Decimal,
+    clicks: Decimal,
+    spend: Decimal,
+    attributed_sales: Option<Decimal>,
+    attributed_orders: Option<Decimal>,
+    attributed_units: Option<Decimal>,
+    marketplace: Option<String>,
+    currency: Option<String>,
+    attribution_window: Option<u16>,
+    date: Option<NaiveDate>,
+    period: Option<(NaiveDate, NaiveDate)>,
+    has_attributed_metrics: bool,
+}
+
+impl AdsTotals {
+    fn add(&mut self, row: AdsRow) -> Result<(), ManualImportError> {
+        if row.clicks > row.impressions {
+            return Err(ManualImportError::InvalidField {
+                field: "clicks".to_owned(),
+                reason: "clicks must not exceed impressions in an aggregate row".to_owned(),
+            });
+        }
+        self.impressions += row.impressions;
+        self.clicks += row.clicks;
+        self.spend += row.spend;
+        if let Some(value) = row.attributed_sales {
+            self.attributed_sales_present = true;
+            self.attributed_sales += value;
+        }
+        if let Some(value) = row.attributed_orders {
+            self.attributed_orders_present = true;
+            self.attributed_orders += value;
+        }
+        if let Some(value) = row.attributed_units {
+            self.attributed_units_present = true;
+            self.attributed_units += value;
+        }
+        if let Some(value) = row.marketplace {
+            self.marketplaces.insert(value);
+        }
+        if let Some(value) = row.currency {
+            self.currencies.insert(value);
+        }
+        if row.has_attributed_metrics && row.attribution_window.is_some() {
+            self.attributed_rows_with_window += 1;
+        } else if row.has_attributed_metrics {
+            self.attributed_rows_without_window += 1;
+        }
+        if let Some(value) = row.attribution_window {
+            self.attribution_windows.insert(value);
+        }
+        if let Some(value) = row.date {
+            self.daily = true;
+            self.dated_rows += 1;
+            self.dates.push(value);
+        }
+        if let Some((start, end)) = row.period {
+            if start > end {
+                return Err(ManualImportError::InvalidField {
+                    field: "report period".to_owned(),
+                    reason: "start date must not be after end date".to_owned(),
+                });
+            }
+            self.period_rows += 1;
+            self.periods.insert((start, end));
+        }
+        if row.date.is_none() && row.period.is_none() {
+            self.undated_rows += 1;
+        }
+        self.rows += 1;
+        Ok(())
+    }
+}
+
+fn parse_ads_json(
+    raw: &[u8],
+    metadata: &ManualAdsImportMetadata,
+    raw_sha256: String,
+) -> Result<ManualAdsImportPreview, ManualImportError> {
+    let value: Value = serde_json::from_slice(without_bom_and_leading_whitespace(raw))
+        .map_err(|error| ManualImportError::InvalidJson(error.to_string()))?;
+    reject_json_pii_keys(&value, "$")?;
+    reject_ads_disallowed_dimensions(&value, "$")?;
+    let rows = match &value {
+        Value::Array(rows) => rows,
+        Value::Object(object) => object
+            .get("rows")
+            .or_else(|| object.get("data"))
+            .and_then(Value::as_array)
+            .ok_or_else(|| {
+                ManualImportError::InvalidJson(
+                    "expected a report row array or an object containing rows/data".to_owned(),
+                )
+            })?,
+        _ => {
+            return Err(ManualImportError::InvalidJson(
+                "expected a report row array".to_owned(),
+            ))
+        }
+    };
+    if rows.is_empty() {
+        return Err(ManualImportError::MissingField("data rows".to_owned()));
+    }
+    let mut totals = AdsTotals::default();
+    let mut seen = HashSet::new();
+    for (index, row) in rows.iter().enumerate() {
+        let object = row.as_object().ok_or_else(|| {
+            ManualImportError::InvalidJson(format!("row {} must be an object", index + 1))
+        })?;
+        let fingerprint = sha256_hex(&serde_json::to_vec(row).map_err(|_| {
+            ManualImportError::InvalidJson(format!("row {} is not serializable", index + 1))
+        })?);
+        if !seen.insert(fingerprint) {
+            return Err(ManualImportError::DuplicateRow(format!(
+                "JSON row {} duplicates a prior row",
+                index + 1
+            )));
+        }
+        totals.add(parse_ads_json_row(object, index + 1)?)?;
+    }
+    finish_ads_preview(
+        ManualReportFormat::Json,
+        raw_sha256,
+        raw.len(),
+        metadata,
+        totals,
+        0,
+    )
+}
+
+fn parse_ads_json_row(
+    row: &serde_json::Map<String, Value>,
+    row_number: usize,
+) -> Result<AdsRow, ManualImportError> {
+    if !row.iter().any(|(key, value)| {
+        ads_campaign_dimension(&normalize_header(key))
+            && match value {
+                Value::String(value) => !value.trim().is_empty(),
+                Value::Number(_) => true,
+                _ => false,
+            }
+    }) {
+        return Err(ManualImportError::MissingField(format!(
+            "row {row_number} campaign name or campaign ID"
+        )));
+    }
+    let fields = map_ads_json_fields(row)?;
+    for required in [AdsField::Impressions, AdsField::Clicks, AdsField::Spend] {
+        if !fields.contains_key(&required) {
+            return Err(ManualImportError::MissingField(format!(
+                "row {row_number} {}",
+                ads_field_name(required)
+            )));
+        }
+    }
+    if let Some((value, _)) = fields.get(&AdsField::AdProduct) {
+        validate_ads_product(json_text(value, "ad product")?)?;
+    }
+    let date = fields
+        .get(&AdsField::Date)
+        .map(|(value, _)| parse_flat_date(json_text(value, "date")?, "date"))
+        .transpose()?;
+    let start = fields
+        .get(&AdsField::StartDate)
+        .map(|(value, _)| parse_flat_date(json_text(value, "start date")?, "start date"))
+        .transpose()?;
+    let end = fields
+        .get(&AdsField::EndDate)
+        .map(|(value, _)| parse_flat_date(json_text(value, "end date")?, "end date"))
+        .transpose()?;
+    let period = match (start, end) {
+        (Some(start), Some(end)) => Some((start, end)),
+        (None, None) => None,
+        _ => {
+            return Err(ManualImportError::MissingField(
+                "both start date and end date".to_owned(),
+            ))
+        }
+    };
+    let marketplace = fields
+        .get(&AdsField::Marketplace)
+        .map(|(value, _)| json_text(value, "marketplace").map(str::to_owned))
+        .transpose()?;
+    if let Some(value) = &marketplace {
+        validate_marketplace_id(value)?;
+    }
+    let column_currency = fields
+        .get(&AdsField::Currency)
+        .map(|(value, _)| normalize_currency(json_text(value, "currency")?))
+        .transpose()?;
+    let (spend, spend_currency) = json_money(fields[&AdsField::Spend].0, "spend")?;
+    let attributed_sales = fields
+        .get(&AdsField::AttributedSales)
+        .map(|(value, _)| json_money(value, "attributed sales"))
+        .transpose()?;
+    let currency = reconcile_currencies([
+        column_currency.as_deref(),
+        spend_currency.as_deref(),
+        attributed_sales
+            .as_ref()
+            .and_then(|(_, currency)| currency.as_deref()),
+    ])?;
+    let attribution_window = fields
+        .values()
+        .filter_map(|(_, window)| *window)
+        .collect::<BTreeSet<_>>();
+    if attribution_window.len() > 1 {
+        return Err(ManualImportError::InvalidField {
+            field: format!("row {row_number} attribution window"),
+            reason: "attributed metrics use different windows".to_owned(),
+        });
+    }
+    Ok(AdsRow {
+        impressions: json_count(fields[&AdsField::Impressions].0, "impressions")?,
+        clicks: json_count(fields[&AdsField::Clicks].0, "clicks")?,
+        spend,
+        attributed_sales: attributed_sales.map(|(value, _)| value),
+        attributed_orders: fields
+            .get(&AdsField::AttributedOrders)
+            .map(|(value, _)| json_count(value, "attributed orders"))
+            .transpose()?,
+        attributed_units: fields
+            .get(&AdsField::AttributedUnits)
+            .map(|(value, _)| json_count(value, "attributed units"))
+            .transpose()?,
+        marketplace,
+        currency,
+        attribution_window: attribution_window.into_iter().next(),
+        date,
+        period,
+        has_attributed_metrics: fields.contains_key(&AdsField::AttributedSales)
+            || fields.contains_key(&AdsField::AttributedOrders)
+            || fields.contains_key(&AdsField::AttributedUnits),
+    })
+}
+
+fn map_ads_json_fields(
+    row: &serde_json::Map<String, Value>,
+) -> Result<HashMap<AdsField, (&Value, Option<u16>)>, ManualImportError> {
+    let mut fields = HashMap::new();
+    for (key, value) in row {
+        let normalized = normalize_header(key);
+        if let Some((field, window)) = ads_header_alias(&normalized) {
+            if fields.insert(field, (value, window)).is_some() {
+                return Err(ManualImportError::InvalidJson(format!(
+                    "duplicate semantic field {key}"
+                )));
+            }
+        }
+    }
+    Ok(fields)
+}
+
+fn parse_ads_flat(
+    raw: &[u8],
+    metadata: &ManualAdsImportMetadata,
+    raw_sha256: String,
+    format: ManualReportFormat,
+    delimiter: u8,
+) -> Result<ManualAdsImportPreview, ManualImportError> {
+    let mut reader = ReaderBuilder::new()
+        .delimiter(delimiter)
+        .has_headers(true)
+        .flexible(false)
+        .trim(Trim::All)
+        .from_reader(raw);
+    let headers = reader
+        .headers()
+        .map_err(|error| ManualImportError::InvalidDelimited(error.to_string()))?
+        .clone();
+    let (fields, campaign_columns, unknown_columns) = map_ads_flat_headers(&headers)?;
+    if campaign_columns.is_empty() {
+        return Err(ManualImportError::MissingField(
+            "campaign name or campaign ID column".to_owned(),
+        ));
+    }
+    for required in [AdsField::Impressions, AdsField::Clicks, AdsField::Spend] {
+        if !fields.contains_key(&required) {
+            return Err(ManualImportError::MissingField(
+                ads_field_name(required).to_owned(),
+            ));
+        }
+    }
+    let mut totals = AdsTotals::default();
+    let mut seen = HashSet::new();
+    for (offset, record) in reader.records().enumerate() {
+        let record = record.map_err(|error| {
+            ManualImportError::InvalidDelimited(format!("row {}: {error}", offset + 2))
+        })?;
+        if record.iter().all(|value| value.trim().is_empty()) {
+            continue;
+        }
+        let row_number = offset + 2;
+        if !campaign_columns
+            .iter()
+            .any(|index| optional_cell(&record, *index).is_some())
+        {
+            return Err(ManualImportError::MissingField(format!(
+                "row {row_number} campaign name or campaign ID"
+            )));
+        }
+        let canonical_row = serde_json::to_vec(&record.iter().collect::<Vec<_>>())
+            .map_err(|error| ManualImportError::InvalidDelimited(error.to_string()))?;
+        let fingerprint = sha256_hex(&canonical_row);
+        if !seen.insert(fingerprint) {
+            return Err(ManualImportError::DuplicateRow(format!(
+                "flat row {row_number} duplicates a prior row"
+            )));
+        }
+        if let Some((index, _)) = fields.get(&AdsField::AdProduct) {
+            validate_ads_product(required_cell(&record, *index, row_number, "ad product")?)?;
+        }
+        let date = fields
+            .get(&AdsField::Date)
+            .map(|(index, _)| {
+                parse_flat_date(
+                    required_cell(&record, *index, row_number, "date")?,
+                    &format!("row {row_number} date"),
+                )
+            })
+            .transpose()?;
+        let start = fields
+            .get(&AdsField::StartDate)
+            .map(|(index, _)| {
+                parse_flat_date(
+                    required_cell(&record, *index, row_number, "start date")?,
+                    &format!("row {row_number} start date"),
+                )
+            })
+            .transpose()?;
+        let end = fields
+            .get(&AdsField::EndDate)
+            .map(|(index, _)| {
+                parse_flat_date(
+                    required_cell(&record, *index, row_number, "end date")?,
+                    &format!("row {row_number} end date"),
+                )
+            })
+            .transpose()?;
+        let period = match (start, end) {
+            (Some(start), Some(end)) => Some((start, end)),
+            (None, None) => None,
+            _ => {
+                return Err(ManualImportError::MissingField(
+                    "both start date and end date".to_owned(),
+                ))
+            }
+        };
+        let marketplace = fields
+            .get(&AdsField::Marketplace)
+            .map(|(index, _)| {
+                let value = required_cell(&record, *index, row_number, "marketplace")?;
+                validate_marketplace_id(value)?;
+                Ok::<_, ManualImportError>(value.to_owned())
+            })
+            .transpose()?;
+        let column_currency = fields
+            .get(&AdsField::Currency)
+            .map(|(index, _)| {
+                normalize_currency(required_cell(&record, *index, row_number, "currency")?)
+            })
+            .transpose()?;
+        let (spend, spend_currency) = parse_money_cell(
+            required_cell(&record, fields[&AdsField::Spend].0, row_number, "spend")?,
+            &format!("row {row_number} spend"),
+        )?;
+        let attributed_sales = fields
+            .get(&AdsField::AttributedSales)
+            .map(|(index, _)| {
+                parse_optional_money_cell(&record, *index, row_number, "attributed sales")
+            })
+            .transpose()?
+            .flatten();
+        let currency = reconcile_currencies([
+            column_currency.as_deref(),
+            spend_currency.as_deref(),
+            attributed_sales
+                .as_ref()
+                .and_then(|(_, currency)| currency.as_deref()),
+        ])?;
+        let attribution_windows = fields
+            .values()
+            .filter_map(|(_, window)| *window)
+            .collect::<BTreeSet<_>>();
+        if attribution_windows.len() > 1 {
+            return Err(ManualImportError::InvalidField {
+                field: format!("row {row_number} attribution window"),
+                reason: "attributed metrics use different windows".to_owned(),
+            });
+        }
+        totals.add(AdsRow {
+            impressions: parse_count_cell(
+                required_cell(
+                    &record,
+                    fields[&AdsField::Impressions].0,
+                    row_number,
+                    "impressions",
+                )?,
+                &format!("row {row_number} impressions"),
+            )?,
+            clicks: parse_count_cell(
+                required_cell(&record, fields[&AdsField::Clicks].0, row_number, "clicks")?,
+                &format!("row {row_number} clicks"),
+            )?,
+            spend,
+            attributed_sales: attributed_sales.map(|(value, _)| value),
+            attributed_orders: optional_ads_count(
+                &record,
+                fields
+                    .get(&AdsField::AttributedOrders)
+                    .map(|(index, _)| *index),
+                row_number,
+                "attributed orders",
+            )?,
+            attributed_units: optional_ads_count(
+                &record,
+                fields
+                    .get(&AdsField::AttributedUnits)
+                    .map(|(index, _)| *index),
+                row_number,
+                "attributed units",
+            )?,
+            marketplace,
+            currency,
+            attribution_window: attribution_windows.into_iter().next(),
+            date,
+            period,
+            has_attributed_metrics: fields.contains_key(&AdsField::AttributedSales)
+                || fields.contains_key(&AdsField::AttributedOrders)
+                || fields.contains_key(&AdsField::AttributedUnits),
+        })?;
+    }
+    if totals.rows == 0 {
+        return Err(ManualImportError::MissingField("data rows".to_owned()));
+    }
+    finish_ads_preview(
+        format,
+        raw_sha256,
+        raw.len(),
+        metadata,
+        totals,
+        unknown_columns,
+    )
+}
+
+type AdsFlatFieldMap = HashMap<AdsField, (usize, Option<u16>)>;
+
+fn map_ads_flat_headers(
+    headers: &StringRecord,
+) -> Result<(AdsFlatFieldMap, Vec<usize>, usize), ManualImportError> {
+    if headers.is_empty() {
+        return Err(ManualImportError::MissingField("header row".to_owned()));
+    }
+    let mut fields = HashMap::new();
+    let mut campaign_columns = Vec::new();
+    let mut unknown = 0;
+    for (index, raw_header) in headers.iter().enumerate() {
+        let header = raw_header.trim_start_matches('\u{feff}').trim();
+        let normalized = normalize_header(header);
+        if pii_header(&normalized) {
+            return Err(ManualImportError::PiiHeader(header.to_owned()));
+        }
+        if ads_disallowed_dimension(&normalized) {
+            return Err(ManualImportError::InvalidField {
+                field: header.to_owned(),
+                reason: "only aggregate Sponsored Products campaign reports are accepted; product, search-term and targeting dimensions are rejected".to_owned(),
+            });
+        }
+        if ads_campaign_dimension(&normalized) {
+            campaign_columns.push(index);
+        } else if let Some((field, window)) = ads_header_alias(&normalized) {
+            if fields.insert(field, (index, window)).is_some() {
+                return Err(ManualImportError::InvalidDelimited(format!(
+                    "duplicate semantic column: {header}"
+                )));
+            }
+        } else {
+            unknown += 1;
+        }
+    }
+    Ok((fields, campaign_columns, unknown))
+}
+
+fn ads_campaign_dimension(value: &str) -> bool {
+    matches!(
+        value,
+        "campaign" | "campaignname" | "campaignid" | "kampagne" | "kampagnenname" | "kampagnenid"
+    )
+}
+
+fn ads_header_alias(value: &str) -> Option<(AdsField, Option<u16>)> {
+    let field = match value {
+        "date" | "reportdate" | "datum" => AdsField::Date,
+        "startdate" | "reportstartdate" | "startdatum" => AdsField::StartDate,
+        "enddate" | "reportenddate" | "enddatum" => AdsField::EndDate,
+        "marketplace" | "marketplaceid" | "marktplatz" | "marktplatzid" => AdsField::Marketplace,
+        "currency" | "currencycode" | "währung" | "waehrung" => AdsField::Currency,
+        "adproduct" | "adtype" | "advertisingproduct" | "anzeigenprodukt" => AdsField::AdProduct,
+        "impressions" | "impressionen" => AdsField::Impressions,
+        "clicks" | "klicks" => AdsField::Clicks,
+        "cost" | "spend" | "advertisingspend" | "kosten" | "ausgaben" => AdsField::Spend,
+        value if ads_attributed_sales_header(value) => AdsField::AttributedSales,
+        value if ads_attributed_orders_header(value) => AdsField::AttributedOrders,
+        value if ads_attributed_units_header(value) => AdsField::AttributedUnits,
+        _ => return None,
+    };
+    let window = matches!(
+        field,
+        AdsField::AttributedSales | AdsField::AttributedOrders | AdsField::AttributedUnits
+    )
+    .then(|| attribution_window_from_header(value))
+    .flatten();
+    Some((field, window))
+}
+
+fn ads_attributed_sales_header(value: &str) -> bool {
+    value == "attributedsales"
+        || value == "sales"
+        || value.starts_with("sales7d")
+        || value.starts_with("sales14d")
+        || value.starts_with("sales30d")
+        || value.contains("totalsales")
+        || value.contains("attributedsales")
+        || value.contains("zugeordneterumsatz")
+}
+
+fn ads_attributed_orders_header(value: &str) -> bool {
+    value == "attributedorders"
+        || value == "orders"
+        || value.starts_with("purchases7d")
+        || value.starts_with("purchases14d")
+        || value.starts_with("purchases30d")
+        || value.contains("totalorders")
+        || value.contains("attributedorders")
+        || value.contains("zugeordnetebestellungen")
+}
+
+fn ads_attributed_units_header(value: &str) -> bool {
+    value == "attributedunits"
+        || value == "units"
+        || value.starts_with("unitssold7d")
+        || value.starts_with("unitssold14d")
+        || value.starts_with("unitssold30d")
+        || value.starts_with("unitssoldclicks7d")
+        || value.starts_with("unitssoldclicks14d")
+        || value.starts_with("unitssoldclicks30d")
+        || value.contains("totalunits")
+        || value.contains("attributedunits")
+        || value.contains("zugeordneteeinheiten")
+}
+
+fn attribution_window_from_header(value: &str) -> Option<u16> {
+    for days in [7, 14, 30] {
+        if value.contains(&format!("{days}d")) || value.contains(&format!("{days}day")) {
+            return Some(days);
+        }
+    }
+    None
+}
+
+fn ads_disallowed_dimension(value: &str) -> bool {
+    matches!(
+        value,
+        "searchterm"
+            | "customersearchterm"
+            | "keyword"
+            | "keywordid"
+            | "targetid"
+            | "targetingexpression"
+            | "advertisedasin"
+            | "purchasedasin"
+            | "asin"
+            | "sku"
+            | "advertisedsku"
+    )
+}
+
+fn reject_ads_disallowed_dimensions(value: &Value, path: &str) -> Result<(), ManualImportError> {
+    match value {
+        Value::Object(object) => {
+            for (key, nested) in object {
+                let normalized = normalize_header(key);
+                if ads_disallowed_dimension(&normalized) {
+                    return Err(ManualImportError::InvalidField {
+                        field: format!("{path}.{key}"),
+                        reason: "only aggregate Sponsored Products campaign reports are accepted; product, search-term and targeting dimensions are rejected".to_owned(),
+                    });
+                }
+                reject_ads_disallowed_dimensions(nested, &format!("{path}.{key}"))?;
+            }
+        }
+        Value::Array(values) => {
+            for (index, nested) in values.iter().enumerate() {
+                reject_ads_disallowed_dimensions(nested, &format!("{path}[{index}]"))?;
+            }
+        }
+        _ => {}
+    }
+    Ok(())
+}
+
+fn ads_field_name(field: AdsField) -> &'static str {
+    match field {
+        AdsField::Impressions => "impressions column",
+        AdsField::Clicks => "clicks column",
+        AdsField::Spend => "spend/cost column",
+        _ => "campaign report field",
+    }
+}
+
+fn validate_ads_product(value: &str) -> Result<(), ManualImportError> {
+    let value = normalize_header(value);
+    if matches!(value.as_str(), "sponsoredproducts" | "sp") {
+        Ok(())
+    } else {
+        Err(ManualImportError::InvalidField {
+            field: "ad_product".to_owned(),
+            reason: "only Sponsored Products campaign reports are accepted".to_owned(),
+        })
+    }
+}
+
+fn json_text<'a>(value: &'a Value, field: &str) -> Result<&'a str, ManualImportError> {
+    value
+        .as_str()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| ManualImportError::InvalidField {
+            field: field.to_owned(),
+            reason: "must be a non-empty string".to_owned(),
+        })
+}
+
+fn json_count(value: &Value, field: &str) -> Result<Decimal, ManualImportError> {
+    let value = json_decimal(value, field)?;
+    if value.fract() != Decimal::ZERO {
+        return Err(ManualImportError::InvalidField {
+            field: field.to_owned(),
+            reason: "must be a whole number".to_owned(),
+        });
+    }
+    Ok(value)
+}
+
+fn json_decimal(value: &Value, field: &str) -> Result<Decimal, ManualImportError> {
+    let parsed = match value {
+        Value::Number(value) => Decimal::from_str_exact(&value.to_string()),
+        Value::String(value) => Decimal::from_str_exact(value.trim()),
+        _ => {
+            return Err(ManualImportError::InvalidField {
+                field: field.to_owned(),
+                reason: "must be a number or exact numeric string".to_owned(),
+            })
+        }
+    }
+    .map_err(|_| ManualImportError::InvalidField {
+        field: field.to_owned(),
+        reason: "must be an exact decimal".to_owned(),
+    })?;
+    if parsed < Decimal::ZERO {
+        return Err(ManualImportError::InvalidField {
+            field: field.to_owned(),
+            reason: "must not be negative".to_owned(),
+        });
+    }
+    Ok(parsed)
+}
+
+fn json_money(value: &Value, field: &str) -> Result<(Decimal, Option<String>), ManualImportError> {
+    match value {
+        Value::String(value) => parse_money_cell(value, field),
+        _ => Ok((json_decimal(value, field)?, None)),
+    }
+}
+
+fn parse_optional_money_cell(
+    record: &StringRecord,
+    index: usize,
+    row: usize,
+    field: &str,
+) -> Result<Option<(Decimal, Option<String>)>, ManualImportError> {
+    optional_cell(record, index)
+        .map(|value| parse_money_cell(value, &format!("row {row} {field}")))
+        .transpose()
+}
+
+fn optional_ads_count(
+    record: &StringRecord,
+    index: Option<usize>,
+    row: usize,
+    field: &str,
+) -> Result<Option<Decimal>, ManualImportError> {
+    index
+        .and_then(|index| optional_cell(record, index))
+        .map(|value| parse_count_cell(value, &format!("row {row} {field}")))
+        .transpose()
+}
+
+fn finish_ads_preview(
+    format: ManualReportFormat,
+    raw_sha256: String,
+    raw_bytes: usize,
+    metadata: &ManualAdsImportMetadata,
+    totals: AdsTotals,
+    unknown_columns: usize,
+) -> Result<ManualAdsImportPreview, ManualImportError> {
+    if totals.marketplaces.len() > 1 {
+        return Err(ManualImportError::InvalidField {
+            field: "marketplace_id".to_owned(),
+            reason: "report contains more than one marketplace".to_owned(),
+        });
+    }
+    if totals.currencies.len() > 1 {
+        let values = totals.currencies.iter().collect::<Vec<_>>();
+        return Err(ManualImportError::CurrencyConflict {
+            expected: values[0].clone(),
+            found: values[1].clone(),
+        });
+    }
+    if totals.attribution_windows.len() > 1 {
+        return Err(ManualImportError::InvalidField {
+            field: "attribution_window_days".to_owned(),
+            reason: "report mixes attributed metrics with different windows".to_owned(),
+        });
+    }
+    if totals.attributed_rows_with_window > 0 && totals.attributed_rows_without_window > 0 {
+        return Err(ManualImportError::InvalidField {
+            field: "attribution_window_days".to_owned(),
+            reason: "report mixes attributed fields with known and unknown windows".to_owned(),
+        });
+    }
+    if totals.periods.len() > 1 {
+        return Err(ManualImportError::InvalidField {
+            field: "report period".to_owned(),
+            reason: "aggregate campaign rows do not share one report period".to_owned(),
+        });
+    }
+    let temporal_shapes = [
+        totals.dated_rows > 0,
+        totals.period_rows > 0,
+        totals.undated_rows > 0,
+    ]
+    .into_iter()
+    .filter(|present| *present)
+    .count();
+    if totals.undated_rows > 0 && temporal_shapes > 1
+        || (totals.dated_rows > 0 && totals.dated_rows != totals.rows)
+        || (totals.period_rows > 0 && totals.period_rows != totals.rows)
+    {
+        return Err(ManualImportError::InvalidField {
+            field: "report period".to_owned(),
+            reason: "report mixes incompatible per-row temporal metadata".to_owned(),
+        });
+    }
+    let source_marketplace = totals.marketplaces.iter().next().cloned();
+    let (marketplace_id, marketplace_provenance) = resolve_text_metadata(
+        "marketplace_id",
+        source_marketplace,
+        metadata.marketplace_id.as_deref(),
+    )?;
+    if let Some(value) = &marketplace_id {
+        validate_marketplace_id(value)?;
+    }
+    let source_currency = totals.currencies.iter().next().cloned();
+    let confirmed_currency = metadata
+        .currency_code
+        .as_deref()
+        .map(normalize_currency)
+        .transpose()?;
+    let (currency_code, currency_provenance) = resolve_text_metadata(
+        "currency_code",
+        source_currency,
+        confirmed_currency.as_deref(),
+    )?;
+    let source_period = if !totals.dates.is_empty() {
+        let date_period = (
+            *totals.dates.iter().min().expect("dates have a minimum"),
+            *totals.dates.iter().max().expect("dates have a maximum"),
+        );
+        if totals
+            .periods
+            .iter()
+            .next()
+            .is_some_and(|(start, end)| date_period.0 < *start || date_period.1 > *end)
+        {
+            return Err(ManualImportError::InvalidField {
+                field: "report period".to_owned(),
+                reason: "daily rows fall outside the declared report period".to_owned(),
+            });
+        }
+        Some(totals.periods.iter().next().copied().unwrap_or(date_period))
+    } else {
+        totals.periods.iter().next().copied()
+    };
+    let (period_start, period_end, period_provenance) =
+        resolve_period_metadata(source_period, metadata.period_start, metadata.period_end)?;
+    let reporting_timezone = metadata
+        .reporting_timezone
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_owned);
+    let timezone_provenance = if reporting_timezone.is_some() {
+        MetadataProvenance::OperatorConfirmed
+    } else {
+        MetadataProvenance::Missing
+    };
+    let source_attribution = totals.attribution_windows.iter().next().copied();
+    let (attribution_window_days, attribution_provenance) =
+        match (source_attribution, metadata.attribution_window_days) {
+            (Some(source), Some(confirmed)) if source != confirmed => {
+                return Err(ManualImportError::MetadataMismatch {
+                    field: "attribution_window_days".to_owned(),
+                    expected: source.to_string(),
+                    found: confirmed.to_string(),
+                })
+            }
+            (Some(source), _) => (Some(source), MetadataProvenance::Report),
+            (None, Some(confirmed)) => (Some(confirmed), MetadataProvenance::OperatorConfirmed),
+            (None, None) => (None, MetadataProvenance::Missing),
+        };
+    let metadata_provenance = BTreeMap::from([
+        ("marketplace_id".to_owned(), marketplace_provenance),
+        ("period_start".to_owned(), period_provenance),
+        ("period_end".to_owned(), period_provenance),
+        ("reporting_timezone".to_owned(), timezone_provenance),
+        ("currency_code".to_owned(), currency_provenance),
+        ("attribution_window_days".to_owned(), attribution_provenance),
+    ]);
+    let mut missing_fields = metadata_provenance
+        .iter()
+        .filter(|(_, provenance)| **provenance == MetadataProvenance::Missing)
+        .map(|(field, _)| field.clone())
+        .collect::<Vec<_>>();
+    for (missing, field) in [
+        (!totals.attributed_sales_present, "ads_attributed_sales"),
+        (!totals.attributed_orders_present, "ads_attributed_orders"),
+        (!totals.attributed_units_present, "ads_attributed_units"),
+    ] {
+        if missing {
+            missing_fields.push(field.to_owned());
+        }
+    }
+    let confirmation_required = metadata_provenance
+        .values()
+        .any(|provenance| *provenance == MetadataProvenance::Missing);
+    let operator_confirmed = metadata_provenance
+        .iter()
+        .filter(|(_, provenance)| **provenance == MetadataProvenance::OperatorConfirmed)
+        .map(|(field, _)| field.clone())
+        .collect::<Vec<_>>();
+    let mut warnings = vec![
+        "Campaign names and identifiers were discarded; only account-level aggregates were normalized."
+            .to_owned(),
+        "Attributed sales, orders and units retain the confirmed attribution window and are not equal to total Amazon sales."
+            .to_owned(),
+    ];
+    if unknown_columns > 0 {
+        warnings.push(format!(
+            "Ignored {unknown_columns} unrecognized campaign-report column(s); no row values were copied."
+        ));
+    }
+    if !operator_confirmed.is_empty() {
+        warnings.push(format!(
+            "operator_confirmed: {}",
+            operator_confirmed.join(", ")
+        ));
+    }
+
+    let aggregate_evidence =
+        |aggregation: &str| json!({"aggregation": aggregation, "row_count": totals.rows});
+    let mut metrics = vec![
+        parsed_metric(
+            "ads_impressions",
+            totals.impressions,
+            "count",
+            None,
+            aggregate_evidence("sum_campaign_rows"),
+        ),
+        parsed_metric(
+            "ads_clicks",
+            totals.clicks,
+            "count",
+            None,
+            aggregate_evidence("sum_campaign_rows"),
+        ),
+        parsed_metric(
+            "ads_spend",
+            totals.spend,
+            "currency",
+            currency_code.as_deref(),
+            aggregate_evidence("sum_campaign_rows"),
+        ),
+    ];
+    if totals.attributed_sales_present {
+        metrics.push(parsed_metric(
+            "ads_attributed_sales",
+            totals.attributed_sales,
+            "currency",
+            currency_code.as_deref(),
+            json!({"aggregation": "sum_campaign_rows", "attribution_window_days": attribution_window_days}),
+        ));
+    }
+    if totals.attributed_orders_present {
+        metrics.push(parsed_metric(
+            "ads_attributed_orders",
+            totals.attributed_orders,
+            "count",
+            None,
+            json!({"aggregation": "sum_campaign_rows", "attribution_window_days": attribution_window_days}),
+        ));
+    }
+    if totals.attributed_units_present {
+        metrics.push(parsed_metric(
+            "ads_attributed_units",
+            totals.attributed_units,
+            "count",
+            None,
+            json!({"aggregation": "sum_campaign_rows", "attribution_window_days": attribution_window_days}),
+        ));
+    }
+    if !totals.impressions.is_zero() {
+        metrics.push(parsed_metric(
+            "ads_ctr",
+            (totals.clicks / totals.impressions * Decimal::from(100)).round_dp(4),
+            "percent",
+            None,
+            json!({"formula": "ads_clicks / ads_impressions * 100"}),
+        ));
+    }
+    if !totals.clicks.is_zero() {
+        metrics.push(parsed_metric(
+            "ads_cpc",
+            (totals.spend / totals.clicks).round_dp(4),
+            "currency_per_click",
+            currency_code.as_deref(),
+            json!({"formula": "ads_spend / ads_clicks"}),
+        ));
+    }
+    if totals.attributed_sales_present && !totals.spend.is_zero() {
+        metrics.push(parsed_metric(
+            "ads_roas",
+            (totals.attributed_sales / totals.spend).round_dp(4),
+            "ratio",
+            None,
+            json!({"formula": "ads_attributed_sales / ads_spend", "attribution_window_days": attribution_window_days}),
+        ));
+    }
+    if totals.attributed_sales_present && !totals.attributed_sales.is_zero() {
+        metrics.push(parsed_metric(
+            "ads_acos",
+            (totals.spend / totals.attributed_sales * Decimal::from(100)).round_dp(4),
+            "percent",
+            None,
+            json!({"formula": "ads_spend / ads_attributed_sales * 100", "attribution_window_days": attribution_window_days}),
+        ));
+    }
+
+    let date_granularity = if totals.daily { "DAY" } else { "PERIOD" }.to_owned();
+    let granularity = if totals.daily {
+        "ads_campaign_day"
+    } else {
+        "ads_campaign_period"
+    }
+    .to_owned();
+    let period_days = period_start
+        .zip(period_end)
+        .map(|(start, end)| (end - start).num_days() + 1);
+    let comparability_key = if confirmation_required {
+        format!("ads-sp-campaign:confirmation-required:sha256={raw_sha256}")
+    } else {
+        format!(
+            "ads-sp-campaign:{granularity}:{}d:attribution={}d:currency={}:timezone={}",
+            period_days.expect("confirmed period has a length"),
+            attribution_window_days.expect("confirmed attribution window"),
+            currency_code.as_deref().expect("confirmed currency"),
+            normalize_comparability_component(
+                reporting_timezone.as_deref().expect("confirmed timezone")
+            )
+        )
+    };
+    let summary = json!({
+        "report_type": ADS_SPONSORED_PRODUCTS_CAMPAIGN,
+        "report_family": "amazon_ads",
+        "ad_product": "SPONSORED_PRODUCTS",
+        "report_level": "campaign",
+        "row_count": totals.rows,
+        "currency_code": currency_code,
+        "timezone": reporting_timezone,
+        "attribution_window_days": attribution_window_days,
+        "data_freshness": period_end.map(|value| value.to_string()),
+        "missing_fields": missing_fields,
+        "identifier_handling": "discarded_before_normalization",
+        "parser_version": MANUAL_ADS_CAMPAIGN_PARSER_VERSION,
+        "raw_sha256": raw_sha256,
+        "confirmation_required": confirmation_required,
+        "operator_confirmed": operator_confirmed,
+        "metadata_provenance": metadata_provenance,
+        "warnings": warnings,
+    });
+    let snapshot = ParsedSnapshot {
+        parser_version: MANUAL_ADS_CAMPAIGN_PARSER_VERSION.to_owned(),
+        period_start: period_start.map(|value| {
+            Utc.from_utc_datetime(&value.and_hms_opt(0, 0, 0).expect("valid start of day"))
+        }),
+        period_end: period_end.map(|value| {
+            Utc.from_utc_datetime(&value.and_hms_opt(23, 59, 59).expect("valid end of day"))
+        }),
+        granularity,
+        comparability_key,
+        summary,
+        metrics,
+    };
+    Ok(ManualAdsImportPreview {
+        format,
+        raw_sha256,
+        raw_bytes,
+        report_type: ADS_SPONSORED_PRODUCTS_CAMPAIGN.to_owned(),
+        marketplace_id,
+        period_start,
+        period_end,
+        date_granularity,
+        parser_version: MANUAL_ADS_CAMPAIGN_PARSER_VERSION,
+        reporting_timezone,
+        currency_code,
+        attribution_window_days,
+        confirmation_required,
+        operator_confirmed,
+        metadata_provenance,
+        missing_fields,
+        warnings,
+        snapshot,
+    })
+}
+
 fn normalize_comparability_component(value: &str) -> String {
     value
         .trim()
@@ -2171,6 +3343,30 @@ mod tests {
     }
 
     fn metric<'a>(preview: &'a ManualImportPreview, name: &str) -> &'a ParsedMetric {
+        preview
+            .snapshot
+            .metrics
+            .iter()
+            .find(|metric| metric.metric_name == name)
+            .unwrap()
+    }
+
+    fn ads_metadata(
+        start: &str,
+        end: &str,
+        attribution_window_days: u16,
+    ) -> ManualAdsImportMetadata {
+        ManualAdsImportMetadata {
+            marketplace_id: Some(SYNTHETIC_MARKETPLACE.to_owned()),
+            period_start: Some(NaiveDate::parse_from_str(start, "%Y-%m-%d").unwrap()),
+            period_end: Some(NaiveDate::parse_from_str(end, "%Y-%m-%d").unwrap()),
+            reporting_timezone: Some(SYNTHETIC_TIMEZONE.to_owned()),
+            currency_code: Some("EUR".to_owned()),
+            attribution_window_days: Some(attribution_window_days),
+        }
+    }
+
+    fn ads_metric<'a>(preview: &'a ManualAdsImportPreview, name: &str) -> &'a ParsedMetric {
         preview
             .snapshot
             .metrics
@@ -2533,5 +3729,124 @@ mod tests {
             parse_manual_sales_and_traffic(fixture.replace("10.25", "10.26").as_bytes(), &context)
                 .unwrap();
         assert_ne!(first.raw_sha256, changed.raw_sha256);
+    }
+
+    #[test]
+    fn parses_synthetic_ads_campaign_csv_to_identifier_free_aggregates() {
+        // SYNTHETIC TEST DATA ONLY. Campaign names and values are invented.
+        let fixture = "Start Date,End Date,Campaign Name,Ad Product,Impressions,Clicks,Spend,Currency,14 Day Total Sales,14 Day Total Orders (#),14 Day Total Units (#)\n\
+2026-07-01,2026-07-07,SYNTHETIC-CAMPAIGN-A,Sponsored Products,1000,50,EUR 25.00,EUR,EUR 100.00,8,10\n\
+2026-07-01,2026-07-07,SYNTHETIC-CAMPAIGN-B,Sponsored Products,500,20,EUR 10.00,EUR,EUR 40.00,3,4\n";
+        let preview = parse_manual_ads_campaign(
+            fixture.as_bytes(),
+            &ads_metadata("2026-07-01", "2026-07-07", 14),
+        )
+        .unwrap();
+
+        assert_eq!(preview.format, ManualReportFormat::Csv);
+        assert_eq!(preview.report_type, ADS_SPONSORED_PRODUCTS_CAMPAIGN);
+        assert_eq!(preview.attribution_window_days, Some(14));
+        assert!(!preview.confirmation_required);
+        assert_eq!(
+            ads_metric(&preview, "ads_impressions").value_numeric,
+            Decimal::from(1500)
+        );
+        assert_eq!(
+            ads_metric(&preview, "ads_spend").value_numeric,
+            Decimal::from(35)
+        );
+        assert_eq!(
+            ads_metric(&preview, "ads_roas").value_numeric,
+            Decimal::from(4)
+        );
+        let serialized = preview.snapshot.summary.to_string();
+        assert!(!serialized.contains("SYNTHETIC-CAMPAIGN-A"));
+        assert_eq!(
+            preview.snapshot.summary["identifier_handling"],
+            "discarded_before_normalization"
+        );
+    }
+
+    #[test]
+    fn parses_synthetic_ads_v3_json_and_requires_missing_operator_metadata() {
+        // SYNTHETIC TEST DATA ONLY. Shape follows aggregate Reporting v3 fields.
+        let fixture = br#"[
+          {"startDate":"2026-07-08","endDate":"2026-07-14","campaignId":"SYNTHETIC-1",
+           "adProduct":"SPONSORED_PRODUCTS","impressions":200,"clicks":10,"cost":"5.00",
+           "sales14d":"20.00","purchases14d":2,"unitsSold14d":3}
+        ]"#;
+        let preview =
+            parse_manual_ads_campaign(fixture, &ManualAdsImportMetadata::default()).unwrap();
+
+        assert!(preview.confirmation_required);
+        assert_eq!(preview.period_start.unwrap().to_string(), "2026-07-08");
+        assert_eq!(preview.attribution_window_days, Some(14));
+        for field in ["marketplace_id", "reporting_timezone", "currency_code"] {
+            assert!(preview.missing_fields.contains(&field.to_owned()));
+        }
+        assert!(preview.ensure_ready_for_import().is_err());
+    }
+
+    #[test]
+    fn rejects_ads_search_term_or_product_level_reports() {
+        let fixture = b"Date,Search Term,Impressions,Clicks,Spend,14 Day Total Sales\n2026-07-01,synthetic term,10,1,1.00,2.00\n";
+        let error =
+            parse_manual_ads_campaign(fixture, &ads_metadata("2026-07-01", "2026-07-01", 14))
+                .unwrap_err();
+        assert!(
+            matches!(error, ManualImportError::InvalidField { field, .. } if field == "Search Term")
+        );
+    }
+
+    #[test]
+    fn rejects_mixed_ads_attribution_windows() {
+        let fixture = b"Date,Campaign Name,Impressions,Clicks,Spend,7 Day Total Sales,14 Day Total Orders (#)\n2026-07-01,SYNTHETIC,10,1,1.00,2.00,1\n";
+        let error =
+            parse_manual_ads_campaign(fixture, &ads_metadata("2026-07-01", "2026-07-01", 14))
+                .unwrap_err();
+        assert!(
+            matches!(error, ManualImportError::InvalidField { field, .. } if field.contains("attribution window"))
+        );
+    }
+
+    #[test]
+    fn rejects_ads_campaign_rows_with_different_report_periods() {
+        let fixture =
+            b"Start Date,End Date,Campaign Name,Impressions,Clicks,Spend,14 Day Total Sales\n\
+2026-07-01,2026-07-07,SYNTHETIC-A,10,1,1.00,2.00\n\
+2026-07-02,2026-07-08,SYNTHETIC-B,20,2,2.00,4.00\n";
+        let error =
+            parse_manual_ads_campaign(fixture, &ads_metadata("2026-07-01", "2026-07-08", 14))
+                .unwrap_err();
+        assert!(
+            matches!(error, ManualImportError::InvalidField { field, .. } if field == "report period")
+        );
+    }
+
+    #[test]
+    fn rejects_ads_json_with_partly_unknown_attribution_window() {
+        let fixture = br#"[
+          {"startDate":"2026-07-01","endDate":"2026-07-07","campaignId":"SYNTHETIC-1","impressions":10,"clicks":1,
+           "cost":"1.00","sales14d":"2.00"},
+          {"startDate":"2026-07-01","endDate":"2026-07-07","campaignId":"SYNTHETIC-2","impressions":20,"clicks":2,
+           "cost":"2.00","attributedSales":"4.00"}
+        ]"#;
+        let error =
+            parse_manual_ads_campaign(fixture, &ads_metadata("2026-07-01", "2026-07-07", 14))
+                .unwrap_err();
+        assert!(
+            matches!(error, ManualImportError::InvalidField { field, .. } if field == "attribution_window_days")
+        );
+    }
+
+    #[test]
+    fn rejects_ads_rows_without_a_campaign_dimension() {
+        let fixture = b"Date,Impressions,Clicks,Spend\n2026-07-01,10,1,1.00\n";
+        let error =
+            parse_manual_ads_campaign(fixture, &ads_metadata("2026-07-01", "2026-07-01", 14))
+                .unwrap_err();
+        assert!(
+            matches!(error, ManualImportError::MissingField(field) if field.contains("campaign"))
+        );
     }
 }

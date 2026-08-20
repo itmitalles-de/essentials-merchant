@@ -9,6 +9,11 @@ them before database persistence, never returns them, and excludes their rows
 from pilot backups. Without an explicitly approved credential set, manual upload
 stays fully usable.
 
+The manual aggregate Sponsored Products campaign-report importer is also fully
+usable without credentials. It is not an SP-API operation. Amazon Ads API uses
+separate authorization, profiles, endpoints, and reporting operations and is
+therefore not unlocked by entering the SP-API fields in this pilot.
+
 ## Allowed capability
 
 The transport allowlist contains exactly:
@@ -26,6 +31,11 @@ supported Sales and Traffic options. No scheduler is enabled for the first run.
 There is no Orders, Listings, Pricing, Feeds, Ads, Inventory mutation, payment,
 shipping, or restricted-data client. Buyer and order PII are neither requested
 nor parsed. The operation allowlist is checked in CI.
+
+There is currently no Amazon Ads API client at all. A later read-only Ads API
+gate would have to be reviewed independently and may expose reporting/polling/
+download operations only. Campaign, budget, bid, keyword, targeting, creative,
+and portfolio mutations remain prohibited.
 
 ## Preconditions for a one-shot live test
 

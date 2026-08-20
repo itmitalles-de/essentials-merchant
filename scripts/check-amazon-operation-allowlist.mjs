@@ -100,7 +100,10 @@ for (const file of sourceFiles) {
 
 const strategyEndpoints = [...productionStrategyTransport.matchAll(/https:\/\/[^"\s]+/g)]
   .map((match) => match[0]);
-if (JSON.stringify(strategyEndpoints) !== JSON.stringify(["https://api.openai.com/v1/responses"])) {
+if (JSON.stringify(strategyEndpoints) !== JSON.stringify([
+  "https://api.openai.com/v1/responses",
+  "https://mantle-climbing.de",
+])) {
   fail(`OpenAI strategy endpoint boundary changed: ${JSON.stringify(strategyEndpoints)}`);
 }
 if ([...productionStrategyTransport.matchAll(/reqwest::Client::builder\s*\(/g)].length !== 1
@@ -111,7 +114,11 @@ if ([...productionStrategyTransport.matchAll(/reqwest::Client::builder\s*\(/g)].
 for (const marker of [
   "Policy::none()",
   '"store": false',
-  'input_boundary: "aggregate_history_and_previous_handover_only"',
+  'input_boundary: "separate_public_research_then_aggregate_history_and_handover"',
+  '"type": "web_search"',
+  '"max_tool_calls": MAX_WEB_SEARCH_CALLS',
+  '"include": ["web_search_call.action.sources"]',
+  "PUBLIC_RESEARCH_BRIEF",
   "MAX_INPUT_BYTES",
   "MAX_RESPONSE_BYTES",
   ".chunk()",
@@ -121,13 +128,18 @@ for (const marker of [
   }
 }
 for (const marker of [
-  "OPENAI_BASE_URL", "OPENAI_API_URL", '"tools"', '"file_ids"',
+  "OPENAI_BASE_URL", "OPENAI_API_URL", '"file_ids"',
   '"conversation"', '"background": true', ".bearer_auth(std::env",
   ".bytes()",
 ]) {
   if (productionStrategyTransport.includes(marker)) {
     fail(`Forbidden OpenAI strategy transport marker: ${marker}`);
   }
+}
+if ([...productionStrategyTransport.matchAll(/"tools"\s*:/g)].length !== 1
+    || [...productionStrategyTransport.matchAll(/"type"\s*:\s*"web_search"/g)].length !== 1
+    || /"type"\s*:\s*"(?:computer|file_search|code_interpreter|mcp|image_generation)"/.test(productionStrategyTransport)) {
+  fail("OpenAI strategy may expose exactly one built-in web_search tool and no other tool type");
 }
 
 const amazonHostLiterals = [...productionTransport.matchAll(/https:\/\/sellingpartnerapi-[a-z]+\.amazon\.com/g)].map((match) => match[0]);

@@ -117,7 +117,7 @@ BEGIN
             WHERE raw_content = decoded_content AND sha256 = decoded_sha256) <> 1 THEN
         RAISE EXCEPTION 'marketplace raw archive was not migrated losslessly';
     END IF;
-    IF (SELECT max(version) FROM _sqlx_migrations) <> 19 THEN
+    IF (SELECT max(version) FROM _sqlx_migrations) <> 20 THEN
         RAISE EXCEPTION 'unexpected final migration version';
     END IF;
     IF to_regclass('public.amazon_ai_strategy_assessments') IS NULL THEN
@@ -129,8 +129,16 @@ BEGIN
     IF to_regclass('public.pilot_provider_secrets') IS NULL THEN
         RAISE EXCEPTION 'write-only provider credential store was not created';
     END IF;
+    IF NOT EXISTS (
+        SELECT 1
+        FROM pg_constraint
+        WHERE conname = 'amazon_manual_report_imports_report_type_check'
+          AND pg_get_constraintdef(oid) LIKE '%AMAZON_ADS_SPONSORED_PRODUCTS_CAMPAIGN_REPORT%'
+    ) THEN
+        RAISE EXCEPTION 'manual Ads report boundary was not created';
+    END IF;
 END $$;
 SELECT 'upgrade-rehearsal-ok';
 SQL
 
-echo 'Upgrade rehearsal passed: v10 synthetic data migrated losslessly through schema v19.'
+echo 'Upgrade rehearsal passed: v10 synthetic data migrated losslessly through schema v20.'

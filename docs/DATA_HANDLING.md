@@ -4,8 +4,8 @@
 
 | Class | Examples | Handling |
 | --- | --- | --- |
-| Raw confidential report | Exact uploaded JSON/CSV/TSV bytes | Immutable PostgreSQL archive; backup-only access in the pilot profile; never Git. |
-| Aggregate business metric | Revenue, units, sessions, page views, percentages | Decimal normalized records; internal UI and allowlisted summary export. |
+| Raw confidential report | Exact uploaded Sales and Traffic or Ads JSON/CSV/TSV bytes, potentially including campaign identifiers | Immutable PostgreSQL archive; backup-only access in the pilot profile; never Git, public research, or OpenAI. |
+| Aggregate business metric | Revenue, units, sessions, page views, Ads impressions/clicks/spend/attributed outcomes, percentages and ratios | Decimal normalized records; internal UI and allowlisted summary export. |
 | Operational metadata | SHA-256, format, report type, marketplace, period, parser version, freshness | Immutable provenance and internal diagnostics. |
 | Provider secret | LWA refresh token, LWA client ID/secret, OpenAI API key | Accepted only by write-only UI endpoints, encrypted with AES-256-GCM before persistence, never returned, and excluded even as ciphertext from pilot backup data. |
 | Host secret | Provider master key, JWT/admin/database secrets | Host environment only; never database, logs, exports, backup manifest, or Git. |
@@ -25,13 +25,17 @@
 
 ## Privacy validation
 
-Structured JSON is accepted only for the aggregated Sales and Traffic schema.
-Tabular inputs fail closed on headings that resemble buyer, recipient, customer,
-address, e-mail, phone, order, payment, or free-text comment data. A filename or
-local source path is not persisted; only format and byte count are retained.
+Structured JSON is accepted only for the aggregated Sales and Traffic schema or
+the aggregate Sponsored Products campaign-report schema. Tabular inputs fail
+closed on headings that resemble buyer, recipient, customer, address, e-mail,
+phone, order, payment, or free-text comment data. Ads inputs additionally fail
+closed on search-term, keyword, targeting, ASIN, SKU, and product dimensions. A
+filename or local source path is not persisted; only format and byte count are
+retained.
 
-The UI shows aggregate data. Evidence references point to internal snapshot and
-metric IDs rather than raw rows or product/customer identifiers.
+The UI shows aggregate data. Ads campaign names and IDs are discarded before
+normalization. Evidence references point to internal snapshot and metric IDs
+rather than raw rows or product/customer/campaign identifiers.
 
 ## Backup and restore
 
@@ -57,22 +61,28 @@ current immutable-delete triggers.
 
 The live Mantle adapter is enabled, but no external AI request is possible
 until an operator stores a separately billed project API key through the
-write-only UI. The only eligible input is an explicitly requested,
-hash-confirmed, closed aggregate DTO containing up to eight distinct newest-first
-period/marketplace analyses, allowlisted metrics and deterministic deltas,
-freshness, bounded missing-field labels, semantic evidence references, and the
-last validated structured AI result as untrusted continuity context. Raw bytes,
-raw rows, ASIN/SKU or customer identifiers, old database evidence UUIDs, local
-paths, archive hashes, secrets, and free report text are prohibited.
+write-only UI. The provider workflow has two deliberately separated requests.
+The web-research request sees only a fixed public Mantle/category/market brief
+and the current date. It does not receive internal report periods, metrics,
+hashes, identifiers, or handover text. The later synthesis request receives an
+explicitly requested, hash-confirmed, closed aggregate DTO containing up to
+eight distinct newest-first period/marketplace analyses, allowlisted Sales,
+Traffic, and Ads metrics and deterministic deltas, freshness, bounded
+missing-field labels, semantic evidence references, the bounded public research
+and canonical citations, and the last validated structured AI result as
+untrusted continuity context. Raw bytes, raw rows, ASIN/SKU, campaign, or
+customer identifiers, old database evidence UUIDs, local paths, archive hashes,
+secrets, and free report text are prohibited.
 
 The provider key must be project-scoped. The browser sends it once over the
 internal HTTPS route; the backend encrypts it with the host-only
 `PILOT_SECRETS_KEY` and the API can subsequently report only configured state,
 field names, and timestamp. A legacy environment-key fallback remains for
-non-Mantle deployments. Requests disable provider-side response storage.
-Neither request nor response may be logged verbatim. Generated
-content is untrusted strategy assistance and is stored/displayed only inside a
-visibly separate AI block as assessment, hypotheses, possible measures,
+non-Mantle deployments. Both requests disable provider-side response storage.
+Neither request nor response may be logged verbatim. Generated content is
+untrusted strategy assistance and is stored/displayed only inside a visibly
+separate AI block as assessment, hypotheses, possible measures, public
+competitor/category/crisis signals with possible consumption effects,
 uncertainty, missing evidence, open questions, and a fixed next-run handover; it
 cannot alter Amazon or Merchant state. Exactly one successful row is accepted
 per Europe/Berlin calendar week. The immutable database row contains only

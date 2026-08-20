@@ -2,8 +2,9 @@
 
 ## Purpose
 
-The weekly strategy panel turns the available deterministic Sales and
-Traffic analyses into a German-language decision aid. It does not parse
+The weekly strategy panel turns the available deterministic Sales and Traffic
+and aggregate Sponsored Products campaign analyses into a German-language
+decision aid. It does not parse
 reports, create facts, replace the deterministic comparison, or introduce
 another analysis system. An internal operator starts it with the single `Analyse`
 button; a successful result closes the Europe/Berlin calendar week.
@@ -69,7 +70,8 @@ Eligible provider input is limited to:
   version, freshness, timezone, currency, and bounded missing-field labels;
 - allowlisted catalog aggregates: revenue, units, sessions, page views,
   conversion/unit-session percentage, Buy Box, B2B shares/totals, and the
-  retained aggregate inventory metrics;
+  retained aggregate inventory metrics, plus Ads impressions, clicks, spend,
+  attributed sales/orders/units, CTR, CPC, ROAS, and ACOS;
 - allowlisted period values, absolute and percentage delta, trend, and anomaly
   class;
 - deterministic uncertainty, missing-data/evidence statements, and open
@@ -82,23 +84,47 @@ Eligible provider input is limited to:
 The request never contains raw report bytes or rows, filenames or paths,
 archive/report hashes, database UUID evidence references, ASIN/SKU, seller
 secrets, buyer/customer/order PII, free-form report content, or browser tokens.
-Input is capped at 128 KiB. Tests intercept the exact outbound request and the
-repository transport contract permits only the fixed
+Input is capped at 128 KiB. Tests intercept both exact outbound request shapes
+and the repository transport contract permits only the fixed
 `https://api.openai.com/v1/responses` endpoint with one POST client.
 
 ## Provider request
 
-The backend uses the OpenAI Responses API with:
+One weekly action can issue two pay-per-use Responses requests:
 
-- no tools, files, conversations, background execution, or configurable base
-  URL;
+1. The public-research request contains only Mantle's fixed public identity,
+   `mantle-climbing.de`, the climbing/bouldering/training product category,
+   Germany/EU market scope, and the current date. It permits only the built-in
+   `web_search` tool, with at most three tool calls and approximate Germany /
+   Europe-Berlin context. It asks for competitors, category and consumer
+   trends, and global events or crises that could affect discretionary demand
+   or price sensitivity. It never receives Amazon periods, metrics, hashes,
+   report content, identifiers, or the preceding handover.
+2. The synthesis request receives the closed internal aggregate DTO plus the
+   bounded public-research text, server-canonicalized URLs, and citation
+   excerpts in provider citation order under stable `public:*` references. It
+   has no tools. Public text and the previous handover are explicitly marked
+   as untrusted context rather than instructions.
+
+Both requests use the OpenAI Responses API with:
+
+- no files, conversations, background execution, or configurable base URL;
 - redirects disabled and a 60-second timeout;
 - `store: false`;
-- medium reasoning and a bounded output budget;
-- a strict JSON Schema for summary, assessment, opportunities, risks,
-  hypotheses, possible actions, open questions, limitations, and the fixed
-  handover sections;
+- bounded reasoning and output budgets;
 - a one-way pseudonymous safety identifier derived from the internal user ID.
+
+The synthesis request additionally uses a strict JSON Schema for summary,
+assessment, opportunities, risks, hypotheses, possible actions, public
+competitor/category/crisis context, open questions, limitations, and the fixed
+handover sections.
+
+The backend accepts 3–15 public HTTP(S) sources only, strips common tracking
+parameters, rejects local/private hosts, and assigns stable `public:*`
+references. The fixed output separates each public observation from its
+possible consumption effect, confidence, and uncertainty. A public signal may
+support a hypothesis, but it cannot be presented as the cause of an internal
+Amazon change.
 
 OpenAI API data is not used for model training by default. `store: false`
 disables endpoint application-state retention, but it must not be described as
@@ -110,9 +136,12 @@ documentation.
 
 ## Validation and persistence
 
-The model output is untrusted. The backend accepts it only when it matches the
+Both provider outputs are untrusted. The backend accepts the research result
+only when it contains bounded text and enough validated citation sources. It
+accepts the final model output only when it matches the
 strict typed schema, all counts and strings remain within bounds, and every
-evidence reference exists in the transmitted aggregate DTO. Refusals,
+evidence reference exists in the transmitted aggregate or validated public
+source set. Refusals,
 incomplete responses, invalid JSON/schema, oversized responses, authentication
 errors, timeouts, 429s, and provider failures create no partial assessment.
 There is no automatic retry or scheduler. A failed provider call does not close
@@ -136,12 +165,15 @@ exclude API keys, prompts, and raw provider responses.
 1. If approved Amazon SP-API credentials are configured, click `Analyse` to
    request exactly the last seven completed UTC days. Otherwise import one
    official Sales and Traffic report, and preferably a compatible second period.
+   Optionally add one or two compatible aggregate Sponsored Products campaign
+   periods to supply Ads evidence without Ads API credentials.
 2. Review the fixed KPI cards, comparison bars, aggregate-input SHA-256, input
    count, and previous-run status.
 3. Click `Analyse`. The click confirms this one aggregate-only request.
 4. Read the fixed output sections below the deterministic analysis: summary,
-   assessment, chances, risks, hypotheses, possible actions, open questions,
-   limitations, and handover.
+   assessment, chances, risks, hypotheses, possible actions, competitor
+   signals, category/market trends, global trends/crises, public sources, open
+   questions, limitations, and handover.
 5. Validate hypotheses with the named missing evidence before acting.
 6. Until the following Monday 00:00 Europe/Berlin, the button remains disabled
    and the stored result remains visible. New imports are marked as not yet

@@ -13,15 +13,20 @@ import type {
   AmazonReportRun,
   MarketplaceImportPreview,
   MarketplaceImportResult,
+  MarketplaceAdsImportPreview,
+  MarketplaceAdsImportResult,
   MarketplaceOverview,
   MarketplaceRunDetail,
   MarketplaceStrategyAction,
   MarketplaceStrategyFinding,
   MarketplaceStrategyHypothesis,
+  MarketplaceStrategyPublicSignal,
+  MarketplaceStrategyPublicSource,
   MarketplaceStrategyView,
 } from "../types";
 
 const salesReport = "GET_SALES_AND_TRAFFIC_REPORT";
+const adsCampaignReport = "AMAZON_ADS_SPONSORED_PRODUCTS_CAMPAIGN_REPORT";
 const terminalRunStatuses = ["succeeded", "archived", "cancelled", "fatal", "failed"];
 
 interface ImportConfirmation {
@@ -69,6 +74,30 @@ function importPath(
     parameters.set("confirm_period_end", confirmation.periodEnd);
     parameters.set("confirm_granularity", confirmation.granularity);
     parameters.set("confirm_report_type", confirmation.reportType);
+  }
+  return `${endpoint}?${parameters.toString()}`;
+}
+
+interface AdsImportConfirmation extends ImportConfirmation {
+  attributionWindowDays: 7 | 14 | 30;
+}
+
+function adsImportPath(
+  endpoint: "/marketplace/imports/ads/preview" | "/marketplace/imports/ads",
+  file: File,
+  timezone: string,
+  confirmation?: AdsImportConfirmation & { hash: string },
+) {
+  const parameters = new URLSearchParams({ filename: file.name, timezone });
+  if (confirmation) {
+    parameters.set("confirm_hash", confirmation.hash);
+    parameters.set("confirm_marketplace_id", confirmation.marketplaceId);
+    parameters.set("confirm_currency_code", confirmation.currencyCode);
+    parameters.set("confirm_period_start", confirmation.periodStart);
+    parameters.set("confirm_period_end", confirmation.periodEnd);
+    parameters.set("confirm_granularity", confirmation.granularity);
+    parameters.set("confirm_report_type", confirmation.reportType);
+    parameters.set("confirm_attribution_window_days", String(confirmation.attributionWindowDays));
   }
   return `${endpoint}?${parameters.toString()}`;
 }
@@ -319,7 +348,8 @@ export function MarketplaceIntelligence({ aiFirst = false }: { aiFirst?: boolean
         <h1>{aiFirst ? "Amazon AI Marketing" : "Amazon Intelligence"}</h1>
         <p>
           Internes read-only Analysewerkzeug für offizielle Amazon-Reports. Uploads erzeugen
-          nachvollziehbare Kennzahlen und Empfehlungen, aber keine Preis-, Ads-, Listing-,
+          nachvollziehbare Kennzahlen und Empfehlungen, ergänzt um öffentliche Markt-, Wettbewerbs-
+          und Krisensignale, aber keine Preis-, Ads-, Listing-,
           Bestands- oder Bestelländerung.
         </p>
         {aiFirst && (
@@ -327,7 +357,8 @@ export function MarketplaceIntelligence({ aiFirst = false }: { aiFirst?: boolean
             <strong>Interne Strategiehilfe für Mantle</strong>
             <p>
               Zuerst bleiben Fakten und regelbasierte Ableitungen sichtbar. Eine externe
-              KI-Einschätzung wird nur nach deiner ausdrücklichen Hash-Bestätigung erzeugt.
+              KI-Einschätzung wird nur nach deiner ausdrücklichen Hash-Bestätigung erzeugt. Öffentliche
+              Web-Recherche und interne Amazon-Aggregate bleiben technisch getrennt.
             </p>
           </div>
         )}
@@ -565,6 +596,13 @@ export function MarketplaceIntelligence({ aiFirst = false }: { aiFirst?: boolean
         )}
       </section>
 
+      {aiFirst && (
+        <ManualAdsImportCard
+          defaultMarketplaceId={marketplaceId}
+          onImported={reload}
+        />
+      )}
+
       {!aiFirst && analysisSection}
 
       <section className="card" aria-labelledby="sp-api-heading">
@@ -652,6 +690,281 @@ export function MarketplaceIntelligence({ aiFirst = false }: { aiFirst?: boolean
         />
       )}
     </div>
+  );
+}
+
+function ManualAdsImportCard({
+  defaultMarketplaceId,
+  onImported,
+}: {
+  defaultMarketplaceId: string | null;
+  onImported: () => Promise<void>;
+}) {
+  const [file, setFile] = useState<File | null>(null);
+  const [fileInputKey, setFileInputKey] = useState(0);
+  const [timezone, setTimezone] = useState(browserTimezone);
+  const [preview, setPreview] = useState<MarketplaceAdsImportPreview | null>(null);
+  const [confirmation, setConfirmation] = useState<AdsImportConfirmation | null>(null);
+  const [confirmed, setConfirmed] = useState(false);
+  const [result, setResult] = useState<MarketplaceAdsImportResult | null>(null);
+  const [busy, setBusy] = useState<"preview" | "import" | null>(null);
+  const [message, setMessage] = useState<string | null>(null);
+
+  const previewReport = async (event: FormEvent) => {
+    event.preventDefault();
+    if (!file) return;
+    setBusy("preview");
+    setMessage(null);
+    setResult(null);
+    try {
+      const next = await api.postRaw<MarketplaceAdsImportPreview>(
+        adsImportPath("/marketplace/imports/ads/preview", file, timezone),
+        file,
+      );
+      setPreview(next);
+      setConfirmation({
+        marketplaceId: next.marketplace_id || defaultMarketplaceId || "",
+        currencyCode: next.currency_code || "EUR",
+        periodStart: dateInputValue(next.period_start),
+        periodEnd: dateInputValue(next.period_end),
+        granularity: next.granularity,
+        reportType: next.report_type,
+        attributionWindowDays: next.attribution_window_days ?? 14,
+      });
+      setConfirmed(false);
+      setMessage("Ads-Vorschau erstellt. Kampagnennamen und IDs werden nicht normalisiert.");
+    } catch (error) {
+      setPreview(null);
+      setConfirmation(null);
+      setMessage(error instanceof Error ? error.message : "Ads-Report konnte nicht geprüft werden.");
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const executeImport = async (event: FormEvent) => {
+    event.preventDefault();
+    if (!file || !preview || !confirmation || !confirmed) return;
+    setBusy("import");
+    setMessage(null);
+    try {
+      const imported = await api.postRaw<MarketplaceAdsImportResult>(
+        adsImportPath("/marketplace/imports/ads", file, timezone, {
+          ...confirmation,
+          hash: preview.sha256,
+        }),
+        file,
+      );
+      setResult(imported);
+      setMessage(
+        imported.outcome === "already_imported"
+          ? "Dieser Ads-Report war bereits unverändert importiert."
+          : imported.comparison_generated
+            ? "Ads-Import abgeschlossen und kompatibler Periodenvergleich erzeugt."
+            : "Ads-Import abgeschlossen. Die Aggregate fließen in den nächsten Wochenlauf ein.",
+      );
+      await onImported();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Ads-Import ist fehlgeschlagen.");
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const updateConfirmation = <K extends keyof AdsImportConfirmation>(
+    field: K,
+    value: AdsImportConfirmation[K],
+  ) => setConfirmation((current) => current ? { ...current, [field]: value } : current);
+
+  const reset = () => {
+    setFile(null);
+    setPreview(null);
+    setConfirmation(null);
+    setConfirmed(false);
+    setResult(null);
+    setMessage(null);
+    setFileInputKey((value) => value + 1);
+  };
+
+  const sourceIsImmutable = (field: string) => preview?.metadata_provenance[field] === "report";
+
+  return (
+    <section className="card" aria-labelledby="ads-import-heading">
+      <h2 id="ads-import-heading">Read-only Amazon-Ads-Evidenz</h2>
+      <p>
+        Importiert wird ausschließlich ein offizieller aggregierter Sponsored-Products-
+        Kampagnenbericht. Suchbegriffe, Keywords, ASIN/SKU- und Produktberichte werden abgewiesen;
+        Kampagnennamen und IDs bleiben nur im unveränderlichen internen Roharchiv.
+      </p>
+      {message && <p className="marketplace-status" role="status">{message}</p>}
+      <form onSubmit={previewReport} className="marketplace-form-grid">
+        <label htmlFor="amazon-ads-report-file">
+          Offizieller Ads-Kampagnenbericht
+          <input
+            key={fileInputKey}
+            id="amazon-ads-report-file"
+            type="file"
+            required
+            accept=".json,.csv,.tsv,application/json,text/csv,text/tab-separated-values"
+            onChange={(event) => {
+              setFile(event.target.files?.[0] ?? null);
+              setPreview(null);
+              setConfirmation(null);
+              setConfirmed(false);
+              setResult(null);
+            }}
+          />
+        </label>
+        <label htmlFor="amazon-ads-report-timezone">
+          Report-Zeitzone
+          <input
+            id="amazon-ads-report-timezone"
+            required
+            value={timezone}
+            disabled={Boolean(preview)}
+            onChange={(event) => setTimezone(event.target.value)}
+            placeholder="Europe/Berlin"
+          />
+        </label>
+        <div className="marketplace-form-action">
+          <button type="submit" disabled={!file || !timezone || busy !== null}>
+            {busy === "preview" ? "Ads-Report wird geprüft …" : "Ads-Importvorschau erstellen"}
+          </button>
+        </div>
+      </form>
+
+      {preview && confirmation && (
+        <>
+          <div className="marketplace-preview-header">
+            <h3>Geprüfte Ads-Vorschau</h3>
+            <span className="badge">{preview.detected_format}</span>
+          </div>
+          <dl className="marketplace-meta-grid">
+            <div><dt>SHA-256</dt><dd><code className="marketplace-hash">{preview.sha256}</code></dd></div>
+            <div><dt>Reporttyp</dt><dd><code>{adsCampaignReport}</code></dd></div>
+            <div><dt>Parser</dt><dd>{preview.parser_version}</dd></div>
+            <div><dt>Werbeprodukt</dt><dd>Sponsored Products</dd></div>
+            <div><dt>Ebene</dt><dd>Kampagne, aggregiert</dd></div>
+            <div><dt>Attribution</dt><dd>{preview.attribution_window_days ?? "zu bestätigen"} Tage</dd></div>
+          </dl>
+          {preview.warnings.length > 0 && (
+            <div className="marketplace-callout warning">
+              <strong>Parserhinweise</strong>
+              <ul>{preview.warnings.map((warning) => <li key={warning}>{warning}</li>)}</ul>
+            </div>
+          )}
+          <form onSubmit={executeImport} className="marketplace-confirmation">
+            <fieldset disabled={busy !== null || Boolean(result)}>
+              <legend>Ads-Zeitraum und Attributionsfenster bestätigen</legend>
+              <div className="marketplace-form-grid">
+                <label htmlFor="ads-confirm-marketplace">
+                  Marketplace
+                  <input
+                    id="ads-confirm-marketplace"
+                    required
+                    readOnly={sourceIsImmutable("marketplace_id")}
+                    value={confirmation.marketplaceId}
+                    onChange={(event) => updateConfirmation("marketplaceId", event.target.value)}
+                  />
+                </label>
+                <label htmlFor="ads-confirm-currency">
+                  Währung
+                  <input
+                    id="ads-confirm-currency"
+                    required
+                    readOnly={sourceIsImmutable("currency_code")}
+                    value={confirmation.currencyCode}
+                    onChange={(event) => updateConfirmation("currencyCode", event.target.value.toUpperCase())}
+                  />
+                </label>
+                <label htmlFor="ads-confirm-period-start">
+                  Zeitraum von
+                  <input
+                    id="ads-confirm-period-start"
+                    type="date"
+                    required
+                    readOnly={sourceIsImmutable("period_start")}
+                    value={confirmation.periodStart}
+                    onChange={(event) => updateConfirmation("periodStart", event.target.value)}
+                  />
+                </label>
+                <label htmlFor="ads-confirm-period-end">
+                  Zeitraum bis
+                  <input
+                    id="ads-confirm-period-end"
+                    type="date"
+                    required
+                    min={confirmation.periodStart}
+                    readOnly={sourceIsImmutable("period_end")}
+                    value={confirmation.periodEnd}
+                    onChange={(event) => updateConfirmation("periodEnd", event.target.value)}
+                  />
+                </label>
+                <label htmlFor="ads-confirm-attribution">
+                  Attributionsfenster
+                  <select
+                    id="ads-confirm-attribution"
+                    value={confirmation.attributionWindowDays}
+                    disabled={sourceIsImmutable("attribution_window_days")}
+                    onChange={(event) => updateConfirmation(
+                      "attributionWindowDays",
+                      Number(event.target.value) as 7 | 14 | 30,
+                    )}
+                  >
+                    <option value={7}>7 Tage</option>
+                    <option value={14}>14 Tage</option>
+                    <option value={30}>30 Tage</option>
+                  </select>
+                </label>
+                <label htmlFor="ads-confirm-granularity">
+                  Granularität
+                  <input id="ads-confirm-granularity" readOnly value={confirmation.granularity} />
+                </label>
+              </div>
+              <label className="marketplace-checkbox" htmlFor="ads-confirm-import">
+                <input
+                  id="ads-confirm-import"
+                  type="checkbox"
+                  checked={confirmed}
+                  onChange={(event) => setConfirmed(event.target.checked)}
+                />
+                Hash, Kampagnenreport, Marketplace, Zeitraum, Währung und Attributionsfenster sind geprüft.
+              </label>
+              <button type="submit" disabled={!confirmed || busy !== null}>
+                {busy === "import" ? "Ads-Import läuft …" : "Bestätigten Ads-Import ausführen"}
+              </button>
+            </fieldset>
+          </form>
+          <div className="table-scroll">
+            <table>
+              <caption>Identifierfreie Ads-Aggregate</caption>
+              <thead><tr><th>Kennzahl</th><th>Wert</th></tr></thead>
+              <tbody>
+                {preview.metrics.map((metric) => (
+                  <tr key={metric.metric_name}>
+                    <td>{metric.metric_name}</td>
+                    <td>{metric.value_numeric} {metric.unit} {metric.currency_code ?? ""}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          {result && (
+            <div className="marketplace-callout success">
+              <strong>{result.outcome === "imported" ? "Ads-Evidenz importiert" : "Ads-Evidenz bereits vorhanden"}</strong>
+              <p>Der nächste erfolgreiche Wochenlauf darf diese Aggregate berücksichtigen.</p>
+              <button type="button" className="secondary" onClick={reset}>
+                Weiteren Ads-Zeitraum importieren
+              </button>
+            </div>
+          )}
+        </>
+      )}
+      <p className="marketplace-muted">
+        Es wird keine Kampagne, kein Gebot, kein Budget und kein Targeting verändert. Ein Ads-API-
+        Abruf bleibt ein separates externes Gate; der manuelle Import benötigt keine Ads-Credentials.
+      </p>
+    </section>
   );
 }
 
@@ -854,6 +1167,17 @@ const kpiDefinitions = [
   { keys: ["b2b_revenue_share", "b2b_share", "b2b_units_share"], label: "B2B-Anteil" },
 ] as const;
 
+const adsKpiDefinitions = [
+  { keys: ["ads_impressions"], label: "Ads-Impressionen" },
+  { keys: ["ads_clicks"], label: "Ads-Klicks" },
+  { keys: ["ads_spend"], label: "Werbekosten" },
+  { keys: ["ads_attributed_sales"], label: "Zugeordneter Umsatz" },
+  { keys: ["ads_ctr"], label: "CTR" },
+  { keys: ["ads_cpc"], label: "CPC" },
+  { keys: ["ads_roas"], label: "ROAS" },
+  { keys: ["ads_acos"], label: "ACOS" },
+] as const;
+
 const numericValue = (value: unknown): number | null => {
   const parsed = typeof value === "number" ? value : Number.parseFloat(String(value ?? ""));
   return Number.isFinite(parsed) ? parsed : null;
@@ -881,6 +1205,12 @@ const barWidth = (value: number | null, maximum: number) => {
 function KpiComparisonChart({ result }: { result: Record<string, unknown> }) {
   const changes = asArray(result.changes_since_last_run);
   const facts = asArray(result.facts);
+  const hasAdsMetrics = [...facts, ...changes].some((item) => (
+    typeof item === "object"
+      && item !== null
+      && String((item as Record<string, unknown>).metric ?? "").startsWith("ads_")
+  ));
+  const definitions = hasAdsMetrics ? adsKpiDefinitions : kpiDefinitions;
   return (
     <figure className="kpi-chart">
       <figcaption>
@@ -888,7 +1218,7 @@ function KpiComparisonChart({ result }: { result: Record<string, unknown> }) {
         <span>Vorperiode und aktueller Zeitraum · feste Darstellung aus Serverfakten</span>
       </figcaption>
       <div className="kpi-chart-grid">
-        {kpiDefinitions.map((definition) => {
+        {definitions.map((definition) => {
           const change = metricRecord(changes, definition.keys);
           const fact = metricRecord(facts, definition.keys);
           const current = numericValue(change?.current ?? fact?.value);
@@ -978,9 +1308,55 @@ function StrategyFindings({
   );
 }
 
+function StrategyPublicSignals({
+  title,
+  items,
+  sources,
+}: {
+  title: string;
+  items: MarketplaceStrategyPublicSignal[];
+  sources: MarketplaceStrategyPublicSource[];
+}) {
+  const byReference = new Map(sources.map((source) => [source.ref, source]));
+  return (
+    <section className="strategy-section">
+      <h4>{title}</h4>
+      {items.length === 0 ? (
+        <p className="marketplace-muted">Kein belastbares öffentliches Signal gefunden.</p>
+      ) : (
+        <ul>
+          {items.map((item, index) => (
+            <li key={`${item.title}-${index}`}>
+              <strong>{item.title}</strong> · Konfidenz: {confidenceLabel(item.confidence)}
+              <p><strong>Öffentlich beobachteter Fakt:</strong> {item.observed_fact}</p>
+              <p><strong>Mögliche Konsumwirkung:</strong> {item.possible_consumption_impact}</p>
+              <p className="marketplace-muted">Unsicherheit: {item.uncertainty}</p>
+              <p className="strategy-source-links">
+                Quellen: {item.evidence_refs.map((reference, refIndex) => {
+                  const source = byReference.get(reference);
+                  return source ? (
+                    <span key={reference}>
+                      {refIndex > 0 && " · "}
+                      <a href={source.url} target="_blank" rel="noreferrer noopener">
+                        {source.title}
+                      </a>
+                    </span>
+                  ) : <span key={reference}>{refIndex > 0 && " · "}{reference}</span>;
+                })}
+              </p>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
+  );
+}
+
 function StrategyResult({ view }: { view: MarketplaceStrategyView }) {
   const assessment = view.assessment;
   if (!assessment) return null;
+  const publicSources = assessment.public_sources ?? [];
+  const publicContext = assessment.public_context;
   return (
     <div className="strategy-result">
       <div className="marketplace-preview-header">
@@ -992,6 +1368,36 @@ function StrategyResult({ view }: { view: MarketplaceStrategyView }) {
         <h4>Bewertung</h4>
         <p>{assessment.assessment}</p>
       </section>
+      {publicContext && (
+        <>
+          <div className="marketplace-preview-header">
+            <h3>Öffentliche Markt- und Umfeldsignale</h3>
+            <span className="badge">Web-Recherche · Quellen verlinkt</span>
+          </div>
+          <p className="marketplace-muted">
+            Fakten aus öffentlichen Quellen sind von möglichen Auswirkungen auf Nachfrage,
+            Preisempfindlichkeit und Konsum getrennt. Eine Kausalität zu Mantles Amazon-Zahlen wird
+            daraus nicht behauptet.
+          </p>
+          <div className="strategy-public-grid">
+            <StrategyPublicSignals
+              title="Wettbewerber"
+              items={publicContext.competitor_signals}
+              sources={publicSources}
+            />
+            <StrategyPublicSignals
+              title="Kategorie und Markt"
+              items={publicContext.category_trends}
+              sources={publicSources}
+            />
+            <StrategyPublicSignals
+              title="Globale Trends und Krisen"
+              items={publicContext.global_events_and_crises}
+              sources={publicSources}
+            />
+          </div>
+        </>
+      )}
       <div className="strategy-grid">
         <StrategyFindings title="Chancen" items={assessment.opportunities} />
         <StrategyFindings title="Risiken" items={assessment.risks} />
@@ -1079,7 +1485,7 @@ function StrategyResult({ view }: { view: MarketplaceStrategyView }) {
         )}
       </section>
       <p className="marketplace-muted strategy-metadata">
-        Modell {view.status.model} · Prompt {view.status.prompt_version} · Wochenlauf {view.assessment_week_start ?? "historisch"}
+        Modell {view.assessment_model ?? view.status.model} · Prompt {view.assessment_prompt_version ?? view.status.prompt_version} · Wochenlauf {view.assessment_week_start ?? "historisch"}
         {" · "}erzeugt {formatDate(view.created_at)}
         {view.input_tokens !== null && ` · Input ${view.input_tokens} Tokens`}
         {view.output_tokens !== null && ` · Output ${view.output_tokens} Tokens`}
@@ -1231,7 +1637,7 @@ function WeeklyStrategyPanel({
       if (!prepared.can_run || !prepared.current_payload_sha256) {
         throw new Error(prepared.block_reason ?? "no_analysis_data");
       }
-      setPhase("OpenAI bewertet ausschließlich die freigegebenen Aggregatdaten …");
+      setPhase("Öffentliche Marktlage wird recherchiert; danach bewertet OpenAI die getrennten Aggregate …");
       const result = await api.post<MarketplaceStrategyView>(
         "/marketplace/strategy/weekly",
         {
@@ -1264,7 +1670,9 @@ function WeeklyStrategyPanel({
         Ein Klick holt bei konfigurierter SP-API genau einen read-only Sales-&amp;-Traffic-Bericht
         für die letzten sieben abgeschlossenen Tage, verarbeitet alle freigegebenen
         Aggregatanalysen und nimmt das validierte Handover des letzten Wochenlaufs als Kontext.
-        OpenAI erhält keine Rohdatei, Reportzeile, ASIN/SKU, Buyer-/Order-PII oder Secrets.
+        Eine vorgelagerte Web-Recherche sieht nur Mantles öffentliches Branchenprofil; interne
+        Amazon-Zahlen erreichen keine Suchanfrage. OpenAI erhält keine Rohdatei, Reportzeile,
+        ASIN/SKU, Buyer-/Order-PII oder Secrets.
       </p>
       {loading && <p role="status">Aggregatgrenze wird geprüft …</p>}
       {phase && <p className="marketplace-status" role="status">{phase}</p>}
@@ -1286,6 +1694,7 @@ function WeeklyStrategyPanel({
             <div><dt>Letzter Lauf als Kontext</dt><dd>{view.previous_run_context ? "ja" : "noch nicht vorhanden"}</dd></div>
             <div><dt>Wochenfenster</dt><dd>ab {view.week_start} · Europe/Berlin</dd></div>
             <div><dt>Modell</dt><dd>{view.status.model}</dd></div>
+            <div><dt>Öffentliche Web-Recherche</dt><dd>maximal {view.status.max_web_search_calls} Suchaufrufe</dd></div>
             <div><dt>Speicherung bei Anfrage</dt><dd><code>store: false</code></dd></div>
             <div><dt>Amazon-Mutation</dt><dd>nicht vorhanden</dd></div>
           </dl>
@@ -1325,8 +1734,11 @@ function WeeklyStrategyPanel({
           <p className="marketplace-muted">
             Der Klick bestätigt den Amazon-read-only-Abruf und die einmalige Übermittlung des danach
             angezeigten Aggregat-Hashes. Ohne Amazon-Zugang werden vorhandene manuelle Importe
-            verwendet. Ein fehlgeschlagener Provideraufruf verbraucht das Wochenfenster nicht; ein
-            erfolgreich gespeicherter Lauf sperrt es serverseitig bis zum nächsten Montag.
+            verwendet. Ein Lauf nutzt eine öffentliche Recherche-Response und eine getrennte
+            Synthese-Response im Pay-per-use-Projekt; die Recherche darf höchstens drei
+            Web-Suchaufrufe auslösen. Ein fehlgeschlagener Provideraufruf verbraucht das
+            Wochenfenster nicht; ein erfolgreich gespeicherter Lauf sperrt es serverseitig bis zum
+            nächsten Montag.
           </p>
           <StrategyResult view={view} />
         </>

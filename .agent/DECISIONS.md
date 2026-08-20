@@ -186,8 +186,9 @@ gain narrative output, and probabilistic text must not be presented as evidence.
 **Consequences:** The adapter fails closed without a dedicated project-scoped
 OpenAI API key and approved provider data controls. The later Mantle no-login
 decision governs its encrypted write-only storage; a host-environment key
-remains only as a legacy fallback. Requests use the fixed Responses API, `store: false`, no tools, a strict
-output schema, bounded payloads, and explicit aggregate-hash confirmation. Only validated output
+remains only as a legacy fallback. Requests use the fixed Responses API, `store: false`, bounded
+payloads, and explicit aggregate-hash confirmation. The synthesis request has no tools and uses a
+strict output schema. Only validated output
 and redacted metadata are persisted immutably and idempotently; prompts/raw provider responses are
 not stored. Until the external credential gate exists, the deterministic path stays fully usable
 and the UI shows a disabled gate rather than simulating a provider result.
@@ -212,6 +213,44 @@ confirmation; failed provider calls do not consume the week, while an accepted r
 run until the next local Monday. New imports after a run are visibly marked as outside the assessed
 hash. This workflow reads imported aggregates only and does not bypass the separate SP-API
 credential gate.
+
+## 2026-08-20 — Keep public research separate from private Amazon evidence
+
+**Decision:** One weekly action first runs a bounded public web-research request containing only a
+fixed Mantle/category/market brief and the current date. A separate tool-free synthesis request
+receives the closed internal aggregate DTO, last handover, and bounded public text with
+server-canonicalized references and citation excerpts kept in provider citation order. Fixed output
+sections separate public observed facts,
+possible consumption effects, confidence, and uncertainty for competitors, category/market trends,
+and global events or crises.
+
+**Reason:** Current market context is useful for strategy, but placing internal sales metrics in a
+web-search request would expand disclosure and let untrusted pages influence private-data queries.
+Public events can suggest hypotheses about demand or price sensitivity; they cannot establish the
+cause of an internal metric change.
+
+**Consequences:** The public request permits only the built-in `web_search` tool and at most three
+tool calls. It receives no report period, metric, hash, identifier, or handover. Both Responses use
+`store: false`; the second request has no tools. Public source URLs are bounded and canonicalized,
+and every accepted public signal needs a validated `public:*` reference. One button can incur two
+provider requests, but only a successful validated synthesis consumes the weekly slot.
+
+## 2026-08-20 — Add Ads only as aggregate evidence through the manual boundary
+
+**Decision:** Official aggregate Sponsored Products campaign reports use the existing manual
+archive, snapshot, deterministic comparison, strategy-input, and export boundary. The first Ads
+path is JSON/CSV/TSV upload, not an Ads API client. It normalizes only impressions, clicks, spend,
+attributed outcomes, CTR, CPC, ROAS, and ACOS with a confirmed attribution window.
+
+**Reason:** Ads evidence reduces a major uncertainty in Sales and Traffic interpretation without
+waiting for separate Amazon Ads authorization or introducing a competing analysis system.
+
+**Consequences:** Search-term, keyword, targeting, ASIN/SKU, and product-level reports are rejected.
+Every accepted row must have a campaign-name or campaign-ID dimension proving campaign-level
+shape. Campaign names and IDs remain only in the confidential raw archive and never enter normalized
+metrics, summaries, or OpenAI. Ads comparisons require matching marketplace, granularity, parser,
+period length, currency, timezone, and attribution window. There is no campaign, bid, budget, or
+targeting mutation path; a future read-only Ads API gate requires an independent review.
 
 ## 2026-08-20 — Use a LAN-scoped no-login shell with write-only provider setup
 
@@ -242,5 +281,6 @@ is documented rather than hidden.
 profile and must never be printed or backed up. The single weekly `Analyse`
 button obtains one seven-day Sales and Traffic report when approved Amazon
 credentials exist, otherwise uses manual imports, then submits the closed
-aggregate history plus previous handover to OpenAI. Provider failures do not
+aggregate history plus previous handover only to the tool-free synthesis step;
+the preceding public research sees neither. Provider failures do not
 consume the weekly slot; no scheduler or mutation capability is added.

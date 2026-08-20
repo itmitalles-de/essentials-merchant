@@ -13,6 +13,7 @@ use sqlx::{PgPool, Postgres, Transaction};
 use uuid::Uuid;
 
 pub const SALES_AND_TRAFFIC: &str = "GET_SALES_AND_TRAFFIC_REPORT";
+pub const ADS_SPONSORED_PRODUCTS_CAMPAIGN: &str = "AMAZON_ADS_SPONSORED_PRODUCTS_CAMPAIGN_REPORT";
 pub const INVENTORY_PLANNING: &str = "GET_FBA_INVENTORY_PLANNING_DATA";
 pub const FBA_RETURNS: &str = "GET_FBA_FULFILLMENT_CUSTOMER_RETURNS_DATA";
 pub const SETTLEMENT_V2: &str = "GET_V2_SETTLEMENT_REPORT_DATA_FLAT_FILE_V2";
@@ -1244,8 +1245,10 @@ pub async fn store_manual_import(
     pool: &PgPool,
     input: &ManualImportStoreInput<'_>,
 ) -> Result<ManualImportStoreOutcome, ManualImportStoreError> {
-    if input.report_type != SALES_AND_TRAFFIC
-        || !matches!(input.detected_format, "json" | "csv" | "tsv")
+    if !matches!(
+        input.report_type,
+        SALES_AND_TRAFFIC | ADS_SPONSORED_PRODUCTS_CAMPAIGN
+    ) || !matches!(input.detected_format, "json" | "csv" | "tsv")
         || !matches!(input.date_granularity, "DAY" | "WEEK" | "MONTH" | "PERIOD")
         || input.marketplace_id.len() < 2
         || input.marketplace_id.len() > 64
@@ -2553,6 +2556,79 @@ mod tests {
                 .await
                 .is_err()
         );
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn aggregate_ads_campaign_import_reuses_the_immutable_manual_boundary(pool: PgPool) {
+        let uploaded_by: Uuid = sqlx::query_scalar(
+            "INSERT INTO users (username, password_hash, role)
+             VALUES ('synthetic-ads-import-admin', 'synthetic-not-a-secret', 'administrator')
+             RETURNING id",
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        let raw = b"SYNTHETIC ADS CAMPAIGN REPORT - NO BUSINESS DATA";
+        let raw_sha256 = sha256(raw);
+        let parsed = ParsedSnapshot {
+            parser_version: "manual-ads-sp-campaign-v1".to_owned(),
+            period_start: Some("2026-07-01T00:00:00Z".parse().unwrap()),
+            period_end: Some("2026-07-07T23:59:59Z".parse().unwrap()),
+            granularity: "ads_campaign_period".to_owned(),
+            comparability_key:
+                "ads-sp-campaign:ads_campaign_period:7d:attribution=14d:currency=EUR:timezone=europe-berlin"
+                    .to_owned(),
+            summary: json!({
+                "report_family": "amazon_ads",
+                "attribution_window_days": 14,
+                "timezone": "Europe/Berlin",
+                "currency_code": "EUR",
+            }),
+            metrics: vec![ParsedMetric {
+                metric_name: "ads_spend".to_owned(),
+                dimension_type: "catalog".to_owned(),
+                dimension_key: String::new(),
+                value_numeric: Decimal::from(25),
+                unit: "currency".to_owned(),
+                currency_code: Some("EUR".to_owned()),
+                evidence: json!({ "source": "synthetic_test" }),
+            }],
+        };
+        let input = ManualImportStoreInput {
+            uploaded_by,
+            raw_sha256: &raw_sha256,
+            raw_content: raw,
+            content_type: "text/csv",
+            detected_format: "csv",
+            marketplace_id: "SYNTHETIC-MARKETPLACE",
+            report_type: ADS_SPONSORED_PRODUCTS_CAMPAIGN,
+            date_granularity: "PERIOD",
+            source_timezone: "Europe/Berlin",
+            currency_code: Some("EUR"),
+            parsed: &parsed,
+        };
+
+        let first = store_manual_import(&pool, &input).await.unwrap();
+        let retry = store_manual_import(&pool, &input).await.unwrap();
+        assert!(first.imported);
+        assert!(!retry.imported);
+        assert_eq!(first.run_id, retry.run_id);
+        assert_eq!(
+            raw_document(&pool, first.run_id)
+                .await
+                .unwrap()
+                .unwrap()
+                .content,
+            raw
+        );
+        let stored_type: String = sqlx::query_scalar(
+            "SELECT report_type FROM amazon_manual_report_imports WHERE run_id = $1",
+        )
+        .bind(first.run_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(stored_type, ADS_SPONSORED_PRODUCTS_CAMPAIGN);
     }
 
     #[sqlx::test(migrations = "./migrations")]

@@ -30,6 +30,21 @@ competing root task list.
 - [x] Record exact live commit, image IDs, backup/restore evidence, and remaining
   external gates in this handoff and `docs/MANTLE_AMAZON_PILOT.md`.
 
+## Public-market and Ads evidence extension
+
+- [x] Add aggregate manual Sponsored Products campaign JSON/CSV/TSV evidence
+  without creating an Ads API or retaining identifiers in normalized output.
+- [x] Add separate public-only research for competitors, category/market, and
+  global events/crises with citation-ordered references and explicitly
+  uncertain consumption effects.
+- [x] Keep the synthesis fixed-structure, handover-aware, aggregate-only,
+  tool-free, weekly, and incapable of Amazon or Merchant mutation.
+- [ ] Commit and push the exact extension head, require all seven CI jobs green,
+  and deploy only `essentials-merchant-amazon` with Git-SHA image tags.
+- [ ] Run live synthetic Ads import/comparison/idempotence/export acceptance,
+  verify schema 20/no-login/scoped denials/logs/non-target baseline, and record
+  the exact live commit and image IDs here.
+
 ## External OpenAI gate
 
 - [ ] In the OpenAI Platform, create a dedicated project with pay-per-use
@@ -56,8 +71,9 @@ competing root task list.
 
 ## Explicitly deferred
 
-- Ads evidence is the only sensible next analysis extension after one accepted
-  real weekly cycle. Stripe, DHL/DPD, DATEV, automatic Amazon actions,
+- Read-only Amazon Ads API acquisition is the only sensible next analysis
+  extension after one accepted real weekly cycle. Stripe, DHL/DPD, DATEV,
+  automatic Amazon actions,
   multi-tenancy, Kubernetes, and unrelated marketplace work remain outside this
   milestone.
 - Retained stopped restore volumes and historical partial backup directories
