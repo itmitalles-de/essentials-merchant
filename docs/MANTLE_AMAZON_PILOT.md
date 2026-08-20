@@ -16,7 +16,7 @@ has no tool or mutation capability.
 
 ## Current Mantle deployment
 
-The accepted live application revision is `61e7b3855afaa6a378edffc39b352afd875feebe`
+The accepted live application revision is `9b8edc6e6099e9d85c44a2b6d797f00f5c88ffe8`
 in Compose project `essentials-merchant-amazon` on `192.168.178.15`. Internal
 operators use `https://ai-marketing.mantle-climbing.de`; the retained fallback is
 `https://merchant.mantle-climbing.de/ai-marketing`. Both names resolve internally
@@ -46,15 +46,24 @@ fail-closed and no provider request has succeeded.
 The live image IDs are:
 
 - PostgreSQL: `sha256:75f5a96988cdf694a215073c3e9c001b706b371e2f94df3967f2efdec2787f6b`
-- backend: `sha256:44e1fc334437608e1cc29a1039de4d8b96b035bc55aef4af45d1941429d473e0`
-- frontend: `sha256:8427903ec0a2eb8da7562804cc81eb67e8b0a698c1cd99b91e1ecff48b39858c`
+- backend: `sha256:dd1619471558012bc4d724e85dfc417161239dfb3f8eecc27504892158f89e51`
+- frontend: `sha256:cbb7f2a45b73a785fd0738b265f11e7815a23be6d11d43fa9782b444c5f94025`
+
+Exact-head CI run `32349661359` passed all seven jobs. The deployment preserved
+the PostgreSQL container and every non-target container ID/restart count; Caddy
+was not changed or reloaded. Live Chromium reached `/ai-marketing` with zero
+login inputs, and the regular login plus scoped ERP access returned 403.
 
 The final live backup was generated and verified through the repository-owned,
 digest-pinned Node container fallback, so the host does not need a Node.js
 installation. Empty-target restore acceptance matched raw archive hashes,
-normalized metrics, deterministic analyses, schema 18, module state, and HTTP
-readiness. The accepted post-deployment backup is
-`/opt/essentials-merchant-amazon-backups/live-weekly-61e7b38-20260820T072000Z`.
+normalized metrics, deterministic analyses, schema 19, module state, HTTP
+readiness, zero schedules, and zero restored provider-secret rows. The accepted
+post-deployment backup is
+`/opt/essentials-merchant-amazon-backups/live-weekly-ai-9b8edc6-20260820T085753Z`.
+The isolated restore containers/network were removed after acceptance without
+deleting the retained restore volumes. Live logs contained no configured secret
+value or raw/secret field marker.
 
 ## Relationship to the Mantle wiki toolchain
 

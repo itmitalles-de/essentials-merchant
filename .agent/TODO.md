@@ -19,15 +19,15 @@ competing root task list.
   an empty-target restore.
 - [x] Complete local Rust/frontend/Chromium/security/SQLx/upgrade/recovery and
   synthetic JSON/CSV/TSV acceptance.
-- [ ] Commit and push the exact feature head to draft PR #5; require all seven
+- [x] Commit and push the exact feature head to draft PR #5; require all seven
   CI jobs green.
-- [ ] Re-baseline production, create a verified pre-deploy backup, deploy only
+- [x] Re-baseline production, create a verified pre-deploy backup, deploy only
   Compose project `essentials-merchant-amazon`, and preserve every non-target
   container ID/restart count.
-- [ ] Verify no-login route, scoped ERP denial, write-only empty status, schema
+- [x] Verify no-login route, scoped ERP denial, write-only empty status, schema
   19, zero schedules, logs without secrets, synthetic import/comparison/export,
   backup, and empty-target restore on the deployed SHA.
-- [ ] Record exact live commit, image IDs, backup/restore evidence, and remaining
+- [x] Record exact live commit, image IDs, backup/restore evidence, and remaining
   external gates in this handoff and `docs/MANTLE_AMAZON_PILOT.md`.
 
 ## External OpenAI gate

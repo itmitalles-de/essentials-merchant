@@ -9,7 +9,7 @@
 - Mantle's service stays inside existing Marketplace Intelligence. No wiki
   parser/runtime or third analysis system was copied.
 
-## Mantle mini-tool implemented locally
+## Mantle mini-tool
 
 - Canonical route: `https://ai-marketing.mantle-climbing.de`.
 - `MANTLE_PILOT_NO_LOGIN=true` removes the login form. The dedicated frontend
@@ -39,7 +39,7 @@
   validated AI output, but explicitly excludes provider-secret rows even as
   ciphertext. Empty-target restore requires zero provider-secret rows.
 
-## Local verification on 2026-08-20
+## Verification on 2026-08-20
 
 - Rust format/check/Clippy with warnings denied: passed.
 - Rust workspace: 19 DB + 13 domain + 8 PDF + 55 server tests = 95 passed.
@@ -56,21 +56,47 @@
   the source and zero provider rows in the empty-target restore.
 - No real report, Amazon credential, OpenAI key, provider call, or business
   metric was used.
+- Exact runtime head `9b8edc6e6099e9d85c44a2b6d797f00f5c88ffe8` passed all seven jobs in
+  GitHub Actions run `32349661359`: frontend, backend, Amazon pilot, Commerce,
+  recovery, Docker, and security.
 
-## Live state before this rollout
+## Accepted live state
 
 - Host `192.168.178.15`, Compose project `essentials-merchant-amazon`, exactly
-  PostgreSQL/backend/frontend, currently runs revision
-  `61e7b3855afaa6a378edffc39b352afd875feebe`.
-- Existing internal Caddy/Homer routing for `ai-marketing.mantle-climbing.de`
-  is already LAN/VPN-only and healthy. It must not be reloaded unless the
-  existing route is found invalid.
+  PostgreSQL/backend/frontend, runs revision
+  `9b8edc6e6099e9d85c44a2b6d797f00f5c88ffe8`, schema 19, the seven-module
+  allowlist, and zero automatic schedules.
+- Image IDs: PostgreSQL
+  `sha256:75f5a96988cdf694a215073c3e9c001b706b371e2f94df3967f2efdec2787f6b`,
+  backend `sha256:dd1619471558012bc4d724e85dfc417161239dfb3f8eecc27504892158f89e51`,
+  frontend `sha256:cbb7f2a45b73a785fd0738b265f11e7815a23be6d11d43fa9782b444c5f94025`.
+- `https://ai-marketing.mantle-climbing.de` redirects inside the SPA to
+  `/ai-marketing`; live Chromium found zero login inputs, the weekly analysis
+  heading, and six write-only credential inputs. Pilot session returned 200,
+  password login and scoped `/api/customers` returned 403.
+- The existing Caddy LAN/VPN route was unchanged and Caddy was not reloaded.
+  Its container ID/restart count stayed identical. Every non-target running
+  container had the exact same ID, restart count, start time, and image before
+  and after deployment (baseline SHA-256
+  `338658aed30d06ca14e08262ecb3a65615077991b69a41d57dd23a6b784a3389`).
+- Live synthetic acceptance passed JSON/CSV/TSV, raw-hash idempotence,
+  two-period comparison, JSON/Markdown/CSV export, blocked raw download, and
+  blocked business mutation. No report bytes were written to a host file.
+- Verified backups:
+  `/opt/essentials-merchant-amazon-backups/pre-weekly-ai-61e7b38-20260820T085054Z`
+  and
+  `/opt/essentials-merchant-amazon-backups/live-weekly-ai-9b8edc6-20260820T085753Z`.
+  The latter restored into the empty isolated project
+  `essentials-merchant-amazon-restore-20260820t085753` with four reports, four
+  snapshots/analyses, zero provider-secret rows, and zero schedules. Its
+  acceptance containers/network were removed; its two stopped-data volumes
+  were retained for an explicit later retention decision.
+- Live log scanning found zero configured secret-value matches, zero raw/secret
+  field markers, and zero fatal/error markers. Git remained clean and no raw
+  report or credential was committed.
 - No live OpenAI or Amazon credential exists. Manual analysis remains usable;
   the external provider gates stay blocked until an operator enters real,
   authorized values through the deployed write-only GUI.
-- Before deployment: commit/push the implementation, require all seven CI jobs
-  green on the exact head, re-baseline the host, create a verified backup, add a
-  non-printing random `PILOT_SECRETS_KEY`, and change only the target project.
 
 ## Authoritative files
 
