@@ -15,6 +15,10 @@ if [ -n "${RESTORE_FRONTEND_PORT:-}" ]; then
 fi
 
 case "$project" in *[!A-Za-z0-9_-]*|'') echo "invalid COMPOSE_PROJECT_NAME" >&2; exit 2 ;; esac
+# A restored frontend may share the host's external proxy network when the live
+# Compose file is used. Give it a project-specific alias so the live Caddy
+# upstream can never resolve to the isolated restore acceptance stack.
+export MANTLE_AMAZON_PROXY_ALIAS="${project}-frontend"
 compose() {
   docker compose --project-name "$project" --env-file "$compose_env_file" --file "$compose_file" "$@"
 }

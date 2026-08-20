@@ -68,7 +68,7 @@ services:
       default:
       proxy_net:
         aliases:
-          - essentials-merchant-amazon-frontend
+          - ${MANTLE_AMAZON_PROXY_ALIAS:-essentials-merchant-amazon-frontend}
 
 volumes:
   erplite_db_data:

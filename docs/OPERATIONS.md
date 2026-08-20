@@ -179,6 +179,8 @@ SHA; the PostgreSQL image is pinned by digest. The frontend binds only to
 `proxy_net` so Caddy can reach the unique alias
 `essentials-merchant-amazon-frontend`. Publish
 it only through a Caddy route restricted to private/LAN/VPN source ranges.
+An empty-target restore automatically substitutes a project-specific proxy
+alias, so the live Caddy upstream cannot resolve to the acceptance stack.
 
 Before every deployment, capture without rendering environment values:
 
