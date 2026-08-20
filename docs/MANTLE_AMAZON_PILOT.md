@@ -121,11 +121,13 @@ Nginx timeout (`fff8ede`), bounded provider timeout (`c35b5e6`), and invalid or
 truncated structured evidence output (`0480883`). Frontend revision `77a2608`
 also restores the sanitized terminal activity context after a page reload.
 
-GitHub did not start any job for recent run `32388594705`: every job was
-rejected before checkout because recent account payments failed or the Actions
-spending limit must be increased. This is an external CI-account gate, not a
-test failure; it must be cleared and the final exact head rerun before PR #5 can
-leave draft.
+GitHub Actions began executing all seven PR jobs again on 2026-08-20. Run
+`32401025466` then exposed a real stale assertion in the upgrade rehearsal: it
+still expected schema 20 after migrations 21 and 22 had applied. The rehearsal
+now requires schema 22 and explicitly verifies the immutable business-context
+store, append-only product-mapping store, and mapping mutation-prevention
+trigger. PR #5 remains draft for the deferred broader Merchant continuation;
+any future merge requires a green exact head.
 
 All deployments and the final backup changed only this Compose project's
 application containers. PostgreSQL and Caddy retained their container IDs and

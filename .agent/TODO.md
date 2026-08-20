@@ -46,12 +46,12 @@ competing root task list.
   markers in logs, and no identity/restart/start-time change for all 26
   non-target containers.
 
-## External GitHub Actions gate
+## Deferred Merchant PR
 
-- [ ] Fix the GitHub account payment/Actions spending-limit issue, then rerun
-  all seven jobs for the final PR #5 head. Recent run `32388594705` rejected
-  every job before checkout, so it produced no test result. Keep PR #5 draft
-  until the exact final head is green.
+- [ ] When broader Merchant work resumes, independently review PR #5's then
+  current exact head and merge only if every required check on that head is
+  green. The earlier account payment/Actions gate stopped blocking jobs on
+  2026-08-20; keep the PR draft as requested in this handover.
 
 ## External OpenAI administration
 
