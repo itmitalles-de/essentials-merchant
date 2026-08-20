@@ -9,6 +9,14 @@ them before database persistence, never returns them, and excludes their rows
 from pilot backups. Without an explicitly approved credential set, manual upload
 stays fully usable.
 
+For the current Mantle deployment, the operator has entered and approved the
+credential set. A one-shot request on 2026-08-20 proved LWA refresh,
+`createReport`, polling, and an Amazon `DONE` Sales and Traffic report. It
+stopped before document retrieval because the original local resource-ID
+validator did not accept the dots in Amazon's official `amzn1.spdoc...` ID.
+Revision `f984cd3` is deployed with that exact fix. No report bytes, metrics, or
+OpenAI request were produced by the failed attempt.
+
 The manual aggregate Sponsored Products campaign-report importer is also fully
 usable without credentials. It is not an SP-API operation. Amazon Ads API uses
 separate authorization, profiles, endpoints, and reporting operations and is
@@ -59,6 +67,12 @@ both downloaded and parser input bytes. Amazon request IDs are retained only as
 a twelve-character SHA-256 prefix. Tokens, signed download URLs, secret values,
 and complete request IDs are never logged.
 
+Report and document IDs remain closed to a bounded ASCII resource-ID alphabet.
+Dots required by official document IDs are allowed between alphanumeric
+characters; slashes, percent-encoded path syntax, leading/trailing dots, and
+oversized values are rejected. Presigned downloads still require HTTPS and an
+allowlisted Amazon AWS or CloudFront host.
+
 Successful SP-API bytes enter the same immutable archive, parser, snapshot,
 analysis, comparison, and aggregate-export boundary as a manual report.
 
@@ -72,5 +86,8 @@ the AI-first view.
 ## Gate outcome
 
 Until the credentials and approval above exist, record the outcome as
-`externally_blocked_missing_approved_credentials`. This is not an application
-failure and must not disable manual upload.
+`externally_blocked_missing_approved_credentials`. For the current Mantle
+deployment the remaining state is `pending_operator_retry_after_document_id_fix`:
+the app authorization is proven, but download, parsing, aggregate analysis, and
+the first OpenAI synthesis still require one explicit post-fix click. Neither
+state disables manual upload.

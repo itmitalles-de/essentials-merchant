@@ -19,13 +19,17 @@ that never receives internal Amazon evidence.
 
 ## Current Mantle deployment
 
-The accepted live revision is `7c7f7dafc69be789ed7cfb95e8f30207ca410015`
-in Compose project `essentials-merchant-amazon` on `192.168.178.15`. Internal
-operators use `https://ai-marketing.mantle-climbing.de`; the retained fallback is
-`https://merchant.mantle-climbing.de/ai-marketing`. Both names resolve internally
-to the Docker host. Caddy accepts only private, loopback, or VPN source ranges.
-The frontend has no public host bind and there is no public registration path.
-The Mantle dashboard links directly to the canonical AI hostname.
+The checked-out and backend live revision is
+`f984cd3e5bb2268d5c7523dbe497e60c70b32e06` in Compose project
+`essentials-merchant-amazon` on `192.168.178.15`. The unchanged running
+frontend was built from UI revision
+`998d4864a75dd4349496e3ded5ad757886479f0c`. Internal operators use
+`https://ai-marketing.mantle-climbing.de`; the retained fallback is
+`https://merchant.mantle-climbing.de/ai-marketing`. Both names resolve
+internally to the Docker host. Caddy accepts only private, loopback, or VPN
+source ranges. The frontend has no public host bind and there is no public
+registration path. The Mantle dashboard links directly to the canonical AI
+hostname.
 
 The canonical hostname has no login form. Its frontend requests a short-lived,
 same-origin `mantle-amazon-read-only` session and exposes only the AI-first
@@ -42,20 +46,31 @@ authorized real report has been imported. The reserved `SYNTHETIC-` marketplace
 namespace is excluded before weekly provider-context construction, so these
 retained acceptance analyses can never become evidence in a real AI run.
 
-The weekly AI mini-tool renders one `Analyse` button, the fixed KPI/public
-context/strategy/handover structure, and a rising-market icon and favicon. The
-successful-run gate is enforced by a Monday-based database unique index in
-`Europe/Berlin`, not only by the button. Public web research is a separate,
-public-only request; its bounded citations are then combined with aggregate
-Amazon history and the last validated handover in a tool-free synthesis. No
-separately billed OpenAI key is provisioned, so the live strategy status is
-fail-closed with `api_key_missing` and no provider request has succeeded.
+The weekly AI mini-tool renders one `Analyse` button before result history, the
+fixed KPI/public-context/strategy/handover structure, and a rising-market icon
+and favicon. The Mantle route suppresses retained synthetic acceptance cards,
+provides a light/dark switch, and shows five truthful activity phases: Amazon
+report, validation and KPIs, market and competition, global crises, and
+strategy/handover. No simulated percentages are displayed. The successful-run
+gate is enforced by a Monday-based database unique index in `Europe/Berlin`,
+not only by the button. Public web research is a separate, public-only request;
+its bounded citations are then combined with aggregate Amazon history and the
+last validated handover in a tool-free synthesis.
+
+Both provider credential sets are now present only in the encrypted write-only
+store. The first real Amazon attempt proved LWA refresh, report creation, and
+polling through Amazon `DONE`. It stopped locally before document retrieval
+because official Amazon document IDs contain dots that the original resource-ID
+allowlist omitted. Backend revision `f984cd3` fixes that exact boundary while
+continuing to reject path syntax and non-Amazon download hosts. The failed run
+archived no report bytes or metrics and made no OpenAI request; a retry remains
+an explicit operator click.
 
 The live image IDs are:
 
 - PostgreSQL: `sha256:75f5a96988cdf694a215073c3e9c001b706b371e2f94df3967f2efdec2787f6b`
-- backend: `sha256:ad6594b44fff4e7bca650b64c929e295cc8d9b600b1b7e3cb501edddacf290ff`
-- frontend: `sha256:c6142da17061cde07af52dfc80af7acd58b80d5b8f0e0fc929b7059576f645bc`
+- backend: `sha256:3491f32cd921a3f97aa8e6417998815f7d99cd9e2a4479a994807e0d0a0bd99c`
+- frontend: `sha256:62d7cba7bd114208820651c02e1db3b3208e7978b66ba8fcbf9c21e8d98256c6`
 
 Exact-head CI run `32363658273` passed all seven jobs for runtime parent
 `9c6f8ba30c829c42255f33311fcd838e9f761049`. Live revision `608691b` adds only
@@ -66,21 +81,27 @@ context; all 21 DB tests, DB Clippy with warnings denied, and the workspace
 all-target check passed locally. The deployed endpoint sees all six retained
 acceptance analyses but returns `source_analysis_count: 0` and
 `no_analysis_data`.
+UI revision `998d486` passed its frontend build, lint, focused Chromium pipeline
+test, and live light/dark/no-secret/no-synthetic-card check. Backend revision
+`f984cd3` passed the dotted-ID unit test, the fake-SP-API transport test, and
+server Clippy with warnings denied.
 GitHub did not start any job for run `32365245827`: every job was rejected before
 checkout because recent account payments failed or the Actions spending limit
 must be increased. This is an external CI-account gate, not a test failure; it
 must be cleared before PR #5 can leave draft.
 
-The deployment preserved the PostgreSQL container and all 26 non-target
-container identities, images, restart counts, and start times; their exact
-baseline SHA-256 remained
-`becf4957d74030debf19035fce8bf2489a102d9c1f6b9eba8cabb1eb83b85212`.
-Caddy was not changed or reloaded. Live Chromium reached `/ai-marketing` with
-zero login headings/buttons, exactly one `Analyse` button, the branded favicon,
-and the Ads import. Schema 20 is active and automatic schedules remain zero.
-The frontend access-log format deliberately omits query parameters; the final
-synthetic run produced zero filename, sentinel, query, secret, or fatal log
-matches.
+The UI deployment changed only this Compose project's application containers;
+the follow-up document-ID fix recreated only its backend. PostgreSQL and Caddy
+were not restarted, and Caddy was not changed or reloaded. The exact identity,
+restart-count, and start-time hash for every running container other than the
+replaced backend remained
+`7163964b9ede17532627b1e09a74a1b317b4949014932a33c632dacec3b4c434`.
+Live Chromium reached `/ai-marketing` with the no-login shell, one enabled
+`Analyse` button, the branded favicon, both configured-provider indicators,
+zero disclosed secret input values, zero synthetic result cards, the five
+pipeline phases, and working light/dark themes. Schema 20 is active and
+automatic schedules remain zero. The post-deployment backend log scan found
+zero credential-shaped values.
 
 The final live backup is
 `/opt/essentials-merchant-amazon-backups/live-market-context-608691b-20260820T1146Z`.
@@ -189,10 +210,11 @@ unnecessary decompression and archive-member attack surface.
 
 ## External gate
 
-The manual workflow is production-capable without Amazon secrets. The SP-API
-gate is documented in [SP_API_GATE.md](SP_API_GATE.md) and stays externally
-blocked until explicitly approved credentials and a one-shot staging gate are
-available.
+The manual workflow remains production-capable without Amazon secrets. The
+SP-API boundary is documented in [SP_API_GATE.md](SP_API_GATE.md). Approved
+credentials are now configured and Amazon accepted the one-shot Sales and
+Traffic request; completion of document download, parsing, and the downstream
+analysis still requires the explicit post-fix operator retry.
 
 Generative strategy synthesis is implemented behind a separate external gate.
 The rules engine remains the source of facts and supported derivations. The
@@ -209,7 +231,7 @@ visibly separate from facts and deterministic derivations. Full activation and
 data-control details are in
 [STRATEGY_AI_GATE.md](STRATEGY_AI_GATE.md).
 
-Until a real key is entered, strategy status is
-`api_key_missing` (shown in the UI as an external pay-per-use gate). Manual report import,
-deterministic analysis, comparison, and export remain available; no fake key or
-provider success may be claimed.
+The OpenAI key is configured in the write-only store, but no real synthesis has
+yet been sent. Manual report import, deterministic analysis, comparison, and
+export remain available; the first successful paid assessment and its weekly
+handover must be verified before provider success is claimed.

@@ -12,6 +12,9 @@ competing root task list.
   key; never return stored values.
 - [x] Make the single weekly `Analyse` button create/reuse one seven-day
   Sales-and-Traffic run when Amazon is configured, otherwise use manual imports.
+- [x] Put the weekly action before result history, hide synthetic acceptance
+  cards on the Mantle route, and add a light/dark switch plus a truthful
+  five-phase live activity display without fabricated percentages.
 - [x] Preserve the closed aggregate DTO, previous validated handover, fixed
   graphical/section layout, one-success-per-Berlin-week database boundary, and
   zero Amazon/Merchant mutations.
@@ -65,21 +68,26 @@ competing root task list.
   billing/budget and a project/service-account API key. ChatGPT Pro is separate.
 - [ ] Approve the applicable provider data controls; `store:false` removes
   Responses application-state storage but is not a zero-retention claim.
-- [ ] Enter the real key only through the internal write-only GUI. Run one
-  authorized aggregate assessment, verify the fixed result/handover and weekly
-  lock, and check logs without printing the key or payload.
+- [ ] Run one authorized aggregate assessment with the already configured
+  write-only key, verify the fixed result/handover and weekly lock, and check
+  logs without printing the key or payload.
 
 ## External Amazon gate
 
 - [x] Store all six expected Amazon fields through the live write-only GUI;
   verify the encrypted row, read-only approval, EU connection, one marketplace,
   and zero schedules without reading any value.
-- [ ] Register and self-authorize a private SP-API app with only the required
-  Reports/Brand Analytics access; obtain LWA Client ID/Secret, Refresh Token,
-  Seller ID, Marketplace ID, and region.
+- [x] Register and self-authorize a private SP-API app with the required Reports
+  access. The first real one-shot request proved LWA refresh, `createReport`,
+  polling, and a completed Sales and Traffic report without exposing secrets.
+- [x] Accept Amazon's official dotted report-document ID shape while retaining
+  the fail-closed resource/path and presigned-download-host boundaries; deploy
+  the focused fix as backend revision `f984cd3`.
 - [ ] Run exactly one completed seven-day Sales and Traffic acquisition through
-  the weekly button; verify request-ID redaction, polling/backoff, hashes,
-  parser, analysis, and absence of Buyer/Order PII.
+  the weekly button after `f984cd3`; verify request-ID redaction,
+  polling/backoff, download/parser hashes, analysis, and absence of Buyer/Order
+  PII. The pre-fix attempt reached Amazon `DONE` but produced no document bytes,
+  metrics, or OpenAI request and did not consume the weekly success window.
 - [ ] Import an authorized real report only when authorization and local
   availability are proven. Never record its path, raw bytes, product IDs, or
   business metrics in Git/logs.

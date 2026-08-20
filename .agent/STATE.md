@@ -30,6 +30,11 @@
   approved live connection it creates/reuses one Sales and Traffic run for the
   last seven completed UTC days, uses bounded polling/backoff, then submits the
   refreshed aggregate hash. Without Amazon credentials it uses manual imports.
+- The AI-first route hides retained `SYNTHETIC-` acceptance cards, places the
+  weekly action before long result output, provides an explicit light/dark
+  switch, and renders five truthful activity phases: Amazon report, validation
+  and KPIs, market and competition, global crises, and strategy/handover. It
+  does not invent percentages or progress that the backend cannot observe.
 - Manual evidence supports Sales and Traffic plus identifier-free aggregate
   Sponsored Products campaign KPIs; there is no Amazon Ads API client.
 - One public-only Responses request may use at most three `web_search` calls.
@@ -50,37 +55,55 @@
   import/comparison/export passed.
 - Exact runtime parent `9c6f8ba30c829c42255f33311fcd838e9f761049`
   passed all seven jobs in GitHub Actions run `32363658273`.
-- Live revision `7c7f7dafc69be789ed7cfb95e8f30207ca410015` adds a
+- Revision `7c7f7dafc69be789ed7cfb95e8f30207ca410015` adds the
   fail-closed database boundary that excludes the reserved `SYNTHETIC-`
   acceptance namespace from weekly AI context. Its full DB suite passed 21/21,
   DB Clippy passed with warnings denied, and the workspace all-target check
   passed. The earlier `608691b` backup extension passed its exact local
   Sales+Ads empty-target restore with two raw hashes/two parser versions, zero
   provider secrets, and zero schedules.
+- Frontend revision `998d4864a75dd4349496e3ded5ad757886479f0c` adds the
+  light/dark switch, synthetic-card suppression, action-first layout, and the
+  five-phase live activity display. Build and lint passed; the new focused
+  Chromium test passed 1/1. A broader reused E2E run had one unrelated Ads
+  request failure against an older local backend image and was not treated as a
+  clean full-suite result.
+- Current backend revision `f984cd3e5bb2268d5c7523dbe497e60c70b32e06`
+  accepts Amazon's official dotted `amzn1.spdoc...` document identifiers while
+  retaining the closed character/length boundary and rejecting path syntax.
+  Both focused unit/transport tests and server Clippy with warnings denied pass.
 - GitHub run `32365245827` did not start any job. Every job was rejected before
   checkout because the account has failed recent payments or needs a higher
   Actions spending limit. Treat this as an external CI-account gate and keep PR
   #5 draft until it can be rerun successfully.
-- No real report, provider call, or business metric has yet been used. On
-  2026-08-20 the operator entered both provider credential sets through the
+- On 2026-08-20 the operator entered both provider credential sets through the
   write-only GUI. Live status verifies OpenAI configured with one expected
   field and Amazon configured with all six expected fields, read-only approval,
   region `eu`, one marketplace, one encrypted row per provider, and zero
   schedules; secret values were neither read nor logged.
+- The first real one-shot Amazon attempt refreshed LWA, created the requested
+  Sales and Traffic report, polled it to `DONE`, and received a document ID.
+  It then failed before `getReportDocument` because the local resource-ID
+  boundary had omitted Amazon's official dot character. No report bytes,
+  business metrics, or OpenAI request were produced. The fix is deployed in
+  `f984cd3`; a new click remains an explicit operator action.
 
 ## Accepted live state
 
 - Host `192.168.178.15`, Compose project `essentials-merchant-amazon`, exactly
-  PostgreSQL/backend/frontend, runs revision
-  `7c7f7dafc69be789ed7cfb95e8f30207ca410015`, schema 20, the seven-module
-  allowlist, and zero automatic schedules.
+  PostgreSQL/backend/frontend. The checked-out/backend revision is
+  `f984cd3e5bb2268d5c7523dbe497e60c70b32e06`; the unchanged running frontend
+  was built from UI revision `998d4864a75dd4349496e3ded5ad757886479f0c`.
+  Schema 20, the seven-module allowlist, and zero automatic schedules remain.
 - Image IDs: PostgreSQL
   `sha256:75f5a96988cdf694a215073c3e9c001b706b371e2f94df3967f2efdec2787f6b`,
-  backend `sha256:ad6594b44fff4e7bca650b64c929e295cc8d9b600b1b7e3cb501edddacf290ff`,
-  frontend `sha256:c6142da17061cde07af52dfc80af7acd58b80d5b8f0e0fc929b7059576f645bc`.
+  backend `sha256:3491f32cd921a3f97aa8e6417998815f7d99cd9e2a4479a994807e0d0a0bd99c`,
+  frontend `sha256:62d7cba7bd114208820651c02e1db3b3208e7978b66ba8fcbf9c21e8d98256c6`.
 - `https://ai-marketing.mantle-climbing.de` redirects inside the SPA to
-  `/ai-marketing`. Live Chromium found zero login headings/buttons, exactly one
-  `Analyse` button, the rising-market icon/favicon, and the Ads import.
+  `/ai-marketing`. Live Chromium found the no-login AI route, exactly one
+  enabled `Analyse` button, two configured-provider indicators, zero disclosed
+  password values, zero synthetic result cards, the rising-market icon/favicon,
+  the five pipeline phases, and a working light/dark switch.
 - The single weekly action uses aggregate manual evidence until credentials
   exist. Prompt v3 first performs public-only competitor/category/global-crisis
   research, then a separate tool-free synthesis with aggregate history and the
@@ -105,14 +128,17 @@
   `58eb2cd3375624159e717a08ca7fecb68b6a5a46e488d0d2ead0a99caa716bc0`.
   The empty-target recovery proof was local/disposable; no additional
   production restore was run.
-- Live OpenAI and Amazon credential records now exist only in the encrypted
-  write-only store and are excluded from backups. No provider request has yet
-  tested their validity; the first paid weekly run remains an explicit operator
-  action.
-- The `7c7f7da` safeguard deployment recreated only this project's backend and
-  frontend. PostgreSQL and Caddy retained their container IDs and restart
-  counts; all 26 non-target containers retained the pre-deploy baseline SHA-256
-  `d488f4591c34316d32034ea64faff2cdc96c18366ef5349c7a4491dd2e63cd95`.
+- Live OpenAI and Amazon credential records exist only in the encrypted
+  write-only store and are excluded from backups. The Amazon LWA and Reports
+  credentials are now proven through report completion, but no real document
+  has yet been downloaded and the OpenAI key has not yet been called.
+- The UI deployment recreated only this project's backend/frontend. The
+  follow-up dotted-document-ID fix recreated only its backend. PostgreSQL and
+  Caddy retained their container IDs and restart counts. The exact identity,
+  restart-count, and start-time hash for every running container other than the
+  replaced backend remained
+  `7163964b9ede17532627b1e09a74a1b317b4949014932a33c632dacec3b4c434`;
+  the post-deploy backend log scan found zero credential-shaped values.
 
 ## Authoritative files
 
