@@ -104,6 +104,15 @@
   enabled `Analyse` button, two configured-provider indicators, zero disclosed
   password values, zero synthetic result cards, the rising-market icon/favicon,
   the five pipeline phases, and a working light/dark switch.
+- A post-deploy 403 was traced to the shared Caddy snippet allowing only seven
+  fixed device IPs. Only the `ai-marketing.mantle-climbing.de` site now has a
+  dedicated source matcher for `192.168.178.0/24`, `10.0.0.0/8`, and
+  `100.64.0.0/10`; all other Mantle routes retain the narrower device list.
+  HTTPS, pilot-session POST, and a no-login Chromium load return 200. Caddy was
+  reloaded in place with zero restart; config SHA-256 is
+  `ab998fcd420a47d1a14c1956884aecec78e629cb6641bb92645e56b2d527f2f9`
+  and the previous file is retained as
+  `/opt/caddy/Caddyfile.before-ai-marketing-lan-20260820T1323Z`.
 - The single weekly action uses aggregate manual evidence until credentials
   exist. Prompt v3 first performs public-only competitor/category/global-crisis
   research, then a separate tool-free synthesis with aggregate history and the

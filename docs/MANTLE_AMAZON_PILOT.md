@@ -26,8 +26,10 @@ frontend was built from UI revision
 `998d4864a75dd4349496e3ded5ad757886479f0c`. Internal operators use
 `https://ai-marketing.mantle-climbing.de`; the retained fallback is
 `https://merchant.mantle-climbing.de/ai-marketing`. Both names resolve
-internally to the Docker host. Caddy accepts only private, loopback, or VPN
-source ranges. The frontend has no public host bind and there is no public
+internally to the Docker host. This hostname has its own Caddy source matcher
+for the local `192.168.178.0/24` LAN and private `10.0.0.0/8` or
+`100.64.0.0/10` VPN sources. Other Mantle hostnames retain their narrower
+device allowlist. The frontend has no public host bind and there is no public
 registration path. The Mantle dashboard links directly to the canonical AI
 hostname.
 
@@ -91,10 +93,12 @@ must be increased. This is an external CI-account gate, not a test failure; it
 must be cleared before PR #5 can leave draft.
 
 The UI deployment changed only this Compose project's application containers;
-the follow-up document-ID fix recreated only its backend. PostgreSQL and Caddy
-were not restarted, and Caddy was not changed or reloaded. The exact identity,
-restart-count, and start-time hash for every running container other than the
-replaced backend remained
+the follow-up document-ID fix recreated only its backend. PostgreSQL was not
+restarted. A later targeted Caddy reload replaced only this hostname's fixed
+device list with the documented LAN/VPN matcher after a client received 403;
+the Caddy container kept its ID, start time, and zero restart count. The exact
+identity, restart-count, and start-time hash for every running container other
+than the replaced backend remained
 `7163964b9ede17532627b1e09a74a1b317b4949014932a33c632dacec3b4c434`.
 Live Chromium reached `/ai-marketing` with the no-login shell, one enabled
 `Analyse` button, the branded favicon, both configured-provider indicators,
