@@ -16,19 +16,29 @@ mutation capability.
 
 ## Current Mantle deployment
 
-The accepted live revision is `66ce755da8fc1ebed1c4cf2dadd9ec838a4c34c3`
+The accepted live revision is `f1ec43c20a809cee3abdc87283812132c62def93`
 in Compose project `essentials-merchant-amazon` on `192.168.178.15`. Internal
-operators use `https://merchant.mantle-climbing.de`; the AI-first target is
-`https://ai-marketing.mantle-climbing.de`. The existing Merchant name resolves
-internally to the Docker host; the AI name still requires an authorized A record
-on the Windows DNS server. Caddy accepts only private,
-loopback, or VPN source ranges. The frontend has no public host bind and there
-is no public registration path.
+operators use `https://ai-marketing.mantle-climbing.de`; the retained fallback is
+`https://merchant.mantle-climbing.de/ai-marketing`. Both names resolve internally
+to the Docker host. Caddy accepts only private, loopback, or VPN source ranges.
+The frontend has no public host bind and there is no public registration path.
+The Mantle dashboard links directly to the canonical AI hostname.
 
 The first live acceptance used only visibly synthetic, in-memory reports. JSON,
 CSV, TSV, retry idempotence, two-period comparison, all summary formats,
 business-mutation blocking, backup, and empty-target restore passed. No
 authorized real report has been imported.
+
+The live image IDs are:
+
+- PostgreSQL: `sha256:75f5a96988cdf694a215073c3e9c001b706b371e2f94df3967f2efdec2787f6b`
+- backend: `sha256:325d2937867426faa13257017debc3da11ab99d9e028ecec99f41736283caf22`
+- frontend: `sha256:56bbcc509dcb8aa88d81fda7aa9da502da9a671a151692ff5b3daf5fc2597427`
+
+The final live backup was generated and verified through the repository-owned,
+digest-pinned Node container fallback, so the host does not need a Node.js
+installation. Empty-target restore acceptance matched raw archive hashes,
+normalized metrics, deterministic analyses, module state, and HTTP readiness.
 
 ## Relationship to the Mantle wiki toolchain
 
@@ -115,3 +125,8 @@ or gain a mutation tool. Validated model output is immutable, idempotent by
 analysis/hash/model/prompt version, and remains visibly separate from facts and
 deterministic derivations. Full activation and data-control details are in
 [STRATEGY_AI_GATE.md](STRATEGY_AI_GATE.md).
+
+The current live strategy status is
+`externally_blocked_missing_pay_per_use_api_key`. Manual report import,
+deterministic analysis, comparison, and export are available now; no real model
+request has been claimed.

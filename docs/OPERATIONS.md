@@ -185,18 +185,19 @@ alias, so the live Caddy upstream cannot resolve to the acceptance stack.
 The active Mantle route is `https://merchant.mantle-climbing.de`; the AI-first
 target is `https://ai-marketing.mantle-climbing.de`. Both must use internal DNS
 A records for `192.168.178.15`; public DNS must not publish that private address.
-The AI hostname requires an authorized Windows-DNS record before acceptance.
-Both routes target the same frontend alias and use the same LAN/VPN-only Caddy
-matcher. Operator credentials are generated on the host and retained with mode
-`0600` in `/root/essentials-merchant-amazon-admin-credentials`; never print or
-copy that file into the repository. The private runtime environment is
+The AI hostname and normal HTTPS resolution were verified during the 2026-08-20
+live acceptance. Both routes target the same frontend alias and use the same
+LAN/VPN-only Caddy matcher. Operator credentials are generated on the host and
+retained with mode `0600` in
+`/root/essentials-merchant-amazon-admin-credentials`; never print or copy that
+file into the repository. The private runtime environment is
 `/opt/essentials-merchant-amazon/.env.mantle-amazon` with the same mode.
 
 The Mantle Homer dashboard may link an `AI Amazon Marketing` tile in its existing
 E-Commerce group to the AI-first route. Its config is a live bind mount, so the
-tile does not require a dashboard-container restart. Add the tile only after
-Caddy validation; until the authorized Windows-DNS A record exists, use
-`https://merchant.mantle-climbing.de/ai-marketing` as the working fallback.
+tile does not require a dashboard-container restart. The accepted tile points to
+`https://ai-marketing.mantle-climbing.de`; the working fallback remains
+`https://merchant.mantle-climbing.de/ai-marketing`.
 
 Before every deployment, capture without rendering environment values:
 

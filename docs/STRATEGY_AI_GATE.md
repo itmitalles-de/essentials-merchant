@@ -20,6 +20,11 @@ API credits, or an API key. Activation requires a separately billed,
 project-scoped OpenAI API key approved for this Mantle workload. No substitute
 or fake credential may be generated.
 
+Live status on 2026-08-20 is
+`externally_blocked_missing_pay_per_use_api_key`: the route and aggregate gate
+are deployed, but the feature flag is false and no provider request has run.
+The manual and deterministic workflow is unaffected.
+
 The server reads these private environment entries:
 
 ```text

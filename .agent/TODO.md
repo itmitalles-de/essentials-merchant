@@ -14,20 +14,26 @@ This file is the authoritative unfinished-work handoff. Do not create a competin
   without a key.
 - [x] Verify Rust/DB/frontend, fresh Compose/Chromium, privacy/transport contracts, upgrade, and
   backup/empty-target restore with synthetic data only.
-- [ ] Stage, commit, and push the authorized current worktree to
-  `pilot/mantle-amazon-analysis-live`; then require all PR #5 jobs to pass on that exact head.
-- [ ] Re-baseline the productive host immediately before deployment and update only Compose project
+- [x] Stage, commit, and push the authorized implementation and recovery fix to
+  `pilot/mantle-amazon-analysis-live`; all seven PR #5 jobs passed on deployed head
+  `f1ec43c20a809cee3abdc87283812132c62def93`.
+- [x] Re-baseline the productive host immediately before deployment and update only Compose project
   `essentials-merchant-amazon` with full Git-SHA backend/frontend images. Do not touch its volumes
   or other projects.
-- [ ] Add a validated, gracefully reloaded LAN/VPN-only Caddy route for
+- [x] Add a validated, gracefully reloaded LAN/VPN-only Caddy route for
   `ai-marketing.mantle-climbing.de` to `essentials-merchant-amazon-frontend:80` and an E-Commerce
   tile in the existing Homer config. Do not restart Caddy or Homer wholesale.
-- [ ] Have an authorized AD DNS administrator add internal A record
-  `ai-marketing.mantle-climbing.de -> 192.168.178.15`; authority is not available on the Docker
-  host. Until then use the same feature through `merchant.mantle-climbing.de/ai-marketing`.
-- [ ] Run live synthetic acceptance with OpenAI disabled: login, AI-first view, existing analysis,
+- [x] Verify the internal A record `ai-marketing.mantle-climbing.de -> 192.168.178.15` and canonical
+  route through normal DNS resolution.
+- [x] Run live synthetic acceptance with OpenAI disabled: login, AI-first view, existing analysis,
   disabled external gate, import/comparison/export, unchanged non-target container IDs/restarts,
   logs/secrets check, backup, and empty-target restore.
+
+## Operational retention decision
+
+- [ ] After a human confirms the final backup, decide whether to retain or explicitly remove the two
+  stopped restore audit volumes and the segregated, manifest-less first backup attempt. Never use
+  the failed partial directory as a restore source and never use `docker compose down -v`.
 
 ## External OpenAI gate
 

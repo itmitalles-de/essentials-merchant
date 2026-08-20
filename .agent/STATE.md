@@ -4,11 +4,11 @@
 
 - On 2026-08-20 the user explicitly resumed work and requested an internal Amazon strategy
   mini-tool at `ai-marketing.mantle-climbing.de`.
-- Active branch: `pilot/mantle-amazon-analysis-live`; published base HEAD remains
-  `62dd38eedc0a6c05fa96fe0bdd1c26d65c161ee9`. Draft PR #5 was green at that exact head before this
-  uncommitted implementation.
-- The worktree contains the complete local implementation and documentation but no new commit or
-  push yet. The user explicitly authorized commit, push, deployment, and use of a separately billed
+- Active branch: `pilot/mantle-amazon-analysis-live`. The deployed application/operations revision
+  is `f1ec43c20a809cee3abdc87283812132c62def93`; all seven PR #5 jobs passed on that exact head in CI
+  run `32336051994`.
+- Draft PR #5 remains open and intentionally unmerged because broader Merchant work is paused. The
+  user explicitly authorized this Mantle deployment and future use of a separately billed
   pay-per-use OpenAI API key on 2026-08-20.
 
 ## Broader Merchant handover
@@ -63,32 +63,46 @@
   violations.
 - Synthetic pilot backup and empty-target restore preserve one validated AI assessment while
   excluding API key, prompt, and raw provider response. The v10-to-v17 upgrade rehearsal passes.
+- The Amazon backup/restore rehearsal also passes with `MERCHANT_NODE_RUNTIME=container`; the
+  production host no longer needs a system-wide Node installation for manifest generation or
+  verification.
 - Amazon operation ownership and secret scans pass. No real report, business metric, or provider
   credential was used.
 
 ## Live state and gates
 
-- No live change from this implementation has been made. `192.168.178.15` still runs clean detached
-  revision `66ce755da8fc1ebed1c4cf2dadd9ec838a4c34c3` in Compose project
-  `essentials-merchant-amazon` with PostgreSQL/backend/frontend only.
-- Current image IDs remain PostgreSQL
+- `192.168.178.15` runs clean detached revision
+  `f1ec43c20a809cee3abdc87283812132c62def93` in Compose project
+  `essentials-merchant-amazon`, with exactly PostgreSQL/backend/frontend. Image IDs are PostgreSQL
   `sha256:75f5a96988cdf694a215073c3e9c001b706b371e2f94df3967f2efdec2787f6b`, backend
-  `sha256:6f0b36ad79b1c54cb9b3f6ae39aeae0f1da99154970d91d443018fd618a323cb`, and frontend
-  `sha256:cf2ecd75a4b036e47f87679a2ee41f6efb5d2333aaad519d21f19c0b089b4ca6`.
-- Live baseline on 2026-08-20: 69 GiB free, no concurrent deployment process, private environment
-  mode `0600`, existing LAN/VPN-only `merchant.mantle-climbing.de` Caddy route, and clean target
-  checkout. No `.env` content was read or printed.
-- Caddy and the Mantle Homer dashboard can be extended without another service: route the new host
-  to `essentials-merchant-amazon-frontend:80` using the existing private-source matcher and add an
-  E-Commerce tile. This has not been applied.
-- Internal Windows DNS at `192.168.178.12` currently returns no A record for
-  `ai-marketing.mantle-climbing.de`; `merchant.mantle-climbing.de` resolves to `192.168.178.15`.
-  Credentials/authority for the AD DNS server were not supplied, so the record is an external gate.
+  `sha256:325d2937867426faa13257017debc3da11ab99d9e028ecec99f41736283caf22`, and frontend
+  `sha256:56bbcc509dcb8aa88d81fda7aa9da502da9a671a151692ff5b3daf5fc2597427`.
+- `https://ai-marketing.mantle-climbing.de` resolves internally to `192.168.178.15`, returns HTTP
+  200, and uses the existing Caddy private-source matcher. Homer serves an `AI Amazon Marketing`
+  tile pointing to the canonical route. Caddy was validated and gracefully reloaded; neither Caddy
+  nor Homer restarted.
+- Live synthetic acceptance imported two JSON periods plus CSV/TSV, proved retry idempotence,
+  produced a deterministic comparison and JSON/Markdown/CSV exports, and confirmed blocked raw
+  download and business mutations. Schema 17, the seven-module allowlist, zero automatic schedules,
+  raw hashes, and target logs were rechecked; no non-target container restarted.
+- Verified backups are retained at
+  `/opt/essentials-merchant-amazon-backups/pre-5542769-20260820T050718Z`,
+  `/opt/essentials-merchant-amazon-backups/live-synthetic-5542769-20260820T052225Z`, and
+  `/opt/essentials-merchant-amazon-backups/live-final-f1ec43c-20260820T054653Z`. The final backup
+  ran through the committed pinned-Node fallback. An empty-target restore matched live raw/archive,
+  metric, and analysis fingerprints and HTTP readiness; its containers/network were removed without
+  `-v`, while its two volumes remain for audit.
+- During credential-file format inspection, the former operator password appeared once in tool
+  output. It was immediately treated as compromised: a new server-side credential was generated,
+  the old database login was disabled, old/new login behavior returned 401/200 respectively, and
+  both the private environment and credential file remain mode `0600`. No replacement value was
+  printed or committed.
 - No `OPENAI_API_KEY` is available locally or on the live host. Activation requires a separately
-  billed, project-scoped key placed server-side without exposing its value. Deployment may safely
-  proceed with the panel disabled, but a real AI run cannot be claimed until that gate is satisfied.
+  billed, project-scoped key placed server-side without exposing its value. The live status is
+  `externally_blocked_missing_pay_per_use_api_key`; a confirmed request fails closed with
+  `openai_not_configured`, while manual analysis remains fully usable.
 - SP-API and a real Amazon report remain separately blocked; all current acceptance data is visibly
-  synthetic.
+  synthetic. Root filesystem free space after acceptance is 68 GiB.
 
 ## Authoritative files
 
@@ -97,4 +111,5 @@
 - `frontend/src/pages/MarketplaceIntelligence.tsx`, `frontend/src/App.tsx`, strategy API types
 - `docs/STRATEGY_AI_GATE.md`, `docs/MANTLE_AMAZON_PILOT.md`, `docs/DATA_HANDLING.md`,
   `docs/OPERATIONS.md`, `docs/API.md`
-- `compose.mantle-amazon.yml`, backup/restore and transport/secret contract scripts
+- `compose.mantle-amazon.yml`, `ops/run-node-tool.sh`, backup/restore and transport/secret contract
+  scripts
