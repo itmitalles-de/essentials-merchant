@@ -4,6 +4,8 @@ import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+const pilotBackupPath = join(root, "ops/backup-amazon-pilot.sh");
+const pilotBackup = readFileSync(pilotBackupPath, "utf8");
 const frontendProxyPath = join(root, "frontend/nginx.conf");
 const frontendProxy = readFileSync(frontendProxyPath, "utf8");
 const transportPath = join(root, "backend/crates/server/src/marketplace.rs");
@@ -36,6 +38,18 @@ if (!privacySafeLogFormat.includes("$request_method")
 }
 if (/\$(?:args|query_string|request_uri)\b|\$request(?:\s|['"])/.test(privacySafeLogFormat)) {
   fail("Frontend access logs must not record upload query parameters");
+}
+
+const backupReportAllowlistBody = pilotBackup.match(
+  /WHERE run\.report_type NOT IN \(([\s\S]*?)\)/,
+)?.[1] ?? "";
+const backupReportAllowlist = [...backupReportAllowlistBody.matchAll(/'([^']+)'/g)]
+  .map((match) => match[1]);
+if (JSON.stringify(backupReportAllowlist) !== JSON.stringify([
+  "GET_SALES_AND_TRAFFIC_REPORT",
+  "AMAZON_ADS_SPONSORED_PRODUCTS_CAMPAIGN_REPORT",
+])) {
+  fail(`Pilot backup report allowlist changed: ${JSON.stringify(backupReportAllowlist)}`);
 }
 
 const enumBody = transport.match(/pub enum AmazonOperation\s*\{([\s\S]*?)\n\}/)?.[1] ?? "";

@@ -31,11 +31,14 @@ fi
 unsafe_secret_refs=$(compose exec -T db psql -U erplite -d erplite -X -qAt -v ON_ERROR_STOP=1 -c \
   "SELECT count(*) FROM amazon_connections
    WHERE mode = 'live' AND secret_ref !~ '^[a-z][a-z0-9_]{0,63}$'")
-potential_pii_archives=$(compose exec -T db psql -U erplite -d erplite -X -qAt -v ON_ERROR_STOP=1 -c \
+unsupported_archives=$(compose exec -T db psql -U erplite -d erplite -X -qAt -v ON_ERROR_STOP=1 -c \
   "SELECT count(*) FROM amazon_report_documents document
    JOIN amazon_report_runs run ON run.id = document.run_id
-   WHERE run.report_type <> 'GET_SALES_AND_TRAFFIC_REPORT'")
-if [ "$unsafe_secret_refs" != 0 ] || [ "$potential_pii_archives" != 0 ]; then
+   WHERE run.report_type NOT IN (
+     'GET_SALES_AND_TRAFFIC_REPORT',
+     'AMAZON_ADS_SPONSORED_PRODUCTS_CAMPAIGN_REPORT'
+   )")
+if [ "$unsafe_secret_refs" != 0 ] || [ "$unsupported_archives" != 0 ]; then
   echo "pilot backup refused: unsafe secret reference or non-pilot raw archive detected" >&2
   exit 2
 fi
@@ -67,7 +70,8 @@ schema_version=$(compose exec -T db psql -U erplite -d erplite -X -qAt -v ON_ERR
   -c 'SELECT COALESCE(max(version), 0) FROM _sqlx_migrations')
 compose exec -T db psql -U erplite -d erplite -X -qAt -v ON_ERROR_STOP=1 -c \
   "SELECT jsonb_pretty(jsonb_build_object(
-     'declared', ARRAY['sales-traffic-json-v2', 'manual-sales-traffic-v1', 'inventory-planning-tsv-v1'],
+     'declared', ARRAY['sales-traffic-json-v2', 'manual-sales-traffic-v1',
+                       'manual-ads-sp-campaign-v1', 'inventory-planning-tsv-v1'],
      'stored', COALESCE((SELECT jsonb_agg(version ORDER BY version)
                          FROM (SELECT DISTINCT parser_version AS version
                                FROM amazon_report_documents WHERE parser_version IS NOT NULL) versions), '[]'::jsonb)

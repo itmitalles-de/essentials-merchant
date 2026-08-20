@@ -120,13 +120,13 @@ OpenAI and Amazon credentials must be deliberately entered again afterward.
 
 Before quiescing services, the backup fails closed if a live connection contains anything other
 than a constrained logical secret-reference name or if a raw archive belongs to a report type
-outside the aggregate Sales & Traffic pilot. It does not silently copy a historical potential-PII
-archive into a pilot backup.
+outside the exact Sales & Traffic and aggregate Sponsored Products campaign allowlist. It does not
+silently copy a historical potential-PII archive into a pilot backup.
 
 `ops/restore-amazon-pilot.sh` refuses a non-empty destination project. The automated rehearsal
-seeds a report larger than 2 MiB, restores into an empty project, and compares report inventory,
-raw hashes, parser/snapshot/analysis fingerprints, audit, exact module state, schedule state, and
-the read-only pilot profile:
+seeds a Sales & Traffic report larger than 2 MiB plus an aggregate Ads campaign report, restores
+into an empty project, and compares report inventory, both raw hashes, parser/snapshot/analysis
+fingerprints, audit, exact module state, schedule state, and the read-only pilot profile:
 
 ```bash
 ops/test-amazon-pilot-backup-restore.sh

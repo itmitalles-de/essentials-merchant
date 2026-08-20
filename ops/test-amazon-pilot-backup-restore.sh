@@ -54,6 +54,20 @@ VALUES
 INSERT INTO amazon_report_run_events (run_id, status, message)
 VALUES
   ('22222222-2222-4222-8222-222222222222', 'succeeded', 'Synthetic deterministic pilot fixture');
+INSERT INTO amazon_report_runs
+  (id, connection_id, marketplace_id, report_type, data_start_time, data_end_time,
+   report_options, trigger_source, idempotency_key, status, amazon_report_id,
+   amazon_report_document_id, requested_at, completed_at)
+VALUES
+  ('22222222-2222-4222-8222-222222222223', '11111111-1111-4111-8111-111111111111',
+   'SYNTHETIC-MARKETPLACE', 'AMAZON_ADS_SPONSORED_PRODUCTS_CAMPAIGN_REPORT',
+   '2026-08-01T00:00:00Z', '2026-08-01T23:59:59Z',
+   '{"attributionWindow":"7d"}', 'manual', 'synthetic-pilot-backup-ads-run',
+   'succeeded', 'synthetic-ads-report-id', 'synthetic-ads-document-id', now(), now());
+INSERT INTO amazon_report_run_events (run_id, status, message)
+VALUES
+  ('22222222-2222-4222-8222-222222222223', 'succeeded',
+   'Synthetic aggregate Ads pilot fixture');
 WITH payload AS (
   SELECT convert_to(repeat('{"synthetic_aggregate":true}' || chr(10), 100000), 'UTF8') AS bytes
 )
@@ -66,6 +80,22 @@ SELECT
   encode(digest(bytes, 'sha256'), 'hex'), 'application/json', bytes, bytes,
   'sales-traffic-json-v2', 'parsed'
 FROM payload;
+WITH payload AS (
+  SELECT convert_to(
+    'date,campaignName,impressions,clicks,cost,7 Day Total Sales' || chr(10) ||
+    '2026-08-01,SYNTHETIC-CAMPAIGN,100,10,20.00,80.00' || chr(10),
+    'UTF8'
+  ) AS bytes
+)
+INSERT INTO amazon_report_documents
+  (id, run_id, amazon_report_document_id, sha256, decoded_sha256, content_type,
+   raw_content, decoded_content, parser_version, import_status)
+SELECT
+  '33333333-3333-4333-8333-333333333334', '22222222-2222-4222-8222-222222222223',
+  'synthetic-ads-document-id', encode(digest(bytes, 'sha256'), 'hex'),
+  encode(digest(bytes, 'sha256'), 'hex'), 'text/csv', bytes, bytes,
+  'manual-ads-sp-campaign-v1', 'parsed'
+FROM payload;
 INSERT INTO amazon_metric_snapshots
   (id, run_id, connection_id, marketplace_id, report_type, parser_version,
    period_start, period_end, granularity, comparability_key, summary)
@@ -75,11 +105,26 @@ VALUES
    'GET_SALES_AND_TRAFFIC_REPORT', 'sales-traffic-json-v2',
    '2026-08-01T00:00:00Z', '2026-08-01T23:59:59Z', 'day_child',
    'sales-traffic:day_child:1d', '{"synthetic":true,"records":100000}');
+INSERT INTO amazon_metric_snapshots
+  (id, run_id, connection_id, marketplace_id, report_type, parser_version,
+   period_start, period_end, granularity, comparability_key, summary)
+VALUES
+  ('44444444-4444-4444-8444-444444444445', '22222222-2222-4222-8222-222222222223',
+   '11111111-1111-4111-8111-111111111111', 'SYNTHETIC-MARKETPLACE',
+   'AMAZON_ADS_SPONSORED_PRODUCTS_CAMPAIGN_REPORT', 'manual-ads-sp-campaign-v1',
+   '2026-08-01T00:00:00Z', '2026-08-01T23:59:59Z', 'day_total',
+   'ads-sp-campaign:day_total:1d:7d:EUR:Europe/Berlin',
+   '{"synthetic":true,"attribution_window":"7d"}');
 INSERT INTO amazon_normalized_metrics
   (snapshot_id, metric_name, dimension_type, dimension_key, value_numeric, unit, evidence)
 VALUES
   ('44444444-4444-4444-8444-444444444444', 'sessions', 'catalog', '', 100000, 'sessions',
    '{"source":"synthetic-backup-fixture"}');
+INSERT INTO amazon_normalized_metrics
+  (snapshot_id, metric_name, dimension_type, dimension_key, value_numeric, unit, evidence)
+VALUES
+  ('44444444-4444-4444-8444-444444444445', 'ads_impressions', 'aggregate', '', 100,
+   'impressions', '{"source":"synthetic-backup-ads-fixture"}');
 INSERT INTO amazon_analysis_jobs
   (id, run_id, connection_id, marketplace_id, report_type, analysis_type,
    period_start, period_end, status, completed_at)
@@ -152,6 +197,7 @@ source_fingerprint=$(compose "$source_project" exec -T db psql -U erplite -d erp
   "SELECT concat_ws('|',
      (SELECT count(*) FROM amazon_report_runs),
      (SELECT sha256 FROM amazon_report_documents WHERE id = '33333333-3333-4333-8333-333333333333'),
+     (SELECT sha256 FROM amazon_report_documents WHERE id = '33333333-3333-4333-8333-333333333334'),
      (SELECT count(*) FROM amazon_metric_snapshots),
      (SELECT count(*) FROM amazon_analysis_results),
      (SELECT count(*) FROM amazon_ai_strategy_assessments),
@@ -162,7 +208,15 @@ test "$(compose "$source_project" exec -T db psql -U erplite -d erplite -X -qAt 
 test "$(compose "$source_project" exec -T db psql -U erplite -d erplite -X -qAt -c \
   "SELECT count(*) FROM amazon_report_documents document
    JOIN amazon_report_runs run ON run.id = document.run_id
-   WHERE run.report_type <> 'GET_SALES_AND_TRAFFIC_REPORT'")" = 0
+   WHERE run.report_type NOT IN (
+     'GET_SALES_AND_TRAFFIC_REPORT',
+     'AMAZON_ADS_SPONSORED_PRODUCTS_CAMPAIGN_REPORT'
+   )")" = 0
+test "$(compose "$source_project" exec -T db psql -U erplite -d erplite -X -qAt -c \
+  "SELECT count(*) FROM amazon_report_documents document
+   JOIN amazon_report_runs run ON run.id = document.run_id
+   WHERE run.report_type = 'AMAZON_ADS_SPONSORED_PRODUCTS_CAMPAIGN_REPORT'
+     AND document.parser_version = 'manual-ads-sp-campaign-v1'")" = 1
 test "$(compose "$source_project" exec -T db psql -U erplite -d erplite -X -qAt -c \
   "SELECT count(*) FROM pilot_provider_secrets")" = 1
 
@@ -188,6 +242,7 @@ restored_fingerprint=$(compose "$restore_project" exec -T db psql -U erplite -d 
   "SELECT concat_ws('|',
      (SELECT count(*) FROM amazon_report_runs),
      (SELECT sha256 FROM amazon_report_documents WHERE id = '33333333-3333-4333-8333-333333333333'),
+     (SELECT sha256 FROM amazon_report_documents WHERE id = '33333333-3333-4333-8333-333333333334'),
      (SELECT count(*) FROM amazon_metric_snapshots),
      (SELECT count(*) FROM amazon_analysis_results),
      (SELECT count(*) FROM amazon_ai_strategy_assessments),
@@ -201,6 +256,11 @@ test "$(compose "$restore_project" exec -T db psql -U erplite -d erplite -X -qAt
 test "$(compose "$restore_project" exec -T db psql -U erplite -d erplite -X -qAt -v ON_ERROR_STOP=1 -c \
   "SELECT count(*) FROM pilot_provider_secrets")" = 0
 test "$(compose "$restore_project" exec -T db psql -U erplite -d erplite -X -qAt -v ON_ERROR_STOP=1 -c \
+  "SELECT count(*) FROM amazon_report_documents document
+   JOIN amazon_report_runs run ON run.id = document.run_id
+   WHERE run.report_type = 'AMAZON_ADS_SPONSORED_PRODUCTS_CAMPAIGN_REPORT'
+     AND document.parser_version = 'manual-ads-sp-campaign-v1'")" = 1
+test "$(compose "$restore_project" exec -T db psql -U erplite -d erplite -X -qAt -v ON_ERROR_STOP=1 -c \
   "SELECT count(*) FROM amazon_ai_strategy_assessments
    WHERE week_start = DATE '2026-08-17'
      AND result ? 'handover'
@@ -209,4 +269,4 @@ test "$(docker run --rm -v "${restore_project}_erplite_invoices:/source:ro" \
   postgres:16-alpine@sha256:cf78e76683b9ca8c5733cbbdce6c9262b45b6767934dd0a95e671f9a0fc20685 \
   cat /source/amazon-pilot/fixture.txt)" = 'synthetic pilot operations document'
 
-echo "Amazon pilot backup/restore passed: large raw archive, hashes, snapshot, parser, deterministic/AI analyses, modules, audit, documents, credential exclusion, and fail-closed profile verified."
+echo "Amazon pilot backup/restore passed: Sales and Traffic plus aggregate Ads raw archives, hashes, snapshots, parsers, deterministic/AI analyses, modules, audit, documents, credential exclusion, and fail-closed profile verified."
