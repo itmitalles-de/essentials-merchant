@@ -22,6 +22,7 @@ const MAX_PUBLIC_SOURCES: usize = 15;
 const MIN_PUBLIC_SOURCES: usize = 3;
 const MAX_WEB_SEARCH_CALLS: usize = 3;
 const PROVIDER_REQUEST_TIMEOUT_SECONDS: u64 = 120;
+const MAX_STRATEGY_OUTPUT_TOKENS: u64 = 8_000;
 const MAX_BUSINESS_KNOWLEDGE_BYTES: usize = 48 * 1024;
 const MAX_BUSINESS_SOURCES: usize = 32;
 const MAX_BUSINESS_ENTRIES: usize = 80;
@@ -299,6 +300,12 @@ pub enum StrategyAiError {
     InvalidResearchResponse,
     #[error("the model returned an invalid final strategy assessment")]
     InvalidAssessmentResponse,
+    #[error("the model returned malformed strategy JSON")]
+    InvalidAssessmentJson,
+    #[error("the model returned strategy sources owned by the server")]
+    InvalidAssessmentSources,
+    #[error("the model returned strategy content outside validated bounds")]
+    InvalidAssessmentValidation,
     #[error("the public research request is temporarily unavailable")]
     ResearchUnavailable,
     #[error("the final strategy assessment request is temporarily unavailable")]
@@ -567,6 +574,7 @@ impl StrategyAiClient {
         if input.len() > MAX_INPUT_BYTES {
             return Err(StrategyAiError::PayloadTooLarge);
         }
+        let allowed_refs = allowed_evidence_refs(&provider_payload);
         let request = json!({
             "model": &self.inner.model,
             "store": false,
@@ -583,9 +591,9 @@ impl StrategyAiClient {
             }],
             "text": {
                 "verbosity": "medium",
-                "format": strategy_output_schema()
+                "format": strategy_output_schema(&allowed_refs)
             },
-            "max_output_tokens": 4_000,
+            "max_output_tokens": MAX_STRATEGY_OUTPUT_TOKENS,
             "safety_identifier": safety_identifier,
         });
         let response = self
@@ -594,14 +602,17 @@ impl StrategyAiClient {
             .map_err(mark_invalid_assessment_response)?;
         let text = response_text(&response.envelope).map_err(mark_invalid_assessment_response)?;
         let mut assessment: StrategyAssessment =
-            serde_json::from_str(text).map_err(|_| StrategyAiError::InvalidAssessmentResponse)?;
+            serde_json::from_str(text).map_err(|_| StrategyAiError::InvalidAssessmentJson)?;
         if !assessment.public_sources.is_empty() {
-            return Err(StrategyAiError::InvalidAssessmentResponse);
+            return Err(StrategyAiError::InvalidAssessmentSources);
         }
         assessment.public_sources = research.sources;
         assessment
-            .validate(&allowed_evidence_refs(&provider_payload))
-            .map_err(mark_invalid_assessment_response)?;
+            .validate(&allowed_refs)
+            .map_err(|error| match error {
+                StrategyAiError::InvalidResponse => StrategyAiError::InvalidAssessmentValidation,
+                other => other,
+            })?;
         Ok(StrategyAiCompletion {
             assessment,
             provider_request_id_redacted: response.provider_request_id_redacted,
@@ -1729,14 +1740,25 @@ fn validate_strings(
     Ok(())
 }
 
-fn strategy_output_schema() -> Value {
+fn strategy_output_schema(allowed_refs: &BTreeSet<String>) -> Value {
+    let evidence_ref = json!({
+        "type": "string",
+        "enum": allowed_refs.iter().collect::<Vec<_>>()
+    });
+    let public_evidence_ref = json!({
+        "type": "string",
+        "enum": allowed_refs
+            .iter()
+            .filter(|reference| reference.starts_with("public:"))
+            .collect::<Vec<_>>()
+    });
     let finding = json!({
         "type": "object",
         "properties": {
             "title": { "type": "string" },
             "rationale": { "type": "string" },
             "confidence": { "type": "string", "enum": ["low", "medium", "high"] },
-            "evidence_refs": { "type": "array", "items": { "type": "string" }, "maxItems": 12 }
+            "evidence_refs": { "type": "array", "items": evidence_ref.clone(), "maxItems": 12 }
         },
         "required": ["title", "rationale", "confidence", "evidence_refs"],
         "additionalProperties": false
@@ -1750,7 +1772,7 @@ fn strategy_output_schema() -> Value {
             "confidence": { "type": "string", "enum": ["low", "medium", "high"] },
             "uncertainty": { "type": "string" },
             "evidence_refs": {
-                "type": "array", "items": { "type": "string" }, "minItems": 1, "maxItems": 8
+                "type": "array", "items": public_evidence_ref, "minItems": 1, "maxItems": 8
             }
         },
         "required": [
@@ -1784,7 +1806,7 @@ fn strategy_output_schema() -> Value {
                             "rationale": { "type": "string" },
                             "confidence": { "type": "string", "enum": ["low", "medium", "high"] },
                             "evidence_needed": { "type": "array", "items": { "type": "string" }, "maxItems": 8 },
-                            "evidence_refs": { "type": "array", "items": { "type": "string" }, "maxItems": 12 }
+                            "evidence_refs": { "type": "array", "items": evidence_ref.clone(), "maxItems": 12 }
                         },
                         "required": ["statement", "rationale", "confidence", "evidence_needed", "evidence_refs"],
                         "additionalProperties": false
@@ -1801,7 +1823,7 @@ fn strategy_output_schema() -> Value {
                             "priority": { "type": "string", "enum": ["now", "next", "later"] },
                             "expected_signal": { "type": "string" },
                             "risks": { "type": "array", "items": { "type": "string" }, "maxItems": 8 },
-                            "evidence_refs": { "type": "array", "items": { "type": "string" }, "maxItems": 12 }
+                            "evidence_refs": { "type": "array", "items": evidence_ref, "maxItems": 12 }
                         },
                         "required": ["title", "rationale", "priority", "expected_signal", "risks", "evidence_refs"],
                         "additionalProperties": false
@@ -2302,6 +2324,24 @@ mod tests {
         assert_eq!(assessment_request["reasoning"]["effort"], "medium");
         assert_eq!(assessment_request["text"]["format"]["type"], "json_schema");
         assert_eq!(assessment_request["text"]["format"]["strict"], true);
+        assert_eq!(
+            assessment_request["max_output_tokens"],
+            MAX_STRATEGY_OUTPUT_TOKENS
+        );
+        let evidence_ref_enum = assessment_request
+            .pointer("/text/format/schema/properties/opportunities/items/properties/evidence_refs/items/enum")
+            .and_then(Value::as_array)
+            .unwrap();
+        assert!(evidence_ref_enum.contains(&json!("analysis:1:fact:sessions")));
+        assert!(evidence_ref_enum.contains(&json!("public:1")));
+        let public_ref_enum = assessment_request
+            .pointer("/text/format/schema/properties/public_context/properties/competitor_signals/items/properties/evidence_refs/items/enum")
+            .and_then(Value::as_array)
+            .unwrap();
+        assert_eq!(public_ref_enum.len(), 3);
+        assert!(public_ref_enum.iter().all(|reference| reference
+            .as_str()
+            .is_some_and(|value| value.starts_with("public:"))));
         assert!(assessment_request.get("tools").is_none());
         let assessment_serialized = assessment_request.to_string();
         assert!(assessment_serialized.contains("sessions"));

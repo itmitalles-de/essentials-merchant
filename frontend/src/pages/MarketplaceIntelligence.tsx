@@ -1525,6 +1525,12 @@ function strategyErrorMessage(error: unknown): string {
       "Die öffentliche Markt- und Krisenrecherche war nicht gültig strukturiert. Der Wochenlauf wurde nicht verbraucht.",
     openai_assessment_invalid_response:
       "Die abschließende KI-Bewertung war nicht gültig strukturiert. Der Wochenlauf wurde nicht verbraucht.",
+    openai_assessment_invalid_json:
+      "Die abschließende KI-Bewertung enthielt kein gültiges JSON. Der Wochenlauf wurde nicht verbraucht.",
+    openai_assessment_invalid_sources:
+      "Die abschließende KI-Bewertung verletzte die serverseitige Quellengrenze. Der Wochenlauf wurde nicht verbraucht.",
+    openai_assessment_validation_failed:
+      "Die abschließende KI-Bewertung lag außerhalb der geprüften Inhaltsgrenzen. Der Wochenlauf wurde nicht verbraucht.",
     openai_research_unavailable:
       "Die öffentliche Markt- und Krisenrecherche hat ihr Zeitlimit erreicht. Der Wochenlauf wurde nicht verbraucht.",
     openai_assessment_unavailable:

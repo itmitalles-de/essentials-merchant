@@ -158,6 +158,7 @@ for (const marker of [
   "MAX_INPUT_BYTES",
   "MAX_RESPONSE_BYTES",
   "PROVIDER_REQUEST_TIMEOUT_SECONDS",
+  "MAX_STRATEGY_OUTPUT_TOKENS",
   ".chunk()",
 ]) {
   if (!productionStrategyTransport.includes(marker)) {
