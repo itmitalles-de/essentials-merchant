@@ -15,6 +15,7 @@ import type {
   MarketplaceImportResult,
   MarketplaceAdsImportPreview,
   MarketplaceAdsImportResult,
+  MarketplaceAnalysisSummary,
   MarketplaceOverview,
   MarketplaceRunDetail,
   MarketplaceStrategyAction,
@@ -28,6 +29,26 @@ import type {
 const salesReport = "GET_SALES_AND_TRAFFIC_REPORT";
 const adsCampaignReport = "AMAZON_ADS_SPONSORED_PRODUCTS_CAMPAIGN_REPORT";
 const terminalRunStatuses = ["succeeded", "archived", "cancelled", "fatal", "failed"];
+
+type StrategyProgressPhase = "amazon" | "aggregate" | "intelligence";
+
+const strategyPhaseMessages: Record<StrategyProgressPhase, string> = {
+  amazon: "Amazon erstellt und übermittelt den read-only Sales-&-Traffic-Bericht …",
+  aggregate: "Report wird geprüft, gehasht und in vergleichbare KPIs übersetzt …",
+  intelligence: "Markt, Wettbewerb und globale Krisen werden recherchiert; danach entstehen Strategie und Handover …",
+};
+
+function isSyntheticMarketplace(value: unknown): boolean {
+  return typeof value === "string" && value.toUpperCase().startsWith("SYNTHETIC-");
+}
+
+function isSyntheticAnalysis(analysis: MarketplaceAnalysisSummary): boolean {
+  const context = typeof analysis.result.context === "object" && analysis.result.context !== null
+    ? analysis.result.context as Record<string, unknown>
+    : {};
+  return isSyntheticMarketplace(context.marketplace)
+    || isSyntheticMarketplace(context.marketplace_id);
+}
 
 interface ImportConfirmation {
   marketplaceId: string;
@@ -155,12 +176,18 @@ export function MarketplaceIntelligence({ aiFirst = false }: { aiFirst?: boolean
     [overview],
   );
   const analyses = useMemo(
-    () => [...(overview?.analyses ?? [])].sort((left, right) =>
-      right.created_at.localeCompare(left.created_at)),
-    [overview],
+    () => [...(overview?.analyses ?? [])]
+      .filter((analysis) => !aiFirst || !isSyntheticAnalysis(analysis))
+      .sort((left, right) => right.created_at.localeCompare(left.created_at)),
+    [aiFirst, overview],
+  );
+  const recentRuns = useMemo(
+    () => (overview?.recent_runs ?? [])
+      .filter((run) => !aiFirst || !isSyntheticMarketplace(run.marketplace_id)),
+    [aiFirst, overview],
   );
   const immutableJsonMetadata = preview?.detected_format.toLowerCase().includes("json") ?? false;
-  const latestSuccessful = overview?.recent_runs.find((run) => run.status === "succeeded");
+  const latestSuccessful = recentRuns.find((run) => run.status === "succeeded");
   const realSpApiReady = Boolean(
     connection?.mode === "live" && connection.credential_configured && marketplaceId,
   );
@@ -310,33 +337,27 @@ export function MarketplaceIntelligence({ aiFirst = false }: { aiFirst?: boolean
           Analysen aktualisieren
         </button>
       </div>
-      {analyses.length === 0 && (
-        <div className="card">
+      <div className="card analysis-control-card">
+        {analyses.length === 0 && (
           <p>
-            Noch keine Analyse vorhanden. Importiere unten einen Zeitraum; für belastbare Deltas
-            anschließend einen kompatiblen zweiten Zeitraum.
+            Noch keine echten Mantle-Analysedaten vorhanden. Mit konfiguriertem Amazon-Zugang lädt
+            der Analyse-Button selbstständig den letzten abgeschlossenen Sieben-Tage-Zeitraum.
           </p>
-          <WeeklyStrategyPanel
-            key={`weekly-${credentialRevision}`}
-            liveConnection={realSpApiReady ? connection : null}
-            marketplaceId={realSpApiReady ? marketplaceId : null}
-            recentRuns={overview?.recent_runs ?? []}
-            onDataUpdated={reload}
-          />
-        </div>
-      )}
-      {analyses.map((analysis, index) => (
+        )}
+        <WeeklyStrategyPanel
+          key={`weekly-${credentialRevision}`}
+          liveConnection={realSpApiReady ? connection : null}
+          marketplaceId={realSpApiReady ? marketplaceId : null}
+          recentRuns={recentRuns}
+          onDataUpdated={reload}
+        />
+      </div>
+      {analyses.map((analysis) => (
         <AnalysisCard
           key={analysis.id}
           id={analysis.id}
           result={analysis.result}
           title={`Periodenvergleich · ${formatDate(analysis.created_at)}`}
-          showWeeklyStrategy={index === 0}
-          strategyRevision={credentialRevision}
-          weeklyConnection={realSpApiReady ? connection : null}
-          weeklyMarketplaceId={realSpApiReady ? marketplaceId : null}
-          recentRuns={overview?.recent_runs ?? []}
-          onDataUpdated={reload}
         />
       ))}
     </section>
@@ -664,7 +685,7 @@ export function MarketplaceIntelligence({ aiFirst = false }: { aiFirst?: boolean
               <tr><th>Typ</th><th>Auslöser</th><th>Status</th><th>Zeitraum</th><th>Datenstand</th><th /></tr>
             </thead>
             <tbody>
-              {(overview?.recent_runs ?? []).map((run) => (
+              {recentRuns.map((run) => (
                 <tr key={run.id}>
                   <td><code>{run.report_type}</code></td>
                   <td>{run.trigger_source}</td>
@@ -678,7 +699,7 @@ export function MarketplaceIntelligence({ aiFirst = false }: { aiFirst?: boolean
                   </td>
                 </tr>
               ))}
-              {!overview?.recent_runs.length && (
+              {recentRuns.length === 0 && (
                 <tr><td colSpan={6}>Noch keine Reportläufe.</td></tr>
               )}
             </tbody>
@@ -1551,6 +1572,108 @@ function weeklyAmazonPeriod() {
   return { start, end };
 }
 
+const strategyPipelineStages = [
+  {
+    phase: "amazon" as const,
+    title: "Amazon-Report",
+    detail: "Sieben abgeschlossene Tage · ausschließlich Reports API",
+  },
+  {
+    phase: "aggregate" as const,
+    title: "Validierung & KPIs",
+    detail: "Hash, Parser, Umsatz, Traffic, Conversion und Vergleich",
+  },
+  {
+    phase: "intelligence" as const,
+    title: "Markt & Wettbewerb",
+    detail: "Aktuelle öffentliche Signale mit Quellen",
+  },
+  {
+    phase: "intelligence" as const,
+    title: "Globale Krisen",
+    detail: "Mögliche Auswirkungen auf Konsum und Kategorie",
+  },
+  {
+    phase: "intelligence" as const,
+    title: "Strategie & Handover",
+    detail: "Fakten, Hypothesen, Maßnahmen und nächste Woche",
+  },
+];
+
+function StrategyProgress({
+  phase,
+  failedPhase,
+  completed,
+  usesLiveAmazon,
+}: {
+  phase: StrategyProgressPhase | null;
+  failedPhase: StrategyProgressPhase | null;
+  completed: boolean;
+  usesLiveAmazon: boolean;
+}) {
+  const ranks: Record<StrategyProgressPhase, number> = {
+    amazon: 0,
+    aggregate: 1,
+    intelligence: 2,
+  };
+  const activeRank = phase === null ? -1 : ranks[phase];
+  const failedRank = failedPhase === null ? -1 : ranks[failedPhase];
+  const statusFor = (stagePhase: StrategyProgressPhase, index: number) => {
+    const rank = ranks[stagePhase];
+    if (completed) return "complete";
+    if (!usesLiveAmazon && index === 0) return "skipped";
+    if (failedRank === rank && (rank < 2 || index === 2)) return "failed";
+    if (activeRank === rank) return "active";
+    if (activeRank > rank) return "complete";
+    if (phase === null && failedPhase === null && index === (usesLiveAmazon ? 0 : 1)) return "ready";
+    return "pending";
+  };
+  const labels: Record<string, string> = {
+    complete: "Fertig",
+    active: "Läuft",
+    failed: "Fehler",
+    ready: "Bereit",
+    pending: "Wartet",
+    skipped: "Import vorhanden",
+  };
+
+  return (
+    <div
+      className={`strategy-pipeline${phase ? " is-running" : ""}${completed ? " is-complete" : ""}`}
+      aria-label="Ablauf der wöchentlichen Analyse"
+      aria-busy={phase !== null}
+    >
+      <div className="strategy-pipeline-head">
+        <div>
+          <strong>{phase ? "Live-Analyse läuft" : completed ? "Wochenanalyse abgeschlossen" : "Analyse-Pipeline bereit"}</strong>
+          <p>
+            Reale Prozessschritte ohne simulierte Prozentanzeige. Amazon-Daten und öffentliche
+            Recherche bleiben technisch getrennt.
+          </p>
+        </div>
+        <span className="strategy-live-indicator" aria-hidden="true"><i /><i /><i /></span>
+      </div>
+      <ol className="strategy-pipeline-stages">
+        {strategyPipelineStages.map((stage, index) => {
+          const status = statusFor(stage.phase, index);
+          return (
+            <li className={`strategy-pipeline-stage is-${status}`} key={stage.title}>
+              <span className="strategy-stage-node" aria-hidden="true">
+                {status === "complete" ? "✓" : index + 1}
+              </span>
+              <div>
+                <strong>{stage.title}</strong>
+                <p>{stage.detail}</p>
+                <span className="strategy-stage-status">{labels[status]}</span>
+              </div>
+            </li>
+          );
+        })}
+      </ol>
+    </div>
+  );
+}
+
 function WeeklyStrategyPanel({
   liveConnection,
   marketplaceId,
@@ -1567,7 +1690,8 @@ function WeeklyStrategyPanel({
   const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [phase, setPhase] = useState<string | null>(null);
+  const [progressPhase, setProgressPhase] = useState<StrategyProgressPhase | null>(null);
+  const [failedPhase, setFailedPhase] = useState<StrategyProgressPhase | null>(null);
 
   useEffect(() => {
     if (role !== "administrator") return;
@@ -1591,8 +1715,11 @@ function WeeklyStrategyPanel({
 
   if (role !== "administrator") return null;
 
-  const refreshAmazonEvidence = async (): Promise<void> => {
+  const refreshAmazonEvidence = async (
+    advance: (phase: StrategyProgressPhase) => void,
+  ): Promise<void> => {
     if (!liveConnection || !marketplaceId) return;
+    advance("amazon");
     const { start, end } = weeklyAmazonPeriod();
     const matchingRun = recentRuns.find((run) =>
       run.connection_id === liveConnection.id
@@ -1611,7 +1738,6 @@ function WeeklyStrategyPanel({
         report_options: { dateGranularity: "DAY", asinGranularity: "CHILD" },
       },
     );
-    setPhase("Amazon erstellt den read-only Sales-&-Traffic-Bericht …");
     for (let attempt = 0; attempt < 120 && run.status !== "succeeded"; attempt += 1) {
       if (["cancelled", "fatal", "failed", "archived"].includes(run.status)) {
         throw new Error(`amazon_report_${run.status}`);
@@ -1622,7 +1748,7 @@ function WeeklyStrategyPanel({
     if (run.status !== "succeeded") {
       throw new Error("amazon_report_still_processing");
     }
-    setPhase("Neue Amazon-Kennzahlen sind eingelesen; Strategie-Kontext wird aufgebaut …");
+    advance("aggregate");
     await onDataUpdated();
   };
 
@@ -1631,16 +1757,23 @@ function WeeklyStrategyPanel({
     if (!view.status.available || (!liveConnection && !view.can_run)) return;
     setSubmitting(true);
     setError(null);
-    setPhase(liveConnection ? "Der Wochenlauf startet mit dem Amazon-Abruf …" : "Analyse läuft …");
+    setFailedPhase(null);
+    let attemptedPhase: StrategyProgressPhase = liveConnection ? "amazon" : "aggregate";
+    const advance = (next: StrategyProgressPhase) => {
+      attemptedPhase = next;
+      setProgressPhase(next);
+    };
+    advance(attemptedPhase);
     try {
-      await refreshAmazonEvidence();
+      await refreshAmazonEvidence(advance);
+      advance("aggregate");
       const prepared = await api.get<MarketplaceStrategyView>("/marketplace/strategy/weekly");
       setView(prepared);
       if (prepared.block_reason === "weekly_limit_reached") return;
       if (!prepared.can_run || !prepared.current_payload_sha256) {
         throw new Error(prepared.block_reason ?? "no_analysis_data");
       }
-      setPhase("Öffentliche Marktlage wird recherchiert; danach bewertet OpenAI die getrennten Aggregate …");
+      advance("intelligence");
       const result = await api.post<MarketplaceStrategyView>(
         "/marketplace/strategy/weekly",
         {
@@ -1650,6 +1783,7 @@ function WeeklyStrategyPanel({
       );
       setView(result);
     } catch (reason) {
+      setFailedPhase(attemptedPhase);
       setError(strategyErrorMessage(reason));
       try {
         const refreshed = await api.get<MarketplaceStrategyView>("/marketplace/strategy/weekly");
@@ -1659,7 +1793,7 @@ function WeeklyStrategyPanel({
       }
     } finally {
       setSubmitting(false);
-      setPhase(null);
+      setProgressPhase(null);
     }
   };
 
@@ -1677,8 +1811,18 @@ function WeeklyStrategyPanel({
         Amazon-Zahlen erreichen keine Suchanfrage. OpenAI erhält keine Rohdatei, Reportzeile,
         ASIN/SKU, Buyer-/Order-PII oder Secrets.
       </p>
+      <StrategyProgress
+        phase={progressPhase}
+        failedPhase={failedPhase}
+        completed={view?.block_reason === "weekly_limit_reached"}
+        usesLiveAmazon={Boolean(liveConnection)}
+      />
       {loading && <p role="status">Aggregatgrenze wird geprüft …</p>}
-      {phase && <p className="marketplace-status" role="status">{phase}</p>}
+      {progressPhase && (
+        <p className="marketplace-status strategy-phase-message" role="status" aria-live="polite">
+          {strategyPhaseMessages[progressPhase]}
+        </p>
+      )}
       {error && <p className="marketplace-callout warning" role="alert">{error}</p>}
       {view && (
         <>
@@ -1758,22 +1902,10 @@ function AnalysisCard({
   id,
   result,
   title,
-  showWeeklyStrategy = false,
-  strategyRevision = 0,
-  weeklyConnection = null,
-  weeklyMarketplaceId = null,
-  recentRuns = [],
-  onDataUpdated = async () => undefined,
 }: {
   id: string;
   result: Record<string, unknown>;
   title: string;
-  showWeeklyStrategy?: boolean;
-  strategyRevision?: number;
-  weeklyConnection?: AmazonConnectionSummary | null;
-  weeklyMarketplaceId?: string | null;
-  recentRuns?: AmazonReportRun[];
-  onDataUpdated?: () => Promise<void>;
 }) {
   const context = typeof result.context === "object" && result.context !== null
     ? result.context as Record<string, unknown>
@@ -1866,15 +1998,6 @@ function AnalysisCard({
             })}
           </ul>
         </>
-      )}
-      {showWeeklyStrategy && (
-        <WeeklyStrategyPanel
-          key={`weekly-${strategyRevision}`}
-          liveConnection={weeklyConnection}
-          marketplaceId={weeklyMarketplaceId}
-          recentRuns={recentRuns}
-          onDataUpdated={onDataUpdated}
-        />
       )}
       <div className="marketplace-actions" aria-label="Zusammenfassung exportieren">
         <button

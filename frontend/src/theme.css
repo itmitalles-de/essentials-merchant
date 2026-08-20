@@ -1,4 +1,5 @@
 :root {
+  color-scheme: light;
   --bg: #f5f6f8;
   --bg-elevated: #ffffff;
   --fg: #1a1d21;
@@ -14,6 +15,7 @@
 
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
+    color-scheme: dark;
     --bg: #14161a;
     --bg-elevated: #1e2126;
     --fg: #eceef1;
@@ -29,6 +31,7 @@
 }
 
 :root[data-theme="dark"] {
+  color-scheme: dark;
   --bg: #14161a;
   --bg-elevated: #1e2126;
   --fg: #eceef1;
@@ -57,6 +60,84 @@ body {
 a {
   color: var(--accent);
   text-decoration: none;
+}
+
+.pilot-toolbar {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 0.75rem;
+  width: fit-content;
+  margin: 0 0 0.75rem auto;
+  padding: 0.4rem 0.5rem 0.4rem 0.8rem;
+  border: 1px solid color-mix(in srgb, var(--border) 85%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--bg-elevated) 90%, transparent);
+  box-shadow: 0 8px 24px var(--shadow);
+  backdrop-filter: blur(12px);
+}
+
+.pilot-toolbar-label {
+  color: var(--fg-muted);
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.025em;
+  text-transform: uppercase;
+}
+
+button.theme-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
+  padding: 0.3rem 0.65rem 0.3rem 0.35rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--bg-elevated);
+  color: var(--fg);
+  box-shadow: none;
+}
+
+button.theme-switch:hover {
+  border-color: var(--accent);
+}
+
+.theme-switch-track {
+  position: relative;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  align-items: center;
+  width: 3.2rem;
+  height: 1.65rem;
+  padding: 0 0.25rem;
+  overflow: hidden;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--accent) 18%, var(--border));
+}
+
+.theme-switch-sun,
+.theme-switch-moon {
+  position: relative;
+  z-index: 1;
+  color: var(--fg-muted);
+  font-size: 0.8rem;
+  line-height: 1;
+  text-align: center;
+}
+
+.theme-switch-thumb {
+  position: absolute;
+  top: 0.18rem;
+  left: 0.2rem;
+  width: 1.28rem;
+  height: 1.28rem;
+  border-radius: 50%;
+  background: var(--bg-elevated);
+  box-shadow: 0 2px 7px var(--shadow);
+  transition: transform 0.2s ease;
+}
+
+button.theme-switch[aria-checked="true"] .theme-switch-thumb {
+  transform: translateX(1.48rem);
 }
 
 .pilot-brand,
@@ -481,6 +562,207 @@ table caption {
   background: color-mix(in srgb, var(--accent) 5%, var(--bg-elevated));
 }
 
+.analysis-control-card .strategy-panel {
+  margin-bottom: 0;
+}
+
+.strategy-pipeline {
+  position: relative;
+  margin: 1rem 0;
+  padding: 1rem;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--accent) 38%, var(--border));
+  border-radius: 12px;
+  background:
+    radial-gradient(circle at 95% 0%, color-mix(in srgb, var(--accent) 20%, transparent), transparent 35%),
+    linear-gradient(135deg, color-mix(in srgb, var(--accent) 8%, var(--bg-elevated)), var(--bg-elevated));
+}
+
+.strategy-pipeline::before {
+  position: absolute;
+  inset: 0;
+  content: "";
+  pointer-events: none;
+  opacity: 0;
+  background: linear-gradient(
+    105deg,
+    transparent 30%,
+    color-mix(in srgb, var(--accent) 13%, transparent) 48%,
+    transparent 66%
+  );
+  transform: translateX(-70%);
+}
+
+.strategy-pipeline.is-running::before {
+  opacity: 1;
+  animation: strategy-scan 2.8s ease-in-out infinite;
+}
+
+.strategy-pipeline-head {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.strategy-pipeline-head > div > strong {
+  font-size: 1.05rem;
+}
+
+.strategy-pipeline-head p {
+  margin: 0.25rem 0 0;
+  color: var(--fg-muted);
+  font-size: 0.84rem;
+}
+
+.strategy-live-indicator {
+  display: flex;
+  align-items: flex-end;
+  gap: 0.2rem;
+  min-width: 2.2rem;
+  height: 1.5rem;
+}
+
+.strategy-live-indicator i {
+  display: block;
+  width: 0.38rem;
+  height: 0.45rem;
+  border-radius: 999px;
+  background: var(--fg-muted);
+  opacity: 0.45;
+}
+
+.strategy-pipeline.is-running .strategy-live-indicator i {
+  background: var(--accent);
+  opacity: 1;
+  animation: strategy-signal 0.9s ease-in-out infinite alternate;
+}
+
+.strategy-pipeline.is-running .strategy-live-indicator i:nth-child(2) {
+  animation-delay: 0.18s;
+}
+
+.strategy-pipeline.is-running .strategy-live-indicator i:nth-child(3) {
+  animation-delay: 0.36s;
+}
+
+.strategy-pipeline-stages {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 0.55rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.strategy-pipeline-stage {
+  position: relative;
+  min-width: 0;
+  padding: 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--bg-elevated) 88%, transparent);
+  transition: border-color 0.2s ease, transform 0.2s ease, opacity 0.2s ease;
+}
+
+.strategy-pipeline-stage.is-pending {
+  opacity: 0.58;
+}
+
+.strategy-pipeline-stage.is-active {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 25%, transparent),
+    0 8px 25px color-mix(in srgb, var(--accent) 16%, transparent);
+  transform: translateY(-2px);
+}
+
+.strategy-pipeline-stage.is-complete {
+  border-color: color-mix(in srgb, var(--success) 58%, var(--border));
+}
+
+.strategy-pipeline-stage.is-failed {
+  border-color: color-mix(in srgb, var(--danger) 65%, var(--border));
+}
+
+.strategy-stage-node {
+  display: inline-grid;
+  place-items: center;
+  width: 1.85rem;
+  height: 1.85rem;
+  margin-bottom: 0.65rem;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--fg-muted) 16%, var(--bg-elevated));
+  color: var(--fg);
+  font-size: 0.78rem;
+  font-weight: 800;
+}
+
+.is-active .strategy-stage-node {
+  background: var(--accent);
+  color: var(--accent-fg);
+  animation: strategy-pulse 1.35s ease-in-out infinite;
+}
+
+.is-complete .strategy-stage-node {
+  background: var(--success);
+  color: #06210f;
+}
+
+.is-failed .strategy-stage-node {
+  background: var(--danger);
+  color: #fff;
+}
+
+.strategy-pipeline-stage strong {
+  display: block;
+  line-height: 1.2;
+}
+
+.strategy-pipeline-stage p {
+  min-height: 3.6em;
+  margin: 0.35rem 0 0.6rem;
+  color: var(--fg-muted);
+  font-size: 0.76rem;
+  line-height: 1.35;
+}
+
+.strategy-stage-status {
+  color: var(--fg-muted);
+  font-size: 0.7rem;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.is-active .strategy-stage-status { color: var(--accent); }
+.is-complete .strategy-stage-status { color: var(--success); }
+.is-failed .strategy-stage-status { color: var(--danger); }
+
+.strategy-phase-message {
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
+  font-weight: 650;
+}
+
+@keyframes strategy-scan {
+  from { transform: translateX(-75%); }
+  to { transform: translateX(75%); }
+}
+
+@keyframes strategy-signal {
+  from { height: 0.45rem; }
+  to { height: 1.4rem; }
+}
+
+@keyframes strategy-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 35%, transparent); }
+  50% { box-shadow: 0 0 0 0.42rem transparent; }
+}
+
 .strategy-panel > :first-child {
   margin-top: 0;
 }
@@ -616,5 +898,38 @@ form label.provider-checkbox {
 
   .provider-grid {
     grid-template-columns: 1fr;
+  }
+
+  .pilot-toolbar-label {
+    display: none;
+  }
+
+  .strategy-pipeline-stages {
+    grid-template-columns: 1fr;
+  }
+
+  .strategy-pipeline-stage {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 0 0.75rem;
+  }
+
+  .strategy-stage-node {
+    grid-row: 1 / span 3;
+    margin: 0;
+  }
+
+  .strategy-pipeline-stage p {
+    min-height: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .strategy-pipeline::before,
+  .strategy-live-indicator i,
+  .strategy-stage-node,
+  .theme-switch-thumb {
+    animation: none !important;
+    transition: none !important;
   }
 }

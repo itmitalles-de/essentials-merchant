@@ -55,7 +55,7 @@ export function Layout() {
         )}
         <div style={{ flex: 1 }} />
         {!pilotExperience && <div style={{ fontSize: "0.85rem", color: "var(--fg-muted)" }}>{username}</div>}
-        <ThemeToggle />
+        {!pilotExperience && <ThemeToggle />}
         <LanguageToggle />
         {!pilotExperience && (
           <button className="secondary" onClick={logout}>
@@ -64,6 +64,12 @@ export function Layout() {
         )}
       </nav>
       <main style={{ flex: 1, padding: "1.5rem" }}>
+        {pilotExperience && (
+          <div className="pilot-toolbar" aria-label="Darstellung">
+            <span className="pilot-toolbar-label">Mantle intern · Read-only</span>
+            <ThemeToggle variant="switch" />
+          </div>
+        )}
         {pilot?.enabled && (
           <div className="card" role="status" data-testid="pilot-banner" style={{ borderColor: pilot.compliant ? "var(--accent)" : "var(--danger)", marginBottom: "1rem" }}>
             <strong>{pilot.title}</strong>

@@ -119,6 +119,7 @@ test("scoped Mantle session completes the synthetic read-only Amazon pilot flow"
   }
 
   await page.goto("/ai-marketing");
+  await expect(page.locator(".analysis-card")).toHaveCount(0);
   const adsCard = page.locator("section.card").filter({
     has: page.getByRole("heading", { name: "Read-only Amazon-Ads-Evidenz" }),
   });
@@ -199,6 +200,7 @@ test("scoped Mantle session completes the synthetic read-only Amazon pilot flow"
     if (rejectFirstStrategyPost) {
       rejectFirstStrategyPost = false;
       aggregateHash = "b".repeat(64);
+      await new Promise((resolve) => setTimeout(resolve, 400));
       await route.fulfill({
         status: 412,
         json: { error: "aggregate_confirmation_mismatch" },
@@ -289,9 +291,21 @@ test("scoped Mantle session completes the synthetic read-only Amazon pilot flow"
   await page.reload();
   const strategyPanel = page.locator(".strategy-panel").first();
   await expect(page.locator(".strategy-panel")).toHaveCount(1);
+  await expect(strategyPanel.getByLabel("Ablauf der wöchentlichen Analyse")).toBeVisible();
+  for (const phase of [
+    "Amazon-Report",
+    "Validierung & KPIs",
+    "Markt & Wettbewerb",
+    "Globale Krisen",
+    "Strategie & Handover",
+  ]) {
+    await expect(strategyPanel.getByText(phase, { exact: true })).toBeVisible();
+  }
   await expect(strategyPanel).toContainText(aggregateHash);
   const strategyButton = strategyPanel.getByRole("button", { name: "Analyse", exact: true });
   await strategyButton.click();
+  await expect(strategyPanel.getByLabel("Ablauf der wöchentlichen Analyse"))
+    .toHaveAttribute("aria-busy", "true");
   await expect(strategyPanel).toContainText("b".repeat(64));
   await expect(strategyButton).toBeEnabled();
   await strategyButton.click();
@@ -303,7 +317,7 @@ test("scoped Mantle session completes the synthetic read-only Amazon pilot flow"
   await expect(strategyPanel).toContainText("Hypothesen – nicht als Fakten behandeln");
   await expect(strategyPanel).toContainText("Handover bis zum nächsten Wochenlauf");
   await expect(strategyPanel).toContainText("Wochenlimit aktiv");
-  await expect(manualAnalysis.locator(".analysis-block").first()).not.toContainText("Synthetische Chance");
+  await expect(page.locator(".analysis-card")).toHaveCount(0);
 
   const statuses = await page.evaluate(async () => {
     const requests: Array<[string, string]> = [
@@ -353,6 +367,12 @@ test("Mantle route opens without login and provider values stay write-only", asy
   await expect(page.locator('img[src="/ai-marketing-icon.svg"]')).toHaveCount(2);
   await expect(page.getByRole("heading", { name: "Zugänge" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Abmelden" })).toHaveCount(0);
+  const themeSwitch = page.getByTestId("theme-switch");
+  await expect(themeSwitch).toBeVisible();
+  const originalTheme = await themeSwitch.getAttribute("aria-checked");
+  await themeSwitch.click();
+  await expect(themeSwitch).not.toHaveAttribute("aria-checked", originalTheme ?? "false");
+  await expect(page.locator("html")).toHaveAttribute("data-theme", /^(light|dark)$/);
 
   const scopedStatuses = await page.evaluate(async () => {
     const token = localStorage.getItem("erplite-token");
@@ -392,4 +412,114 @@ test("Mantle route opens without login and provider values stay write-only", asy
     accessibility.violations.filter((violation) =>
       violation.impact === "serious" || violation.impact === "critical"),
   ).toEqual([]);
+});
+
+test("Mantle shell hides acceptance data and renders truthful live pipeline states", async ({ page }) => {
+  const aggregateHash = "c".repeat(64);
+  await page.route(/\/api\/marketplace$/, async (route) => {
+    await route.fulfill({
+      json: {
+        connections: [],
+        schedules: [],
+        recent_runs: [{
+          id: "11111111-1111-4111-8111-111111111111",
+          connection_id: "22222222-2222-4222-8222-222222222222",
+          schedule_id: null,
+          marketplace_id: "SYNTHETIC-ACCEPTANCE",
+          report_type: "GET_SALES_AND_TRAFFIC_REPORT",
+          data_start_time: null,
+          data_end_time: null,
+          report_options: {},
+          trigger_source: "manual",
+          status: "succeeded",
+          attempts: 1,
+          poll_attempts: 0,
+          next_attempt_at: null,
+          amazon_report_id: null,
+          amazon_report_document_id: null,
+          failure_code: null,
+          failure_message: null,
+          requested_at: null,
+          completed_at: "2026-08-20T12:00:00Z",
+          created_at: "2026-08-20T12:00:00Z",
+          updated_at: "2026-08-20T12:00:00Z",
+        }],
+        analyses: [{
+          id: "33333333-3333-4333-8333-333333333333",
+          job_id: "44444444-4444-4444-8444-444444444444",
+          strategy: "deterministic_rules",
+          model_name: null,
+          prompt_version: "rules-v1",
+          payload_sha256: "d".repeat(64),
+          result: { context: { marketplace: "SYNTHETIC-ACCEPTANCE" }, facts: [] },
+          created_at: "2026-08-20T12:00:00Z",
+        }],
+        report_types: [],
+      },
+    });
+  });
+  const base = {
+    anchor_analysis_id: "55555555-5555-4555-8555-555555555555",
+    current_payload_sha256: aggregateHash,
+    assessment_payload_sha256: null,
+    status: {
+      available: true,
+      reason: null,
+      provider: "openai",
+      model: "gpt-5.6",
+      prompt_version: "mantle-amazon-weekly-strategy-v3",
+      response_storage: "store_false",
+      input_boundary: "separate_public_research_then_aggregate_history_and_handover",
+      cadence: "manual_weekly",
+      calendar_timezone: "Europe/Berlin",
+      automatic_execution: false,
+      mutation_capability: false,
+      public_web_research: true,
+      max_web_search_calls: 3,
+    },
+    can_run: true,
+    block_reason: null,
+    week_start: "2026-08-17",
+    next_available_at: "2026-08-23T22:00:00Z",
+    source_analysis_count: 1,
+    previous_run_context: false,
+    cached: false,
+    assessment: null,
+    assessment_week_start: null,
+    assessment_model: null,
+    assessment_prompt_version: null,
+    provider_request_id_redacted: null,
+    input_tokens: null,
+    output_tokens: null,
+    created_at: null,
+  };
+  await page.route(/\/api\/marketplace\/strategy\/weekly$/, async (route) => {
+    if (route.request().method() === "GET") {
+      await route.fulfill({ json: base });
+      return;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    await route.fulfill({
+      json: {
+        ...base,
+        can_run: false,
+        block_reason: "weekly_limit_reached",
+        assessment_payload_sha256: aggregateHash,
+        created_at: "2026-08-20T12:30:00Z",
+      },
+    });
+  });
+
+  await page.goto("/ai-marketing");
+  await expect(page.locator(".analysis-card")).toHaveCount(0);
+  await expect(page.getByRole("cell", { name: "Noch keine Reportläufe." })).toBeVisible();
+  const pipeline = page.getByLabel("Ablauf der wöchentlichen Analyse");
+  const button = page.getByRole("button", { name: "Analyse", exact: true });
+  await button.click();
+  await expect(pipeline).toHaveAttribute("aria-busy", "true");
+  await expect(pipeline.locator(".strategy-pipeline-stage.is-active")).toHaveCount(3);
+  await expect(pipeline).toContainText("Globale Krisen");
+  await expect(button).toBeDisabled();
+  await expect(pipeline).toHaveAttribute("aria-busy", "false");
+  await expect(pipeline.locator(".strategy-pipeline-stage.is-complete")).toHaveCount(5);
 });
