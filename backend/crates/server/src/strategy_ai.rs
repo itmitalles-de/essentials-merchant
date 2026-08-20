@@ -21,6 +21,7 @@ const MAX_PUBLIC_RESEARCH_CHARS: usize = 12_000;
 const MAX_PUBLIC_SOURCES: usize = 15;
 const MIN_PUBLIC_SOURCES: usize = 3;
 const MAX_WEB_SEARCH_CALLS: usize = 3;
+const PROVIDER_REQUEST_TIMEOUT_SECONDS: u64 = 120;
 const MAX_BUSINESS_KNOWLEDGE_BYTES: usize = 48 * 1024;
 const MAX_BUSINESS_SOURCES: usize = 32;
 const MAX_BUSINESS_ENTRIES: usize = 80;
@@ -298,6 +299,10 @@ pub enum StrategyAiError {
     InvalidResearchResponse,
     #[error("the model returned an invalid final strategy assessment")]
     InvalidAssessmentResponse,
+    #[error("the public research request is temporarily unavailable")]
+    ResearchUnavailable,
+    #[error("the final strategy assessment request is temporarily unavailable")]
+    AssessmentUnavailable,
     #[error("the OpenAI API is temporarily unavailable")]
     ProviderUnavailable,
 }
@@ -412,7 +417,7 @@ impl StrategyAiClient {
         }
         let http = reqwest::Client::builder()
             .redirect(Policy::none())
-            .timeout(Duration::from_secs(60))
+            .timeout(Duration::from_secs(PROVIDER_REQUEST_TIMEOUT_SECONDS))
             .user_agent("essentials-plus-merchant-mantle-ai/1")
             .build()?;
         Ok(Self {
@@ -703,6 +708,7 @@ impl StrategyAiClient {
 fn mark_invalid_research_response(error: StrategyAiError) -> StrategyAiError {
     match error {
         StrategyAiError::InvalidResponse => StrategyAiError::InvalidResearchResponse,
+        StrategyAiError::ProviderUnavailable => StrategyAiError::ResearchUnavailable,
         other => other,
     }
 }
@@ -710,6 +716,7 @@ fn mark_invalid_research_response(error: StrategyAiError) -> StrategyAiError {
 fn mark_invalid_assessment_response(error: StrategyAiError) -> StrategyAiError {
     match error {
         StrategyAiError::InvalidResponse => StrategyAiError::InvalidAssessmentResponse,
+        StrategyAiError::ProviderUnavailable => StrategyAiError::AssessmentUnavailable,
         other => other,
     }
 }

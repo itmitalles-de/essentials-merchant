@@ -209,6 +209,9 @@ validated result state. It never renders report rows, secrets, signed URLs,
 provider request bodies, or hidden model reasoning. Provider-response failures
 distinguish public-research validation from final-assessment validation, and
 neither failure consumes the weekly success window.
+Each provider request has a 120-second ceiling. Only the exact weekly endpoint
+has a 270-second frontend-proxy read timeout so both sequential calls can
+finish; all other API routes retain the shorter proxy default.
 
 Set `OPENAI_STRATEGY_ENABLED=true`, keep the 32-byte provider master key only in
 the mode-0600 host environment, then enter the project-scoped pay-per-use key

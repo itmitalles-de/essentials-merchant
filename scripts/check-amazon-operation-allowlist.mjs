@@ -42,7 +42,7 @@ if (/\$(?:args|query_string|request_uri)\b|\$request(?:\s|['"])/.test(privacySaf
 const weeklyStrategyProxy = frontendProxy.match(
   /location\s*=\s*\/api\/marketplace\/strategy\/weekly\s*\{([\s\S]*?)\n\s*\}/,
 )?.[1] ?? "";
-if (!/proxy_read_timeout\s+150s\s*;/.test(weeklyStrategyProxy)
+if (!/proxy_read_timeout\s+270s\s*;/.test(weeklyStrategyProxy)
     || !/proxy_set_header\s+X-Mantle-Pilot-Proxy\s+"v1"\s*;/.test(weeklyStrategyProxy)) {
   fail("Weekly strategy proxy must retain its exact bounded long-running route");
 }
@@ -157,6 +157,7 @@ for (const marker of [
   "PUBLIC_RESEARCH_BRIEF",
   "MAX_INPUT_BYTES",
   "MAX_RESPONSE_BYTES",
+  "PROVIDER_REQUEST_TIMEOUT_SECONDS",
   ".chunk()",
 ]) {
   if (!productionStrategyTransport.includes(marker)) {

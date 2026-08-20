@@ -1340,6 +1340,12 @@ fn strategy_provider_error(error: crate::strategy_ai::StrategyAiError) -> Strate
             StatusCode::BAD_GATEWAY,
             "openai_assessment_invalid_response",
         ),
+        StrategyAiError::ResearchUnavailable => {
+            StrategyRouteError::new(StatusCode::BAD_GATEWAY, "openai_research_unavailable")
+        }
+        StrategyAiError::AssessmentUnavailable => {
+            StrategyRouteError::new(StatusCode::BAD_GATEWAY, "openai_assessment_unavailable")
+        }
         StrategyAiError::ProviderUnavailable => {
             StrategyRouteError::new(StatusCode::BAD_GATEWAY, "openai_unavailable")
         }
