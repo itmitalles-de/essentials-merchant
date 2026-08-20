@@ -536,12 +536,57 @@ table caption {
   font-size: 0.9rem;
 }
 
+.provider-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+  margin-top: 1rem;
+}
+
+.provider-form {
+  display: grid;
+  align-content: start;
+  gap: 0.75rem;
+  padding: 1rem;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--accent) 3%, var(--bg-elevated));
+}
+
+.provider-form h3 {
+  margin: 0;
+}
+
+.provider-form p a {
+  color: var(--fg);
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 0.14em;
+}
+
+form label.provider-checkbox {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: start;
+  color: var(--fg);
+}
+
+.pilot-unavailable {
+  max-width: 42rem;
+  margin: 10vh auto;
+  padding: 2rem;
+}
+
 @media (max-width: 760px) {
   .marketplace-form-grid,
   .marketplace-meta-grid,
   .analysis-separation,
   .strategy-contract,
   .strategy-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .provider-grid {
     grid-template-columns: 1fr;
   }
 }

@@ -254,10 +254,15 @@ impl StrategyAiClient {
         .expect("synthetic strategy client must be valid")
     }
 
+    #[cfg(test)]
     pub fn status(&self) -> StrategyAiStatus {
+        self.status_with_provider_key(false)
+    }
+
+    pub fn status_with_provider_key(&self, provider_key_configured: bool) -> StrategyAiStatus {
         let reason = if !self.inner.enabled {
             Some("feature_disabled")
-        } else if self.inner.api_key.is_none() {
+        } else if self.inner.api_key.is_none() && !provider_key_configured {
             Some("api_key_missing")
         } else {
             None
@@ -281,18 +286,27 @@ impl StrategyAiClient {
         &self.inner.model
     }
 
+    #[cfg(test)]
     pub async fn assess(
         &self,
         prepared: &PreparedStrategyInput,
         safety_identifier: &str,
     ) -> Result<StrategyAiCompletion, StrategyAiError> {
+        self.assess_with_api_key(prepared, safety_identifier, None)
+            .await
+    }
+
+    pub async fn assess_with_api_key(
+        &self,
+        prepared: &PreparedStrategyInput,
+        safety_identifier: &str,
+        provider_api_key: Option<&str>,
+    ) -> Result<StrategyAiCompletion, StrategyAiError> {
         if !self.inner.enabled {
             return Err(StrategyAiError::NotConfigured);
         }
-        let api_key = self
-            .inner
-            .api_key
-            .as_deref()
+        let api_key = provider_api_key
+            .or(self.inner.api_key.as_deref())
             .ok_or(StrategyAiError::NotConfigured)?;
         let _permit = self
             .inner

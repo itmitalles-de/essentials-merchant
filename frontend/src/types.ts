@@ -551,3 +551,17 @@ export interface AmazonPilotStatus {
     verified_at: string;
   } | null;
 }
+
+export interface ProviderCredentialStatus {
+  configured: boolean;
+  configured_fields: string[];
+  read_only_approved: boolean;
+  updated_at: string | null;
+}
+
+export interface PilotProviderSecretsStatus {
+  storage_available: boolean;
+  values_are_write_only: true;
+  openai: ProviderCredentialStatus;
+  amazon: ProviderCredentialStatus;
+}

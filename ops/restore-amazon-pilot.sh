@@ -72,6 +72,7 @@ status=$(compose exec -T db psql -U erplite -d erplite -X -qAt -v ON_ERROR_STOP=
      'snapshots', (SELECT count(*) FROM amazon_metric_snapshots),
      'analyses', (SELECT count(*) FROM amazon_analysis_results),
      'ai_assessments', (SELECT count(*) FROM amazon_ai_strategy_assessments),
+     'provider_secrets', (SELECT count(*) FROM pilot_provider_secrets),
      'automatic_schedules', (SELECT count(*) FROM amazon_report_schedules WHERE enabled)
    ) FROM active")
 case "$status" in
@@ -87,6 +88,14 @@ case "$status" in
   *)
     compose stop backend frontend >/dev/null
     echo "restored pilot unexpectedly enabled an automatic schedule; application services stopped" >&2
+    exit 1
+    ;;
+esac
+case "$status" in
+  *'"provider_secrets": 0'*) ;;
+  *)
+    compose stop backend frontend >/dev/null
+    echo "restored pilot unexpectedly contains provider credentials; application services stopped" >&2
     exit 1
     ;;
 esac

@@ -114,6 +114,9 @@ analyses, transport observations, and backup verifications. It archives only the
 document subtree and records file hashes, Git revision, parser versions, and declared image
 digests. Its manifest explicitly excludes Amazon tokens/secrets, customer/order/invoice/payment/
 shipping data, buyer data, Vendure data, and Storefront data.
+`pilot_provider_secrets` schema is present, but its data is explicitly excluded
+even though it is encrypted. Restore acceptance requires the table to be empty;
+OpenAI and Amazon credentials must be deliberately entered again afterward.
 
 Before quiescing services, the backup fails closed if a live connection contains anything other
 than a constrained logical secret-reference name or if a raw archive belongs to a report type
@@ -146,10 +149,14 @@ migrations and Core events are separate. Keep `synchronize: false` in every envi
 ## Marketplace operations
 
 The pilot profile enables the Marketplace Intelligence module, but no acquisition runs without an
-administrator-created connection and explicit manual request. Automatic schedules remain disabled.
+explicit operator action. Automatic schedules remain disabled.
 The synthetic demo uses `fixture:*` references and never accesses the environment secret mechanism.
-A live secret reference resolves only server-side from
-`AMAZON_SECRET_<NORMALIZED_REFERENCE>` and contains LWA refresh token, client ID, and client secret.
+A Mantle live connection is created atomically when the write-only GUI stores
+LWA refresh token, client ID, client secret, seller, marketplace, and region.
+The three LWA values are AES-256-GCM encrypted under the host-only
+`PILOT_SECRETS_KEY`; the database sees only ciphertext and the browser cannot
+read it back. `AMAZON_SECRET_<NORMALIZED_REFERENCE>` remains a legacy host-only
+fallback for non-Mantle deployments.
 
 The required external staging gate is:
 
@@ -171,22 +178,23 @@ fixture or local run may be described as Amazon staging.
 
 ### Weekly AI analysis
 
-The dashboard exposes one administrator-only `Analyse` button. It does not
-start an Amazon network request: it reads every currently eligible, bounded
-aggregate analysis already in PostgreSQL, includes the last validated AI
+The AI-first dashboard exposes one `Analyse` button. If the approved live Amazon
+connection is configured, the click first requests exactly one Sales and
+Traffic report for the last seven completed UTC days and waits for the bounded
+worker pipeline. Otherwise it uses existing manual imports. It then reads every
+currently eligible bounded aggregate analysis, includes the last validated AI
 handover, and calls the fixed OpenAI Responses endpoint once. A successful row
 sets the Europe/Berlin Monday `week_start`; the database unique index and UI
 then disable another successful run until the next Monday 00:00 local time.
 Provider failures create no row and leave retry possible.
 
-Before enabling the gate, provision the project-scoped pay-per-use key only in
-the mode-0600 host environment and set `OPENAI_STRATEGY_ENABLED=true`. Redeploy
-only the target backend, then verify the status endpoint, one synthetic
+Set `OPENAI_STRATEGY_ENABLED=true`, keep the 32-byte provider master key only in
+the mode-0600 host environment, then enter the project-scoped pay-per-use key
+through the write-only GUI. Verify the status endpoint, one synthetic
 aggregate run, the disabled same-week button, idempotent repeat response, fixed
 KPI/strategy/handover structure, redacted logs, and the immutable weekly row.
-Never print the environment or key. `Analyse` never substitutes for missing
-Amazon SP-API credentials; new Seller Central data still enters through manual
-import until that separate gate is approved.
+Never print the environment or key. Without Amazon SP-API credentials, new
+Seller Central data still enters through manual import.
 
 ## Mantle Amazon live deployment
 
@@ -206,10 +214,12 @@ target is `https://ai-marketing.mantle-climbing.de`. Both must use internal DNS
 A records for `192.168.178.15`; public DNS must not publish that private address.
 The AI hostname and normal HTTPS resolution were verified during the 2026-08-20
 live acceptance. Both routes target the same frontend alias and use the same
-LAN/VPN-only Caddy matcher. Operator credentials are generated on the host and
-retained with mode `0600` in
-`/root/essentials-merchant-amazon-admin-credentials`; never print or copy that
-file into the repository. The private runtime environment is
+LAN/VPN-only Caddy matcher. The AI hostname shows no login. Its same-origin
+frontend obtains a 12-hour Amazon-only token, always replaces stale browser
+tokens, and cannot reach ERP or raw-report routes. The normal login endpoint is
+disabled while `MANTLE_PILOT_NO_LOGIN=true`. This means every LAN/VPN client
+allowed by Caddy can run analysis and replace write-only credentials. The
+private runtime environment is
 `/opt/essentials-merchant-amazon/.env.mantle-amazon` with the same mode.
 
 The Mantle Homer dashboard may link an `AI Amazon Marketing` tile in its existing
@@ -236,9 +246,9 @@ mechanism; compare all non-target container IDs and restart counts afterwards.
 
 The private `.env.mantle-amazon` must have mode `0600` and a
 `MERCHANT_GIT_SHA` equal to the checked-out commit. It deliberately has no
-placeholder Amazon credential. OpenAI strategy access defaults to disabled;
-activation additionally requires the controls in
-[STRATEGY_AI_GATE.md](STRATEGY_AI_GATE.md). Configuration validation is the default:
+placeholder Amazon or OpenAI credential. It must contain one random 64-hex
+`PILOT_SECRETS_KEY`; provider values are entered in the GUI and are not printed.
+Configuration validation is the default:
 
 ```bash
 scripts/start-mantle-amazon.sh --check --env-file .env.mantle-amazon
@@ -303,9 +313,10 @@ is idempotent, produce a comparison, and generate JSON, Markdown, and CSV
 exports without writing raw report bytes to disk. Record only hashes, run IDs,
 aggregate test values, export hashes, and the deployed Git/image IDs.
 
-Run `scripts/verify-manual-amazon-import.mjs` with the internal base URL and
-administrator credentials supplied only through its documented environment
-variables. The script imports the newer JSON period first, verifies an
+Run `scripts/verify-manual-amazon-import.mjs` with the internal base URL. It
+obtains the same scoped no-login pilot session first and only falls back to
+administrator credentials on non-Mantle deployments. The script imports the
+newer JSON period first, verifies an
 idempotent retry, creates the comparison after the older period, imports the
 CSV/TSV probes, hashes all three summary formats, and confirms that raw download
 and business mutations are blocked. It never writes report bytes or credentials

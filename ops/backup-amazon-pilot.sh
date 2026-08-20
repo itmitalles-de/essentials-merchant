@@ -47,6 +47,7 @@ compose stop frontend backend >/dev/null
 compose exec -T db pg_dump -U erplite -d erplite --schema-only --format=custom --no-owner --no-acl \
   >"$output_dir/data/core-schema.dump"
 compose exec -T db pg_dump -U erplite -d erplite --data-only --format=custom --no-owner --no-acl \
+  --exclude-table-data=pilot_provider_secrets \
   --table=_sqlx_migrations \
   --table=users \
   --table=essentials_modules \
@@ -56,6 +57,11 @@ compose exec -T db pg_dump -U erplite -d erplite --data-only --format=custom --n
   --table='amazon_*' \
   --table=pilot_backup_verifications \
   >"$output_dir/data/pilot-core-data.dump"
+if compose exec -T db pg_restore --list <"$output_dir/data/pilot-core-data.dump" \
+    | grep -q 'TABLE DATA public pilot_provider_secrets'; then
+  echo "pilot backup unexpectedly contains provider credential ciphertext" >&2
+  exit 2
+fi
 
 schema_version=$(compose exec -T db psql -U erplite -d erplite -X -qAt -v ON_ERROR_STOP=1 \
   -c 'SELECT COALESCE(max(version), 0) FROM _sqlx_migrations')

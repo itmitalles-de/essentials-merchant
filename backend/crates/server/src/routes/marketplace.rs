@@ -9,6 +9,7 @@ use chrono::{DateTime, NaiveDate, Utc};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use uuid::Uuid;
+use zeroize::Zeroizing;
 
 use crate::auth::AuthUser;
 use crate::state::AppState;
@@ -82,10 +83,23 @@ async fn overview(
     AuthUser(user): AuthUser,
 ) -> Result<Json<db::marketplace::MarketplaceOverview>, StatusCode> {
     require_marketplace(&state, &user, false).await?;
-    db::marketplace::overview(&state.pool)
+    let mut overview = db::marketplace::overview(&state.pool)
         .await
-        .map(Json)
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let gui_amazon_configured = state
+        .provider_secrets
+        .status()
+        .await
+        .map(|status| status.amazon.configured)
+        .unwrap_or(false);
+    if gui_amazon_configured {
+        for connection in &mut overview.connections {
+            if connection.mode == "live" && connection.enabled {
+                connection.credential_configured = true;
+            }
+        }
+    }
+    Ok(Json(overview))
 }
 
 async fn upsert_connection(
@@ -685,7 +699,22 @@ async fn strategy_status(
     AuthUser(user): AuthUser,
 ) -> Result<Json<crate::strategy_ai::StrategyAiStatus>, StrategyRouteError> {
     require_strategy_admin(&state, &user).await?;
-    Ok(Json(state.strategy_ai.status()))
+    let provider_key_configured = state
+        .provider_secrets
+        .openai_api_key()
+        .await
+        .map_err(|_| {
+            StrategyRouteError::new(
+                StatusCode::SERVICE_UNAVAILABLE,
+                "provider_secret_store_failed",
+            )
+        })?
+        .is_some();
+    Ok(Json(
+        state
+            .strategy_ai
+            .status_with_provider_key(provider_key_configured),
+    ))
 }
 
 struct WeeklyStrategyContext {
@@ -756,11 +785,10 @@ async fn load_weekly_strategy_context(
 }
 
 fn weekly_strategy_view(
-    state: &AppState,
     context: &WeeklyStrategyContext,
     cached: bool,
+    status: crate::strategy_ai::StrategyAiStatus,
 ) -> WeeklyStrategyView {
-    let status = state.strategy_ai.status();
     let displayed = context.current.as_ref().or(context.previous.as_ref());
     let source_analysis_count = context
         .prepared
@@ -811,7 +839,21 @@ async fn weekly_strategy_preview(
     require_strategy_admin(&state, &user).await?;
     let context = load_weekly_strategy_context(&state).await?;
     let cached = context.current.is_some();
-    Ok(Json(weekly_strategy_view(&state, &context, cached)))
+    let provider_key_configured = state
+        .provider_secrets
+        .openai_api_key()
+        .await
+        .map_err(|_| {
+            StrategyRouteError::new(
+                StatusCode::SERVICE_UNAVAILABLE,
+                "provider_secret_store_failed",
+            )
+        })?
+        .is_some();
+    let status = state
+        .strategy_ai
+        .status_with_provider_key(provider_key_configured);
+    Ok(Json(weekly_strategy_view(&context, cached, status)))
 }
 
 async fn create_weekly_strategy_assessment(
@@ -821,8 +863,22 @@ async fn create_weekly_strategy_assessment(
 ) -> Result<Json<WeeklyStrategyView>, StrategyRouteError> {
     require_strategy_admin(&state, &user).await?;
     let mut context = load_weekly_strategy_context(&state).await?;
+    let provider_api_key = state
+        .provider_secrets
+        .openai_api_key()
+        .await
+        .map_err(|_| {
+            StrategyRouteError::new(
+                StatusCode::SERVICE_UNAVAILABLE,
+                "provider_secret_store_failed",
+            )
+        })?
+        .map(Zeroizing::new);
+    let status = state
+        .strategy_ai
+        .status_with_provider_key(provider_api_key.is_some());
     if context.current.is_some() {
-        return Ok(Json(weekly_strategy_view(&state, &context, true)));
+        return Ok(Json(weekly_strategy_view(&context, true, status)));
     }
     let prepared = context.prepared.as_ref().ok_or_else(|| {
         StrategyRouteError::new(
@@ -846,7 +902,11 @@ async fn create_weekly_strategy_assessment(
     })?;
     let completion = state
         .strategy_ai
-        .assess(prepared, &crate::strategy_ai::safety_identifier(user.id))
+        .assess_with_api_key(
+            prepared,
+            &crate::strategy_ai::safety_identifier(user.id),
+            provider_api_key.as_deref().map(String::as_str),
+        )
         .await
         .map_err(strategy_provider_error)?;
     let result = serde_json::to_value(&completion.assessment).map_err(|_| {
@@ -874,7 +934,7 @@ async fn create_weekly_strategy_assessment(
             StrategyRouteError::new(StatusCode::INTERNAL_SERVER_ERROR, "database_error")
         })?;
     context.current = Some(stored);
-    Ok(Json(weekly_strategy_view(&state, &context, !was_inserted)))
+    Ok(Json(weekly_strategy_view(&context, !was_inserted, status)))
 }
 
 fn strategy_provider_error(error: crate::strategy_ai::StrategyAiError) -> StrategyRouteError {

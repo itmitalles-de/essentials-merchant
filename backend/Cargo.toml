@@ -28,6 +28,8 @@ reqwest = { version = "0.12", default-features = false, features = ["json", "rus
 sha2 = "0.10"
 hmac = "0.12"
 hex = "0.4"
+ring = "0.17"
+zeroize = "1"
 
 domain = { path = "crates/domain" }
 db = { path = "crates/db" }

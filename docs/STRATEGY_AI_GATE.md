@@ -2,16 +2,25 @@
 
 ## Purpose
 
-The optional weekly strategy panel turns the available deterministic Sales and
+The weekly strategy panel turns the available deterministic Sales and
 Traffic analyses into a German-language decision aid. It does not parse
 reports, create facts, replace the deterministic comparison, or introduce
-another analysis system. An administrator starts it with the single `Analyse`
+another analysis system. An internal operator starts it with the single `Analyse`
 button; a successful result closes the Europe/Berlin calendar week.
 
 The Mantle target entry point is `https://ai-marketing.mantle-climbing.de`. It serves
 the same three-service `essentials-merchant-amazon` deployment and opens the
 AI-first Marketplace Intelligence view. The route must remain limited to
 LAN/VPN clients by split DNS and Caddy source-address policy.
+
+There is no visible login on this hostname. The same-origin frontend obtains a
+12-hour JWT restricted to the exact Amazon pilot routes. It always discards an
+older browser token first, and the backend disables the normal login endpoint
+while `MANTLE_PILOT_NO_LOGIN=true`. Customer, invoice, settings, module-health,
+raw-report, scheduler, and every business-mutation route remain unreachable to
+that scoped session. Anyone who can reach the internal route can nevertheless
+start the weekly action or replace write-only credentials, so LAN/VPN routing is
+the intentional trust boundary.
 
 ## External account gate
 
@@ -20,25 +29,29 @@ API credits, or an API key. Activation requires a separately billed,
 project-scoped OpenAI API key approved for this Mantle workload. No substitute
 or fake credential may be generated.
 
-Live status on 2026-08-20 is
+Until the operator enters a key, status is
 `externally_blocked_missing_pay_per_use_api_key`: the route and aggregate gate
-are deployed, but the feature flag is false and no provider request has run.
-The manual and deterministic workflow is unaffected.
+are available, but no provider request can run. The manual and deterministic
+workflow is unaffected.
 
 The server reads these private environment entries:
 
 ```text
 OPENAI_STRATEGY_ENABLED=true
 OPENAI_STRATEGY_MODEL=gpt-5.6
-OPENAI_API_KEY=<server-side project key>
+MANTLE_PILOT_NO_LOGIN=true
+PILOT_SECRETS_KEY=<32 random bytes as 64 hex characters>
 ```
 
-The populated environment file stays on the Docker host with mode `0600`. The
-key is supplied only to the backend container. It is not stored in PostgreSQL,
-sent to the frontend, included in a backup, printed by a launcher, or committed
-to Git. With the feature disabled or the key absent, import, deterministic
-analysis, comparison, and export remain available; only the AI action is
-disabled with a visible external-gate reason.
+The host master key stays in the mode-`0600` environment and is supplied only to
+the backend. The OpenAI project key is entered through the internal GUI and
+encrypted with AES-256-GCM before it is stored. Status responses expose only
+configured state, field names, and the replacement time. Neither plaintext nor
+ciphertext is included in pilot backups, printed by a launcher, or committed to
+Git. `OPENAI_API_KEY` remains a legacy host-only fallback for non-Mantle
+deployments. With the key absent, import, deterministic analysis, comparison,
+and export remain available; only the AI action is disabled with a visible
+external-gate reason.
 
 ## Exact data boundary
 
@@ -120,8 +133,9 @@ exclude API keys, prompts, and raw provider responses.
 
 ## Operator workflow
 
-1. Import one official Sales and Traffic report and review the deterministic
-   facts, or import a compatible second period for a comparison.
+1. If approved Amazon SP-API credentials are configured, click `Analyse` to
+   request exactly the last seven completed UTC days. Otherwise import one
+   official Sales and Traffic report, and preferably a compatible second period.
 2. Review the fixed KPI cards, comparison bars, aggregate-input SHA-256, input
    count, and previous-run status.
 3. Click `Analyse`. The click confirms this one aggregate-only request.
@@ -145,9 +159,15 @@ other mutation.
 - `GET /api/marketplace/strategy/weekly` returns the current aggregate hash,
   weekly availability, next eligible time, input count, previous-run context
   flag, and latest validated assessment.
-- `POST /api/marketplace/strategy/weekly` requires administrator role, the
+- `POST /api/marketplace/strategy/weekly` requires the scoped pilot identity or
+  an administrator, the
   current hash, and aggregate-only confirmation. Once a successful weekly row
   exists, later repeat requests return it without another provider call.
+- `POST /api/auth/pilot-session` issues the narrow same-origin session only
+  behind the dedicated frontend proxy; `/api/auth/login` is disabled in the
+  Mantle no-login profile.
+- `POST /api/pilot/provider-secrets/openai` and `/amazon` replace encrypted
+  values. `GET /api/pilot/provider-secrets/status` cannot return a value.
 
 The read-only pilot middleware permits only that exact strategy POST path and
 rejects near-miss paths. The Amazon Reports transport enum and its five-operation

@@ -3,8 +3,8 @@
 import { createHash } from "node:crypto";
 
 const baseUrl = required("MANTLE_AMAZON_BASE_URL").replace(/\/+$/, "");
-const username = required("MANTLE_AMAZON_ADMIN_USERNAME");
-const password = required("MANTLE_AMAZON_ADMIN_PASSWORD");
+const username = process.env.MANTLE_AMAZON_ADMIN_USERNAME;
+const password = process.env.MANTLE_AMAZON_ADMIN_PASSWORD;
 const timezone = process.env.MANTLE_AMAZON_TIMEZONE || "Europe/Berlin";
 const marketplace = "SYNTHETIC-MARKETPLACE";
 const reportType = "GET_SALES_AND_TRAFFIC_REPORT";
@@ -122,13 +122,30 @@ async function importReport(token, filename, raw, parsed) {
   return JSON.parse(Buffer.from(result.bytes).toString("utf8"));
 }
 
-const login = await request("/api/auth/login", {
-  method: "POST",
-  contentType: "application/json",
-  body: JSON.stringify({ username, password }),
-});
-const token = JSON.parse(Buffer.from(login.bytes).toString("utf8")).access_token;
-if (!token) throw new Error("login response did not contain an access token");
+async function authenticate() {
+  try {
+    const session = await request("/api/auth/pilot-session", { method: "POST" });
+    const token = JSON.parse(Buffer.from(session.bytes).toString("utf8")).access_token;
+    if (token) return token;
+  } catch {
+    // Non-Mantle deployments may still use the regular administrator login.
+  }
+  if (!username || !password) {
+    throw new Error(
+      "pilot session unavailable and MANTLE_AMAZON_ADMIN_USERNAME/PASSWORD are not set",
+    );
+  }
+  const login = await request("/api/auth/login", {
+    method: "POST",
+    contentType: "application/json",
+    body: JSON.stringify({ username, password }),
+  });
+  const token = JSON.parse(Buffer.from(login.bytes).toString("utf8")).access_token;
+  if (!token) throw new Error("authentication response did not contain an access token");
+  return token;
+}
+
+const token = await authenticate();
 
 // Upload the newer period first to prove comparison selection is based on report
 // periods, not import order. The exact synthetic reports exist only in memory.

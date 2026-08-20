@@ -1,3 +1,5 @@
+import { isMantlePilotExperience } from "./pilot";
+
 const API_BASE = import.meta.env.VITE_API_BASE ?? "/api";
 
 const TOKEN_KEY = "erplite-token";
@@ -31,7 +33,7 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
 
   if (res.status === 401) {
     setToken(null);
-    window.location.href = "/login";
+    if (!isMantlePilotExperience()) window.location.href = "/login";
     throw new ApiError(res.status, "Nicht angemeldet");
   }
 

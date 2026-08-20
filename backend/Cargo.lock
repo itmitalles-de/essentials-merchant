@@ -1897,6 +1897,7 @@ dependencies = [
  "jsonwebtoken",
  "pdf",
  "reqwest",
+ "ring",
  "rust_decimal",
  "serde",
  "serde_json",
@@ -1909,6 +1910,7 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "uuid",
+ "zeroize",
 ]
 
 [[package]]

@@ -45,7 +45,9 @@ full-stack test topology.
 
 ## Safe local start
 
-Prepare a local ignored environment from `.env.amazon-pilot.example`. The launcher defaults to a
+Prepare a local ignored environment from `.env.amazon-pilot.example`, including
+a unique 32-byte key encoded as 64 lowercase hexadecimal characters for
+`PILOT_SECRETS_KEY`. The launcher defaults to a
 dry configuration check, fixes the Compose project name to
 `essentials-merchant-amazon-pilot`, prints no secrets, and never deletes data:
 
@@ -147,12 +149,15 @@ multi-tenancy, and Kubernetes are explicitly frozen for this milestone. See
 [deferred external gates](docs/DEFERRED_EXTERNAL_GATES.md) and
 [deferred capabilities](docs/NICE_TO_HAVE.md).
 
-An optional administrator-triggered OpenAI strategy panel is implemented inside Marketplace
-Intelligence. Its single `Analyse` button accepts only a hash-confirmed closed aggregate-history
-DTO, carries the last validated handover forward, and permits one successful Europe/Berlin
-calendar-week run. It is disabled by default, uses no tools, and cannot mutate Amazon or Merchant.
-A separately billed project API key and explicit host activation are required; a ChatGPT
-subscription is not an API credential. See
+The Mantle AI-first view exposes one `Analyse` button without a login form. Its
+short-lived session is restricted to Amazon pilot routes. With approved SP-API
+credentials, the click first requests one seven-day Sales and Traffic report;
+otherwise it uses manual imports. It sends only a hash-confirmed closed
+aggregate-history DTO, carries the last validated handover forward, and permits
+one successful Europe/Berlin calendar-week run. It uses no tools and cannot
+mutate Amazon or Merchant. Provider values are entered write-only and encrypted
+under a host-only key. A separately billed project API key is required; a
+ChatGPT subscription is not an API credential. See
 [the strategy AI gate](docs/STRATEGY_AI_GATE.md).
 
 ## Verification
@@ -193,8 +198,9 @@ node scripts/verify-manual-amazon-import.mjs
 ops/test-amazon-pilot-backup-restore.sh
 ```
 
-The Playwright/axe flow logs in as administrator, verifies the banner and exact module state, runs
-both the fake transport and the in-memory two-period manual UI workflow through analysis/export,
+The Playwright/axe flow obtains the scoped no-login pilot session, verifies its
+ERP-route denial and the exact pilot state, runs both the fake transport and the
+in-memory two-period manual UI workflow through analysis/export,
 probes disabled mutation routes, and rejects serious/critical accessibility findings. It does not
 start or test the Storefront. Existing clean
 vertical, failure/recovery, full backup/restore, and upgrade rehearsals remain required and are not
@@ -205,8 +211,9 @@ weakened. See the [verification matrix](docs/VERIFICATION_MATRIX.md) and
 
 The pilot backup contains the Core schema, allowlisted module/audit records, immutable Amazon raw
 archives, normalized snapshots, analyses, parser versions, transport hashes, document subtree,
-Git commit, and image digests. It explicitly excludes LWA refresh tokens, client/access secrets,
-buyer data, and all retained Commerce/payment/shipping business tables.
+Git commit, and image digests. It explicitly excludes the encrypted provider
+credential rows as well as LWA refresh tokens, client/access secrets, buyer
+data, and all retained Commerce/payment/shipping business tables.
 
 Restore refuses any non-empty target project. The synthetic rehearsal uses a raw report larger
 than 2 MiB and compares report inventory, raw hashes, parser versions, snapshots, analysis,

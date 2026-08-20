@@ -15,11 +15,21 @@ import { Settings } from "./pages/Settings";
 import { AdminCenter } from "./pages/AdminCenter";
 import { MarketplaceIntelligence } from "./pages/MarketplaceIntelligence";
 import { IntegrationDiagnostics } from "./pages/IntegrationDiagnostics";
+import { isMantlePilotExperience } from "./pilot";
 
 function RequireAuth({ children }: { children: ReactNode }) {
   const { isAuthenticated, loading } = useAuth();
   if (loading) return null;
-  if (!isAuthenticated) return <Navigate to="/login" replace />;
+  if (!isAuthenticated) {
+    return isMantlePilotExperience()
+      ? (
+        <main className="pilot-unavailable" role="alert">
+          <h1>Amazon AI Marketing ist gerade nicht erreichbar</h1>
+          <p>Die interne, anonyme Pilotsitzung konnte nicht aufgebaut werden.</p>
+        </main>
+      )
+      : <Navigate to="/login" replace />;
+  }
   return <>{children}</>;
 }
 
@@ -30,9 +40,13 @@ function HomeRoute() {
 }
 
 export default function App() {
+  const pilotExperience = isMantlePilotExperience();
   return (
     <Routes>
-      <Route path="/login" element={<Login />} />
+      <Route
+        path="/login"
+        element={pilotExperience ? <Navigate to="/ai-marketing" replace /> : <Login />}
+      />
       <Route
         path="/"
         element={
@@ -42,18 +56,24 @@ export default function App() {
         }
       >
         <Route index element={<HomeRoute />} />
-        <Route path="customers" element={<Customers />} />
-        <Route path="invoices" element={<Invoices />} />
-        <Route path="invoices/:id" element={<InvoiceDetail />} />
-        <Route path="articles" element={<Articles />} />
-        <Route path="articles/:id" element={<ArticleDetail />} />
-        <Route path="sales-orders" element={<SalesOrders />} />
-        <Route path="sales-orders/:id" element={<SalesOrderDetail />} />
-        <Route path="settings" element={<Settings />} />
-        <Route path="admin-center" element={<AdminCenter />} />
-        <Route path="integration-diagnostics" element={<IntegrationDiagnostics />} />
-        <Route path="marketplace" element={<MarketplaceIntelligence />} />
+        {!pilotExperience && <Route path="customers" element={<Customers />} />}
+        {!pilotExperience && <Route path="invoices" element={<Invoices />} />}
+        {!pilotExperience && <Route path="invoices/:id" element={<InvoiceDetail />} />}
+        {!pilotExperience && <Route path="articles" element={<Articles />} />}
+        {!pilotExperience && <Route path="articles/:id" element={<ArticleDetail />} />}
+        {!pilotExperience && <Route path="sales-orders" element={<SalesOrders />} />}
+        {!pilotExperience && <Route path="sales-orders/:id" element={<SalesOrderDetail />} />}
+        {!pilotExperience && <Route path="settings" element={<Settings />} />}
+        {!pilotExperience && <Route path="admin-center" element={<AdminCenter />} />}
+        {!pilotExperience && <Route path="integration-diagnostics" element={<IntegrationDiagnostics />} />}
+        <Route
+          path="marketplace"
+          element={pilotExperience
+            ? <Navigate to="/ai-marketing" replace />
+            : <MarketplaceIntelligence />}
+        />
         <Route path="ai-marketing" element={<MarketplaceIntelligence aiFirst />} />
+        {pilotExperience && <Route path="*" element={<Navigate to="/ai-marketing" replace />} />}
       </Route>
     </Routes>
   );

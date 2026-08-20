@@ -30,24 +30,27 @@ function syntheticManualReport(date: string, revenue: number, units: number, ses
   }));
 }
 
-test("administrator completes the synthetic read-only Amazon pilot flow", async ({ page }) => {
-  await page.goto("/login");
-  await page.getByLabel("Language").selectOption("de");
-  await page.getByLabel("Benutzername").fill(process.env.CORE_ADMIN_USERNAME ?? "admin");
-  await page.getByLabel("Passwort").fill(process.env.CORE_ADMIN_PASSWORD ?? "ci-placeholder");
-  await page.getByRole("button", { name: "Anmelden" }).click();
+test("scoped Mantle session completes the synthetic read-only Amazon pilot flow", async ({ page }) => {
+  await page.goto("/ai-marketing");
 
   await expect(page.getByTestId("pilot-banner")).toContainText(
     "Essentials+ Merchant - Amazon Intelligence Pilot - Read-only",
   );
   await expect(page.getByTestId("pilot-banner")).toContainText("Fail-closed Pilotprofil aktiv");
 
-  await page.getByRole("link", { name: "Admin-Center" }).click();
-  await expect(page.getByTestId("pilot-module-status")).toContainText("marketplace.amazon_intelligence");
-  await expect(page.getByTestId("pilot-module-status")).toContainText("payment.test");
-  await expect(page.getByTestId("pilot-module-status")).toContainText("export.datev");
+  const pilotStatus = await page.evaluate(async () => {
+    const token = localStorage.getItem("erplite-token");
+    const response = await fetch("/api/pilot/status", {
+      headers: token ? { authorization: `Bearer ${token}` } : {},
+    });
+    return { status: response.status, body: await response.json() };
+  });
+  expect(pilotStatus.status).toBe(200);
+  expect(JSON.stringify(pilotStatus.body)).toContain("amazon-read-only");
 
-  await page.getByRole("link", { name: "Marketplace Intelligence" }).click();
+  // localhost is used only by the full-flow E2E stack. The production hostname
+  // remains locked to /ai-marketing by App.tsx.
+  await page.goto("/marketplace");
   await expect(page.getByRole("heading", { name: "Amazon Intelligence" })).toBeVisible();
   const demoButton = page.getByRole("button", { name: "Synthetische Demo einrichten" });
   const syntheticConnection = page.getByText(/Verbindung: Synthetische Demo/);
@@ -260,6 +263,55 @@ test("administrator completes the synthetic read-only Amazon pilot flow", async 
   await expect(page.getByRole("heading", { name: "Amazon AI Marketing" })).toBeVisible();
   await expect(page.getByText("Interne Strategiehilfe für Mantle")).toBeVisible();
   await expect(page.locator("body")).not.toContainText(/refresh_token|client_secret|access_token/i);
+  const accessibility = await new AxeBuilder({ page }).analyze();
+  expect(
+    accessibility.violations.filter((violation) =>
+      violation.impact === "serious" || violation.impact === "critical"),
+  ).toEqual([]);
+});
+
+test("Mantle route opens without login and provider values stay write-only", async ({ page }) => {
+  await page.addInitScript(() => {
+    localStorage.setItem("erplite-token", "stale-token-must-be-replaced");
+  });
+  await page.goto("/ai-marketing");
+  await expect(page.getByRole("heading", { name: "Amazon AI Marketing" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Zugänge" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Abmelden" })).toHaveCount(0);
+
+  const scopedStatuses = await page.evaluate(async () => {
+    const token = localStorage.getItem("erplite-token");
+    const headers = token ? { authorization: `Bearer ${token}` } : {};
+    return Promise.all([
+      fetch("/api/marketplace", { headers }).then((response) => response.status),
+      fetch("/api/customers", { headers }).then((response) => response.status),
+      fetch("/api/invoices", { headers }).then((response) => response.status),
+    ]);
+  });
+  expect(scopedStatuses).toEqual([200, 403, 403]);
+
+  const loginStatus = await page.evaluate(async () => (
+    fetch("/api/auth/login", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ username: "admin", password: "ci-placeholder" }),
+    }).then((response) => response.status)
+  ));
+  expect(loginStatus).toBe(403);
+
+  const syntheticKey = `sk-proj-${"synthetic".repeat(4)}`;
+  await page.getByLabel("Neuer Project API-Key").fill(syntheticKey);
+  await page.getByLabel("Separates API-Pay-per-use-Budget ist eingerichtet.").check();
+  const stored = page.waitForResponse(/\/api\/pilot\/provider-secrets\/openai$/);
+  await page.getByRole("button", { name: "OpenAI-Key setzen/ersetzen" }).click();
+  const responseBody = await (await stored).text();
+  expect(responseBody).not.toContain(syntheticKey);
+  await expect(page.getByText(/OpenAI-Zugang wurde gespeichert/)).toBeVisible();
+  await expect(page.getByLabel("Neuer Project API-Key")).toHaveValue("");
+  await page.reload();
+  await expect(page.locator(".provider-form").first()).toContainText("konfiguriert");
+  await expect(page.locator("body")).not.toContainText(syntheticKey);
+
   const accessibility = await new AxeBuilder({ page }).analyze();
   expect(
     accessibility.violations.filter((violation) =>

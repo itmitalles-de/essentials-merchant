@@ -159,10 +159,13 @@ pub struct LiveAmazonClient {
     endpoint_override: Option<String>,
     lwa_endpoint: String,
     secret_override: Option<LiveSecret>,
+    provider_secrets: Option<crate::provider_secrets::ProviderSecretStore>,
 }
 
 impl LiveAmazonClient {
-    pub fn new() -> Result<Self, reqwest::Error> {
+    pub fn new(
+        provider_secrets: crate::provider_secrets::ProviderSecretStore,
+    ) -> Result<Self, reqwest::Error> {
         reqwest::Client::builder()
             .timeout(std::time::Duration::from_secs(30))
             .redirect(reqwest::redirect::Policy::none())
@@ -172,6 +175,7 @@ impl LiveAmazonClient {
                 endpoint_override: None,
                 lwa_endpoint: "https://api.amazon.com/auth/o2/token".to_owned(),
                 secret_override: None,
+                provider_secrets: Some(provider_secrets),
             })
     }
 
@@ -190,6 +194,7 @@ impl LiveAmazonClient {
                     client_id: "synthetic-client".to_owned(),
                     client_secret: "synthetic-secret".to_owned(),
                 }),
+                provider_secrets: None,
             })
     }
 
@@ -221,9 +226,28 @@ impl LiveAmazonClient {
         format!("AMAZON_SECRET_{normalized}")
     }
 
-    fn load_secret(&self, secret_ref: &str) -> Result<LiveSecret, AmazonClientError> {
+    async fn load_secret(&self, secret_ref: &str) -> Result<LiveSecret, AmazonClientError> {
         if let Some(secret) = &self.secret_override {
             return Ok(secret.clone());
+        }
+        if secret_ref == db::provider_secrets::PILOT_AMAZON_SECRET_REF {
+            if let Some(store) = &self.provider_secrets {
+                match store.amazon_credentials().await {
+                    Ok(Some(secret)) => {
+                        return Ok(LiveSecret {
+                            refresh_token: secret.refresh_token,
+                            client_id: secret.client_id,
+                            client_secret: secret.client_secret,
+                        });
+                    }
+                    Ok(None) => {}
+                    Err(_) => {
+                        return Err(AmazonClientError::Permanent(
+                            "Amazon provider credential storage is unavailable".to_owned(),
+                        ));
+                    }
+                }
+            }
         }
         let key = Self::secret_environment_key(secret_ref);
         let raw = std::env::var(&key).map_err(|_| {
@@ -249,7 +273,7 @@ impl LiveAmazonClient {
         &self,
         secret_ref: &str,
     ) -> Result<AmazonClientResponse<String>, AmazonClientError> {
-        let secret = self.load_secret(secret_ref)?;
+        let secret = self.load_secret(secret_ref).await?;
         let response = self
             .http
             .post(&self.lwa_endpoint)
@@ -777,9 +801,11 @@ pub struct CompositeAmazonClient {
 }
 
 impl CompositeAmazonClient {
-    pub fn new() -> Result<Self, reqwest::Error> {
+    pub fn new(
+        provider_secrets: crate::provider_secrets::ProviderSecretStore,
+    ) -> Result<Self, reqwest::Error> {
         Ok(Self {
-            live: LiveAmazonClient::new()?,
+            live: LiveAmazonClient::new(provider_secrets)?,
             fixture: FixtureAmazonClient,
         })
     }
@@ -908,7 +934,7 @@ impl MarketplaceWorker {
             .unwrap_or(true);
         if pilot_enabled
             && run.mode == "live"
-            && (!pilot_live_run_is_safe(&run)
+            && (!pilot_live_run_is_safe(pool, &run).await
                 || !pilot_live_sequence_is_safe(pool, &run, Some(run.id))
                     .await
                     .unwrap_or(false))
@@ -1274,29 +1300,38 @@ impl MarketplaceWorker {
     }
 }
 
-fn staging_context_is_approved(
+async fn staging_context_is_approved(
+    pool: &sqlx::PgPool,
     seller_id: &str,
     region: &str,
     secret_ref: &str,
     marketplace_id: &str,
 ) -> bool {
-    if !marketplace::live_secret_reference_is_configured(secret_ref) {
+    let environment_approved = std::env::var("AMAZON_STAGING_APPROVAL")
+        .ok()
+        .and_then(|raw| serde_json::from_str::<AmazonStagingApproval>(&raw).ok())
+        .is_some_and(|approval| {
+            marketplace::live_secret_reference_is_configured(secret_ref)
+                && approval.seller_sha256.len() == 64
+                && approval
+                    .seller_sha256
+                    .bytes()
+                    .all(|byte| byte.is_ascii_hexdigit() && !byte.is_ascii_uppercase())
+                && approval.seller_sha256 == sha256(seller_id.as_bytes())
+                && approval.region == region
+                && approval.marketplace_id == marketplace_id
+        });
+    if environment_approved {
+        return true;
+    }
+    if secret_ref != db::provider_secrets::PILOT_AMAZON_SECRET_REF {
         return false;
     }
-    let Ok(raw) = std::env::var("AMAZON_STAGING_APPROVAL") else {
-        return false;
-    };
-    let Ok(approval) = serde_json::from_str::<AmazonStagingApproval>(&raw) else {
-        return false;
-    };
-    approval.seller_sha256.len() == 64
-        && approval
-            .seller_sha256
-            .bytes()
-            .all(|byte| byte.is_ascii_hexdigit() && !byte.is_ascii_uppercase())
-        && approval.seller_sha256 == sha256(seller_id.as_bytes())
-        && approval.region == region
-        && approval.marketplace_id == marketplace_id
+    let context_sha256 =
+        crate::provider_secrets::amazon_context_sha256(seller_id, region, marketplace_id);
+    db::provider_secrets::amazon_context_is_approved(pool, &context_sha256)
+        .await
+        .unwrap_or(false)
 }
 
 fn pilot_period_is_safe(
@@ -1316,15 +1351,17 @@ fn pilot_period_is_safe(
         && *report_options == json!({"dateGranularity": "DAY", "asinGranularity": "CHILD"})
 }
 
-fn pilot_live_run_is_safe(run: &ClaimedReportRun) -> bool {
+async fn pilot_live_run_is_safe(pool: &sqlx::PgPool, run: &ClaimedReportRun) -> bool {
     run.trigger_source == "manual"
         && run.schedule_id.is_none()
         && staging_context_is_approved(
+            pool,
             &run.seller_id,
             &run.region,
             &run.secret_ref,
             &run.marketplace_id,
         )
+        .await
         && pilot_period_is_safe(
             &run.report_type,
             run.data_start_time,
@@ -1400,7 +1437,8 @@ pub(crate) async fn pilot_live_request_is_safe(
         granted_roles: connection.granted_roles.clone(),
         mode: connection.mode.clone(),
     };
-    Ok(pilot_live_run_is_safe(&run) && pilot_live_sequence_is_safe(pool, &run, None).await?)
+    Ok(pilot_live_run_is_safe(pool, &run).await
+        && pilot_live_sequence_is_safe(pool, &run, None).await?)
 }
 
 fn exponential_backoff(attempt: i32, base_seconds: i64, max_seconds: i64) -> i64 {

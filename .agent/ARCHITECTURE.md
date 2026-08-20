@@ -44,9 +44,11 @@ duplicate periods. The existing deterministic analysis/export pipeline is reused
 separate Mantle analysis service.
 
 Connections persist the seller context needed for Amazon requests, region, marketplace IDs, roles,
-mode, and only a logical environment secret reference. API summaries redact the seller ID before
-serialization. Credential values are parsed server-side and never enter the database, UI, logs,
-archive, backup, or diagnostics.
+mode, and only a logical secret reference. API summaries redact the seller ID before serialization.
+For Mantle, write-only provider endpoints encrypt OpenAI and Amazon LWA values with AES-256-GCM
+before storing opaque ciphertext in `pilot_provider_secrets`; the 32-byte master key remains only
+in the host environment. Values never return to the UI/API and credential rows are excluded from
+pilot backups. The legacy environment-secret resolver remains available outside this profile.
 
 The live request builder accepts an `AmazonOperation`, not a free method/path. Its complete set is
 LWA refresh, Reports `createReport`, `getReport`, `getReportDocument`, and a redirect-disabled HTTPS
@@ -65,8 +67,10 @@ produce normalized decimals and explicit missing fields. Deterministic analysis 
 delta, trend, anomalies, hypotheses, possible actions, uncertainty, missing data, and evidence.
 Aggregate JSON, Markdown, and CSV exports recursively deny
 buyer/customer/address/email/order/comment/phone fields.
-Actions are never executed. An optional, manually triggered OpenAI adapter can receive only a
-second closed aggregate-history DTO after the single weekly button confirms its hash. It contains
+Actions are never executed. The manually triggered OpenAI adapter can receive only a
+second closed aggregate-history DTO after the single weekly button confirms its hash. When the
+approved live connection exists, that same click first creates or reuses exactly one seven-day
+Sales and Traffic run and waits for the normal immutable parser/analysis pipeline. The DTO contains
 at most eight distinct newest-first analyses and the previous validated strategy/handover as
 untrusted context. It has a fixed Responses API POST, no tools, no Amazon transport authority, no
 automatic execution, and no raw/product/customer input.
@@ -102,6 +106,14 @@ and shipping ports/fakes remain tests, not provider adapters or production claim
 
 ## Admin and diagnostics
 
+The canonical Mantle AI hostname has no login form. Its same-origin frontend
+always requests a 12-hour `mantle-amazon-read-only` JWT and discards any token
+left by another route. The server disables regular login in this profile and
+checks an exact method/path allowlist for the scoped token. Caddy's LAN/VPN
+matcher is therefore the operator trust boundary; any client inside it can use
+the pilot and replace write-only credentials but cannot access retained ERP
+routes.
+
 The pilot UI exposes exact module compliance, disabled mutations, redacted Amazon connection,
 roles, marketplace, report/poll/retry/rate-limit status, archive/hash/parser/snapshot state,
 missing data, deterministic analysis, and latest backup verification. It never exposes secret
@@ -113,7 +125,8 @@ scheduler controls are unavailable in the pilot.
 The retained coordinated backup still captures both databases and both file stores for full-stack
 recovery tests. The smaller pilot backup exports Core schema plus an explicit data-table allowlist,
 the `amazon-pilot` document subtree, Git revision, parser versions, hashes, and declared image
-digests. It explicitly excludes credential values, buyer data, ERP business tables, and all
+digests. It explicitly excludes provider-credential rows (including ciphertext), buyer data, ERP
+business tables, and all
 Vendure/Storefront/payment/shipping stores.
 
 Both restore paths verify manifests/checksums and refuse an existing target. The pilot rehearsal

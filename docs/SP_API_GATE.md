@@ -3,9 +3,11 @@
 ## Current state
 
 SP-API is an external gate, not a dependency of the manual import path. No fake
-credentials are generated and no credential value is stored in Git or the
-database. Without an explicitly approved secret reference, manual upload stays
-fully usable.
+credentials are generated and no credential value is stored in Git. Mantle can
+submit LWA values once through the write-only internal GUI; the backend encrypts
+them before database persistence, never returns them, and excludes their rows
+from pilot backups. Without an explicitly approved credential set, manual upload
+stays fully usable.
 
 ## Allowed capability
 
@@ -27,12 +29,14 @@ nor parsed. The operation allowlist is checked in CI.
 
 ## Preconditions for a one-shot live test
 
-- Mantle has supplied and explicitly approved LWA refresh token, client ID, and
-  client secret through the host secret environment.
-- The approved seller, marketplace, report type, period, options, and expiry are
-  recorded in the staging-gate file without secret values.
-- The live connection uses the approved logical secret reference and one
-  marketplace.
+- Mantle has created a private SP-API application, self-authorized it, and
+  entered its LWA refresh token, client ID, client secret, Seller ID,
+  Marketplace ID, and region through the write-only GUI.
+- The operator confirms both authorization and the read-only Reports-only
+  boundary. The backend binds that confirmation to a SHA-256 of seller, region,
+  and marketplace; it stores no readable approval context in the secret table.
+- The live connection uses the fixed logical secret reference `pilot_seller`,
+  the `Brand Analytics` role, and exactly one marketplace.
 - All automatic schedules remain disabled.
 - The exact deployed Git SHA has green backend, security, Amazon pilot, Docker,
   and recovery checks.
@@ -47,6 +51,13 @@ and complete request IDs are never logged.
 
 Successful SP-API bytes enter the same immutable archive, parser, snapshot,
 analysis, comparison, and aggregate-export boundary as a manual report.
+
+On `ai-marketing.mantle-climbing.de`, the single `Analyse` button requests the
+last seven fully completed UTC days only when this approved live connection is
+configured. It reuses an identical in-flight or completed run, polls with a
+bounded ten-minute UI wait, then submits the newly built aggregate hash to the
+weekly AI gate. There is no scheduler and no separate Amazon action button in
+the AI-first view.
 
 ## Gate outcome
 

@@ -183,9 +183,10 @@ identifier input.
 server API credentials or API billing. Raw Amazon business reports must not be disclosed merely to
 gain narrative output, and probabilistic text must not be presented as evidence.
 
-**Consequences:** The implemented adapter is disabled by default and activation requires a
-dedicated project-scoped OpenAI API key stored only in the host secret environment plus approved
-provider data controls. Requests use the fixed Responses API, `store: false`, no tools, a strict
+**Consequences:** The adapter fails closed without a dedicated project-scoped
+OpenAI API key and approved provider data controls. The later Mantle no-login
+decision governs its encrypted write-only storage; a host-environment key
+remains only as a legacy fallback. Requests use the fixed Responses API, `store: false`, no tools, a strict
 output schema, bounded payloads, and explicit aggregate-hash confirmation. Only validated output
 and redacted metadata are persisted immutably and idempotently; prompts/raw provider responses are
 not stored. Until the external credential gate exists, the deterministic path stays fully usable
@@ -211,3 +212,35 @@ confirmation; failed provider calls do not consume the week, while an accepted r
 run until the next local Monday. New imports after a run are visibly marked as outside the assessed
 hash. This workflow reads imported aggregates only and does not bypass the separate SP-API
 credential gate.
+
+## 2026-08-20 — Use a LAN-scoped no-login shell with write-only provider setup
+
+**Decision:** The canonical Mantle hostname always replaces browser credentials
+with a 12-hour `mantle-amazon-read-only` JWT issued only through the dedicated
+same-origin frontend proxy. The normal login endpoint is disabled in this mode.
+The scoped token can reach only explicit Amazon pilot reads, manual acquisition,
+the weekly strategy command, and provider configuration; it cannot reach ERP,
+raw-report, scheduler, health-write, or near-miss routes. Caddy's LAN/VPN source
+matcher is the human access-control boundary requested for this pilot.
+
+OpenAI and Amazon LWA credentials are accepted by write-only GUI endpoints,
+encrypted in the backend with AES-256-GCM and a host-only 32-byte master key,
+and stored as opaque ciphertext. Status returns only configured state, field
+names, approval state, and timestamps. Pilot backups include the table schema
+but explicitly exclude its data, so restores require credential re-entry. This
+supersedes the earlier host-environment-only credential-storage consequence for
+the Mantle deployment; the environment mechanism remains a legacy fallback.
+
+**Reason:** The operator explicitly requires no login and GUI-based credential
+entry without readback. A narrow ephemeral token prevents a stale Merchant
+admin token from silently widening the UI, while application-layer encryption
+avoids plaintext persistence and backup propagation. No-login necessarily means
+every client already inside the allowed network can replace credentials, which
+is documented rather than hidden.
+
+**Consequences:** `PILOT_SECRETS_KEY` is mandatory for the Mantle no-login
+profile and must never be printed or backed up. The single weekly `Analyse`
+button obtains one seven-day Sales and Traffic report when approved Amazon
+credentials exist, otherwise uses manual imports, then submits the closed
+aggregate history plus previous handover to OpenAI. Provider failures do not
+consume the weekly slot; no scheduler or mutation capability is added.

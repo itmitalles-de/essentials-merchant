@@ -10,9 +10,9 @@ archive, parser, metric, analysis, and export pipeline.
 The service never changes prices, advertising, listings, inventory, orders,
 payments, shipping, or tax/accounting data. The production profile starts only
 PostgreSQL, the Merchant backend, and the Core frontend. Vendure, Storefront,
-payment, shipping, and DATEV are outside the deployment. Optional external AI
-uses the existing backend only, is disabled by default, and has no tool or
-mutation capability.
+payment, shipping, and DATEV are outside the deployment. External AI uses the
+existing backend only, remains unavailable without a separately billed key, and
+has no tool or mutation capability.
 
 ## Current Mantle deployment
 
@@ -23,6 +23,12 @@ operators use `https://ai-marketing.mantle-climbing.de`; the retained fallback i
 to the Docker host. Caddy accepts only private, loopback, or VPN source ranges.
 The frontend has no public host bind and there is no public registration path.
 The Mantle dashboard links directly to the canonical AI hostname.
+
+The canonical hostname has no login form. Its frontend requests a short-lived,
+same-origin `mantle-amazon-read-only` session and exposes only the AI-first
+Amazon route. The regular login endpoint is disabled in this profile. Anyone
+inside the allowed LAN/VPN boundary can run the weekly analysis or replace
+write-only credentials, so the Caddy/source-network restriction is mandatory.
 
 The first live acceptance used only visibly synthetic, in-memory reports. JSON,
 CSV, TSV, retry idempotence, two-period comparison, all summary formats,
@@ -67,7 +73,8 @@ Marketplace Intelligence boundary; no third runtime analysis system was added.
 
 ## Runtime flow
 
-1. An authenticated internal user uploads JSON, CSV, or TSV bytes for preview.
+1. An internal user with the scoped pilot session uploads JSON, CSV, or TSV
+   bytes for preview.
 2. The backend enforces the byte limit, rejects PII-like columns, identifies the
    format, computes SHA-256, and validates the complete Sales and Traffic schema.
 3. The user confirms marketplace, period, granularity, report type, and source
@@ -100,10 +107,12 @@ The Marketplace Intelligence page implements the following workflow:
 8. Upload a second compatible period.
 9. Review the deterministic comparison.
 10. Export an aggregate JSON, Markdown, or CSV summary.
-11. Optionally click the single `Analyse` button. It uses every eligible bounded
-    aggregate analysis plus the last validated AI handover, renders the fixed
-    strategy structure below the deterministic analysis, and is disabled after
-    one successful Europe/Berlin calendar-week run.
+11. Click the single `Analyse` button. If approved Amazon credentials exist, it
+    first obtains exactly one seven-day Sales and Traffic report; otherwise it
+    uses the manual imports. It then uses every eligible bounded aggregate
+    analysis plus the last validated AI handover, renders the fixed strategy
+    structure below the deterministic analysis, and is disabled after one
+    successful Europe/Berlin calendar-week run.
 
 Raw report downloads are blocked by the Amazon read-only pilot middleware, even
 for administrators. The raw bytes are available only to the database backup and
@@ -130,8 +139,9 @@ available.
 
 Generative strategy synthesis is implemented behind a separate external gate.
 The rules engine remains the source of facts and supported derivations. The
-OpenAI adapter requires a separately funded, project-scoped server API key and
-receives only a stricter aggregate-history DTO after the `Analyse` click
+OpenAI adapter requires a separately funded, project-scoped API key entered
+through the write-only internal GUI and receives only a stricter
+aggregate-history DTO after the `Analyse` click
 confirms the displayed hash. It cannot receive raw reports or product/customer
 identifiers, run automatically, or gain a mutation tool. Validated model output
 is immutable, limited to one successful Mantle calendar-week row, includes a
@@ -139,7 +149,7 @@ fixed handover for the next run, and remains visibly separate from facts and
 deterministic derivations. Full activation and data-control details are in
 [STRATEGY_AI_GATE.md](STRATEGY_AI_GATE.md).
 
-The current live strategy status is
+Until a real key is entered, strategy status is
 `externally_blocked_missing_pay_per_use_api_key`. Manual report import,
-deterministic analysis, comparison, and export are available now; no real model
-request has been claimed.
+deterministic analysis, comparison, and export remain available; no fake key or
+provider success may be claimed.

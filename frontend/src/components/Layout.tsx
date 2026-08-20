@@ -8,12 +8,14 @@ import { ThemeToggle } from "./ThemeToggle";
 import { LanguageToggle } from "./LanguageToggle";
 import type { EssentialsModule } from "../types";
 import { usePilotStatus } from "../hooks/usePilotStatus";
+import { isMantlePilotExperience } from "../pilot";
 
 export function Layout() {
   const { username, role, logout } = useAuth();
   const { t } = useLanguage();
   const [modules, setModules] = useState<EssentialsModule[]>([]);
   const pilot = usePilotStatus();
+  const pilotExperience = isMantlePilotExperience();
 
   useEffect(() => {
     api.get<EssentialsModule[]>("/modules").then(setModules).catch(() => setModules([]));
@@ -32,23 +34,33 @@ export function Layout() {
           gap: "0.4rem",
         }}
       >
-        <div style={{ fontWeight: 700, marginBottom: "0.8rem" }}>Essentials+ Merchant</div>
-        <NavItem to="/">{t("nav.dashboard")}</NavItem>
-        {!pilot?.enabled && enabled("core.orders") && <NavItem to="/customers">{t("nav.customers")}</NavItem>}
-        {!pilot?.enabled && enabled("accounting.invoices") && <NavItem to="/invoices">{t("nav.invoices")}</NavItem>}
-        {!pilot?.enabled && enabled("core.catalog") && <NavItem to="/articles">{t("nav.articles")}</NavItem>}
-        {!pilot?.enabled && enabled("core.orders") && <NavItem to="/sales-orders">{t("nav.salesOrders")}</NavItem>}
-        {!pilot?.enabled && enabled("core.catalog") && <NavItem to="/settings">{t("nav.settings")}</NavItem>}
-        {enabled("marketplace.amazon_intelligence") && <NavItem to="/marketplace">Marketplace Intelligence</NavItem>}
-        {role === "administrator" && <NavItem to="/admin-center">Admin-Center</NavItem>}
-        {role === "administrator" && enabled("commerce.vendure") && <NavItem to="/integration-diagnostics">Integrationsdiagnose</NavItem>}
+        <div style={{ fontWeight: 700, marginBottom: "0.8rem" }}>
+          {pilotExperience ? "Mantle · AI Marketing" : "Essentials+ Merchant"}
+        </div>
+        {pilotExperience ? (
+          <NavItem to="/ai-marketing">Amazon Analyse</NavItem>
+        ) : (
+          <>
+            <NavItem to="/">{t("nav.dashboard")}</NavItem>
+            {!pilot?.enabled && enabled("core.orders") && <NavItem to="/customers">{t("nav.customers")}</NavItem>}
+            {!pilot?.enabled && enabled("accounting.invoices") && <NavItem to="/invoices">{t("nav.invoices")}</NavItem>}
+            {!pilot?.enabled && enabled("core.catalog") && <NavItem to="/articles">{t("nav.articles")}</NavItem>}
+            {!pilot?.enabled && enabled("core.orders") && <NavItem to="/sales-orders">{t("nav.salesOrders")}</NavItem>}
+            {!pilot?.enabled && enabled("core.catalog") && <NavItem to="/settings">{t("nav.settings")}</NavItem>}
+            {enabled("marketplace.amazon_intelligence") && <NavItem to="/marketplace">Marketplace Intelligence</NavItem>}
+            {role === "administrator" && <NavItem to="/admin-center">Admin-Center</NavItem>}
+            {role === "administrator" && enabled("commerce.vendure") && <NavItem to="/integration-diagnostics">Integrationsdiagnose</NavItem>}
+          </>
+        )}
         <div style={{ flex: 1 }} />
-        <div style={{ fontSize: "0.85rem", color: "var(--fg-muted)" }}>{username}</div>
+        {!pilotExperience && <div style={{ fontSize: "0.85rem", color: "var(--fg-muted)" }}>{username}</div>}
         <ThemeToggle />
         <LanguageToggle />
-        <button className="secondary" onClick={logout}>
-          {t("nav.logout")}
-        </button>
+        {!pilotExperience && (
+          <button className="secondary" onClick={logout}>
+            {t("nav.logout")}
+          </button>
+        )}
       </nav>
       <main style={{ flex: 1, padding: "1.5rem" }}>
         {pilot?.enabled && (

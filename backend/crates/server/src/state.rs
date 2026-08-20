@@ -11,4 +11,7 @@ pub struct AppState {
     pub pdf_storage_dir: String,
     pub marketplace_worker: MarketplaceWorker,
     pub strategy_ai: crate::strategy_ai::StrategyAiClient,
+    pub provider_secrets: crate::provider_secrets::ProviderSecretStore,
+    pub mantle_pilot_no_login: bool,
+    pub pilot_admin_username: String,
 }

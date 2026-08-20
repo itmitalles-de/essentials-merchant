@@ -1,72 +1,65 @@
 # TODO
 
-This file is the authoritative unfinished-work handoff. Do not create a competing root task list.
+This file is the authoritative unfinished-work handoff. Do not create a
+competing root task list.
 
-## Mantle AI marketing mini-tool
+## Current Mantle rollout
 
-- [x] Reuse Marketplace Intelligence rather than creating a third parser/analysis runtime.
-- [x] Implement the closed aggregate provider DTO, explicit SHA-256 confirmation, fixed OpenAI
-  Responses transport, strict structured result, fail-closed validation, and separate immutable
-  idempotent persistence.
-- [x] Add the German strategy panel and `/ai-marketing` AI-first route with visible separation from
-  facts and deterministic derivations.
-- [x] Replace the per-analysis confirmation UI with exactly one `Analyse` button, enforce one
-  successful run per Berlin calendar week in the server/database, include bounded aggregate history
-  plus the previous validated handover, and render a fixed KPI/strategy/handover structure.
-- [x] Keep the OpenAI feature disabled by default and the manual report workflow fully usable
-  without a key.
-- [x] Verify Rust/DB/frontend, fresh Compose/Chromium, privacy/transport contracts, upgrade, and
-  backup/empty-target restore with synthetic data only.
-- [x] Stage, commit, and push the authorized implementation and recovery fix to
-  `pilot/mantle-amazon-analysis-live`; all seven PR #5 jobs passed on deployed head
-  `61e7b3855afaa6a378edffc39b352afd875feebe` in run `32341733986`.
-- [x] Re-baseline the productive host immediately before deployment and update only Compose project
-  `essentials-merchant-amazon` with full Git-SHA backend/frontend images. Do not touch its volumes
-  or other projects.
-- [x] Add a validated, gracefully reloaded LAN/VPN-only Caddy route for
-  `ai-marketing.mantle-climbing.de` to `essentials-merchant-amazon-frontend:80` and an E-Commerce
-  tile in the existing Homer config. Do not restart Caddy or Homer wholesale.
-- [x] Verify the internal A record `ai-marketing.mantle-climbing.de -> 192.168.178.15` and canonical
-  route through normal DNS resolution.
-- [x] Run live synthetic acceptance with OpenAI disabled: login, AI-first view, existing analysis,
-  disabled external gate, import/comparison/export, unchanged non-target container IDs/restarts,
-  logs/secrets check, backup, and empty-target restore.
-- [x] Re-run live acceptance for the weekly tool: four synthetic aggregate analyses, stable closed
-  hash, fixed UI, provider failure without weekly consumption, schema 18, zero secret-log matches,
-  SHA-tagged images, verified backup, and matching empty-target restore.
-
-## Operational retention decision
-
-- [ ] After a human confirms the final backup, decide whether to retain or explicitly remove the two
-  latest stopped restore audit volumes, the earlier restore audit volumes, and the segregated,
-  manifest-less first backup attempt. Never use the failed partial directory as a restore source and
-  never use `docker compose down -v`.
+- [x] Reuse Marketplace Intelligence and its parser/archive/comparison boundary.
+- [x] Add a no-login, 12-hour Amazon-only session with exact route scoping and
+  server-side regular-login denial.
+- [x] Add encrypted write-only OpenAI/Amazon GUI setup under a host-only master
+  key; never return stored values.
+- [x] Make the single weekly `Analyse` button create/reuse one seven-day
+  Sales-and-Traffic run when Amazon is configured, otherwise use manual imports.
+- [x] Preserve the closed aggregate DTO, previous validated handover, fixed
+  graphical/section layout, one-success-per-Berlin-week database boundary, and
+  zero Amazon/Merchant mutations.
+- [x] Exclude provider credential rows from pilot backups and prove zero rows in
+  an empty-target restore.
+- [x] Complete local Rust/frontend/Chromium/security/SQLx/upgrade/recovery and
+  synthetic JSON/CSV/TSV acceptance.
+- [ ] Commit and push the exact feature head to draft PR #5; require all seven
+  CI jobs green.
+- [ ] Re-baseline production, create a verified pre-deploy backup, deploy only
+  Compose project `essentials-merchant-amazon`, and preserve every non-target
+  container ID/restart count.
+- [ ] Verify no-login route, scoped ERP denial, write-only empty status, schema
+  19, zero schedules, logs without secrets, synthetic import/comparison/export,
+  backup, and empty-target restore on the deployed SHA.
+- [ ] Record exact live commit, image IDs, backup/restore evidence, and remaining
+  external gates in this handoff and `docs/MANTLE_AMAZON_PILOT.md`.
 
 ## External OpenAI gate
 
-- [ ] Create a separately billed, project-scoped OpenAI API project/key. A ChatGPT Pro subscription
-  is not sufficient. Provision the key only in the host's mode-0600 environment without printing,
-  logging, copying to Git, or placing it in backup metadata.
-- [ ] Approve provider data controls and acknowledge that `store: false` disables Responses
-  application-state storage but standard abuse-monitoring logs may still be retained for up to 30
-  days unless separately approved controls apply.
-- [ ] Set `OPENAI_STRATEGY_ENABLED=true`, keep the chosen `OPENAI_STRATEGY_MODEL`, redeploy only the
-  backend, and run one short synthetic aggregate assessment. Verify structured output, idempotent
-  replay, no secret/payload logs, and the immutable assessment row before any authorized business
-  analysis.
+- [ ] In the OpenAI Platform, create a dedicated project with pay-per-use
+  billing/budget and a project/service-account API key. ChatGPT Pro is separate.
+- [ ] Approve the applicable provider data controls; `store:false` removes
+  Responses application-state storage but is not a zero-retention claim.
+- [ ] Enter the real key only through the internal write-only GUI. Run one
+  authorized aggregate assessment, verify the fixed result/handover and weekly
+  lock, and check logs without printing the key or payload.
 
-## External Amazon gates
+## External Amazon gate
 
-- [ ] Obtain explicitly approved LWA credentials, seller/marketplace scope, Brand Analytics role,
-  and the one-shot approval artifact without printing secret values.
-- [ ] If approved, request exactly one short completed Sales and Traffic report through LWA and
-  Reports API, with bounded polling/backoff and no scheduler or PII. Otherwise retain the external
-  blocked status.
-- [ ] Import an authorized real report only when authorization and local availability are proven;
-  never record its path, raw bytes, product identifiers, or business metrics in Git/logs.
+- [ ] Register and self-authorize a private SP-API app with only the required
+  Reports/Brand Analytics access; obtain LWA Client ID/Secret, Refresh Token,
+  Seller ID, Marketplace ID, and region.
+- [ ] Enter those values only through the internal write-only GUI and confirm
+  Mantle authorization/read-only scope. Do not create fake credentials.
+- [ ] Run exactly one completed seven-day Sales and Traffic acquisition through
+  the weekly button; verify request-ID redaction, polling/backoff, hashes,
+  parser, analysis, and absence of Buyer/Order PII.
+- [ ] Import an authorized real report only when authorization and local
+  availability are proven. Never record its path, raw bytes, product IDs, or
+  business metrics in Git/logs.
 
 ## Explicitly deferred
 
-- Ads evidence is the only sensible next analysis extension after the strategy mini-tool has one
-  accepted real/synthetic use cycle. Stripe, DHL/DPD, DATEV, automatic Amazon actions,
-  multi-tenancy, Kubernetes, and unrelated Marketplace integrations remain outside this milestone.
+- Ads evidence is the only sensible next analysis extension after one accepted
+  real weekly cycle. Stripe, DHL/DPD, DATEV, automatic Amazon actions,
+  multi-tenancy, Kubernetes, and unrelated marketplace work remain outside this
+  milestone.
+- Retained stopped restore volumes and historical partial backup directories
+  require a separate human retention/deletion decision. Never use
+  `docker compose down -v` on production.

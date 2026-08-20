@@ -2223,7 +2223,7 @@ pub async fn overview(pool: &PgPool) -> Result<MarketplaceOverview, sqlx::Error>
         "SELECT id, seller_id, region, secret_ref, granted_roles, mode, enabled, created_at, updated_at
          FROM amazon_connections
          WHERE seller_id <> 'manual-report-import'
-         ORDER BY created_at DESC",
+         ORDER BY enabled DESC, updated_at DESC, created_at DESC",
     )
     .fetch_all(pool)
     .await?;

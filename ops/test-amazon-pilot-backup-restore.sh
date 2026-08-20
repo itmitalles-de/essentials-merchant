@@ -135,6 +135,12 @@ INSERT INTO administrative_audit_log
 SELECT id, 'pilot.synthetic_backup_fixture', 'pilot_profile', 'amazon-read-only',
        'pilot-synthetic-backup-fixture-v1', '{"pii":false,"synthetic":true}'
 FROM users WHERE username = 'synthetic-admin';
+INSERT INTO pilot_provider_secrets
+  (provider, ciphertext, nonce, encryption_algorithm, key_version,
+   configured_fields, updated_by)
+SELECT 'openai', decode(repeat('ab', 32), 'hex'), decode(repeat('cd', 12), 'hex'),
+       'AES-256-GCM-v1', 1, ARRAY['api_key'], id
+FROM users WHERE username = 'synthetic-admin';
 SQL
 
 docker run --rm --user 0:0 \
@@ -157,6 +163,8 @@ test "$(compose "$source_project" exec -T db psql -U erplite -d erplite -X -qAt 
   "SELECT count(*) FROM amazon_report_documents document
    JOIN amazon_report_runs run ON run.id = document.run_id
    WHERE run.report_type <> 'GET_SALES_AND_TRAFFIC_REPORT'")" = 0
+test "$(compose "$source_project" exec -T db psql -U erplite -d erplite -X -qAt -c \
+  "SELECT count(*) FROM pilot_provider_secrets")" = 1
 
 compose "$source_project" exec -T db psql -U erplite -d erplite -X -qAt -v ON_ERROR_STOP=1 -c \
   "INSERT INTO amazon_connections (seller_id, region, secret_ref, granted_roles, mode)
@@ -191,6 +199,8 @@ test "$(compose "$restore_project" exec -T db psql -U erplite -d erplite -X -qAt
 test "$(compose "$restore_project" exec -T db psql -U erplite -d erplite -X -qAt -v ON_ERROR_STOP=1 -c \
   "SELECT count(*) FROM amazon_report_schedules WHERE enabled")" = 0
 test "$(compose "$restore_project" exec -T db psql -U erplite -d erplite -X -qAt -v ON_ERROR_STOP=1 -c \
+  "SELECT count(*) FROM pilot_provider_secrets")" = 0
+test "$(compose "$restore_project" exec -T db psql -U erplite -d erplite -X -qAt -v ON_ERROR_STOP=1 -c \
   "SELECT count(*) FROM amazon_ai_strategy_assessments
    WHERE week_start = DATE '2026-08-17'
      AND result ? 'handover'
@@ -199,4 +209,4 @@ test "$(docker run --rm -v "${restore_project}_erplite_invoices:/source:ro" \
   postgres:16-alpine@sha256:cf78e76683b9ca8c5733cbbdce6c9262b45b6767934dd0a95e671f9a0fc20685 \
   cat /source/amazon-pilot/fixture.txt)" = 'synthetic pilot operations document'
 
-echo "Amazon pilot backup/restore passed: large raw archive, hashes, snapshot, parser, deterministic/AI analyses, modules, audit, documents, and fail-closed profile verified."
+echo "Amazon pilot backup/restore passed: large raw archive, hashes, snapshot, parser, deterministic/AI analyses, modules, audit, documents, credential exclusion, and fail-closed profile verified."

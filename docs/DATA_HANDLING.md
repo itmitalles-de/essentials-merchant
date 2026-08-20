@@ -7,7 +7,8 @@
 | Raw confidential report | Exact uploaded JSON/CSV/TSV bytes | Immutable PostgreSQL archive; backup-only access in the pilot profile; never Git. |
 | Aggregate business metric | Revenue, units, sessions, page views, percentages | Decimal normalized records; internal UI and allowlisted summary export. |
 | Operational metadata | SHA-256, format, report type, marketplace, period, parser version, freshness | Immutable provenance and internal diagnostics. |
-| Secret | LWA refresh token, client ID/secret, OpenAI API key, JWT/admin/database secrets | Host environment only; never database, logs, exports, backup manifest, or Git. |
+| Provider secret | LWA refresh token, LWA client ID/secret, OpenAI API key | Accepted only by write-only UI endpoints, encrypted with AES-256-GCM before persistence, never returned, and excluded even as ciphertext from pilot backup data. |
+| Host secret | Provider master key, JWT/admin/database secrets | Host environment only; never database, logs, exports, backup manifest, or Git. |
 | PII or order data | Buyer/customer name, e-mail, phone, address, order ID | Not required, rejected by the manual importer, not requested from SP-API. |
 
 ## Raw-report controls
@@ -39,6 +40,9 @@ raw archives and manual-import provenance), parser versions, redacted Compose
 metadata, image IDs, and integrity manifests. Backup directories are
 confidential operational data and must use host-restricted permissions.
 The backup script enforces umask `077` before creating any dump or manifest.
+The `pilot_provider_secrets` table definition is restored, but its rows are
+explicitly excluded. A restored stack therefore contains no OpenAI or Amazon
+credential ciphertext and requires deliberate credential re-entry in the UI.
 
 Restore is permitted only into an empty, isolated Compose project. The restore
 procedure verifies manifest hashes before writing, starts the database first,
@@ -51,9 +55,9 @@ current immutable-delete triggers.
 
 ## Optional external strategy synthesis
 
-The live pilot defaults to no external AI request. The implemented strategy
-panel remains disabled until a separate privacy and API-credential gate is
-approved. When enabled, the only eligible input is an explicitly requested,
+The live Mantle adapter is enabled, but no external AI request is possible
+until an operator stores a separately billed project API key through the
+write-only UI. The only eligible input is an explicitly requested,
 hash-confirmed, closed aggregate DTO containing up to eight distinct newest-first
 period/marketplace analyses, allowlisted metrics and deterministic deltas,
 freshness, bounded missing-field labels, semantic evidence references, and the
@@ -61,9 +65,12 @@ last validated structured AI result as untrusted continuity context. Raw bytes,
 raw rows, ASIN/SKU or customer identifiers, old database evidence UUIDs, local
 paths, archive hashes, secrets, and free report text are prohibited.
 
-The provider key must be project-scoped and stored only in the host secret
-environment. Requests must disable provider-side response storage where the API
-supports it. Neither request nor response may be logged verbatim. Generated
+The provider key must be project-scoped. The browser sends it once over the
+internal HTTPS route; the backend encrypts it with the host-only
+`PILOT_SECRETS_KEY` and the API can subsequently report only configured state,
+field names, and timestamp. A legacy environment-key fallback remains for
+non-Mantle deployments. Requests disable provider-side response storage.
+Neither request nor response may be logged verbatim. Generated
 content is untrusted strategy assistance and is stored/displayed only inside a
 visibly separate AI block as assessment, hypotheses, possible measures,
 uncertainty, missing evidence, open questions, and a fixed next-run handover; it

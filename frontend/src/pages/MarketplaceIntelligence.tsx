@@ -7,6 +7,7 @@ import {
 } from "../api";
 import { useAuth } from "../contexts/AuthContext";
 import { usePilotStatus } from "../hooks/usePilotStatus";
+import { ProviderSettingsPanel } from "../components/ProviderSettingsPanel";
 import type {
   AmazonConnectionSummary,
   AmazonReportRun,
@@ -89,6 +90,7 @@ export function MarketplaceIntelligence({ aiFirst = false }: { aiFirst?: boolean
   const [confirmed, setConfirmed] = useState(false);
   const [importResult, setImportResult] = useState<MarketplaceImportResult | null>(null);
   const [sessionImports, setSessionImports] = useState<MarketplaceImportResult[]>([]);
+  const [credentialRevision, setCredentialRevision] = useState(0);
 
   const reload = async () => {
     try {
@@ -285,7 +287,13 @@ export function MarketplaceIntelligence({ aiFirst = false }: { aiFirst?: boolean
             Noch keine Analyse vorhanden. Importiere unten einen Zeitraum; für belastbare Deltas
             anschließend einen kompatiblen zweiten Zeitraum.
           </p>
-          <WeeklyStrategyPanel />
+          <WeeklyStrategyPanel
+            key={`weekly-${credentialRevision}`}
+            liveConnection={realSpApiReady ? connection : null}
+            marketplaceId={realSpApiReady ? marketplaceId : null}
+            recentRuns={overview?.recent_runs ?? []}
+            onDataUpdated={reload}
+          />
         </div>
       )}
       {analyses.map((analysis, index) => (
@@ -295,6 +303,11 @@ export function MarketplaceIntelligence({ aiFirst = false }: { aiFirst?: boolean
           result={analysis.result}
           title={`Periodenvergleich · ${formatDate(analysis.created_at)}`}
           showWeeklyStrategy={index === 0}
+          strategyRevision={credentialRevision}
+          weeklyConnection={realSpApiReady ? connection : null}
+          weeklyMarketplaceId={realSpApiReady ? marketplaceId : null}
+          recentRuns={overview?.recent_runs ?? []}
+          onDataUpdated={reload}
         />
       ))}
     </section>
@@ -320,6 +333,15 @@ export function MarketplaceIntelligence({ aiFirst = false }: { aiFirst?: boolean
         )}
         {message && <p className="marketplace-status" role="status">{message}</p>}
       </section>
+
+      {aiFirst && (
+        <ProviderSettingsPanel
+          onConfigured={async () => {
+            setCredentialRevision((value) => value + 1);
+            await reload();
+          }}
+        />
+      )}
 
       {aiFirst && analysisSection}
 
@@ -565,7 +587,7 @@ export function MarketplaceIntelligence({ aiFirst = false }: { aiFirst?: boolean
           <p>Für dieses optionale Modul ist noch keine berechtigte Verbindung aktiv.</p>
         )}
         {connection && <ConnectionCard connection={connection} marketplaceId={marketplaceId} />}
-        {(realSpApiReady || syntheticSpApiTestReady) && (
+        {!aiFirst && (realSpApiReady || syntheticSpApiTestReady) && (
           <div className="marketplace-actions">
             <button type="button" onClick={requestReport} disabled={loading}>
               Sales &amp; Traffic jetzt abrufen
@@ -573,8 +595,11 @@ export function MarketplaceIntelligence({ aiFirst = false }: { aiFirst?: boolean
           </div>
         )}
         <p className="marketplace-muted">
-          Ausschließlich ein einmaliger Sales-&amp;-Traffic-Abruf. Kein Scheduler, keine Buyer-/Order-PII
-          und keine Amazon-Mutation. Letzter erfolgreicher Lauf: {formatDate(latestSuccessful?.completed_at ?? null)}.
+          {aiFirst
+            ? "Der einzige Analyse-Button oben startet bei konfiguriertem Amazon-Zugang genau einen kurzen Wochenabruf. "
+            : "Ausschließlich ein einmaliger Sales-&-Traffic-Abruf. "}
+          Kein Scheduler, keine Buyer-/Order-PII und keine Amazon-Mutation. Letzter erfolgreicher
+          Lauf: {formatDate(latestSuccessful?.completed_at ?? null)}.
         </p>
         {reports.length > 0 && (
           <details>
@@ -1079,6 +1104,12 @@ function strategyErrorMessage(error: unknown): string {
     aggregate_confirmation_mismatch: "Die Aggregatdaten haben sich geändert. Bitte den neuen Hash prüfen.",
     aggregate_payload_invalid: "Diese Analyse enthält keine freigegebenen Aggregatdaten für die KI-Strategie.",
     aggregate_payload_too_large: "Die freigegebene Aggregatzusammenfassung ist zu groß.",
+    amazon_report_cancelled: "Amazon hat den Wochenbericht abgebrochen oder ohne Daten beendet.",
+    amazon_report_fatal: "Amazon konnte den Wochenbericht nicht erzeugen.",
+    amazon_report_failed: "Der read-only Amazon-Abruf ist fehlgeschlagen.",
+    amazon_report_archived: "Der Amazon-Bericht konnte nicht analysiert werden.",
+    amazon_report_still_processing: "Amazon verarbeitet den Bericht weiter. Ein erneuter Klick verwendet denselben laufenden Abruf.",
+    provider_secret_store_failed: "Der verschlüsselte Zugangsdaten-Speicher ist nicht verfügbar.",
   };
   return messages[code] ?? `KI-Strategie konnte nicht geladen werden (${code}).`;
 }
@@ -1099,12 +1130,35 @@ function weeklyBlockMessage(view: MarketplaceStrategyView): string | null {
   return null;
 }
 
-function WeeklyStrategyPanel() {
+const wait = (milliseconds: number) => new Promise((resolve) => window.setTimeout(resolve, milliseconds));
+
+function weeklyAmazonPeriod() {
+  const end = new Date();
+  end.setUTCDate(end.getUTCDate() - 1);
+  end.setUTCHours(23, 59, 59, 0);
+  const start = new Date(end);
+  start.setUTCDate(start.getUTCDate() - 6);
+  start.setUTCHours(0, 0, 0, 0);
+  return { start, end };
+}
+
+function WeeklyStrategyPanel({
+  liveConnection,
+  marketplaceId,
+  recentRuns,
+  onDataUpdated,
+}: {
+  liveConnection: AmazonConnectionSummary | null;
+  marketplaceId: string | null;
+  recentRuns: AmazonReportRun[];
+  onDataUpdated: () => Promise<void>;
+}) {
   const { role } = useAuth();
   const [view, setView] = useState<MarketplaceStrategyView | null>(null);
   const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [phase, setPhase] = useState<string | null>(null);
 
   useEffect(() => {
     if (role !== "administrator") return;
@@ -1128,15 +1182,60 @@ function WeeklyStrategyPanel() {
 
   if (role !== "administrator") return null;
 
+  const refreshAmazonEvidence = async (): Promise<void> => {
+    if (!liveConnection || !marketplaceId) return;
+    const { start, end } = weeklyAmazonPeriod();
+    const matchingRun = recentRuns.find((run) =>
+      run.connection_id === liveConnection.id
+        && run.marketplace_id === marketplaceId
+        && run.report_type === salesReport
+        && run.data_start_time?.slice(0, 10) === start.toISOString().slice(0, 10)
+        && run.data_end_time?.slice(0, 10) === end.toISOString().slice(0, 10)
+        && !["cancelled", "fatal", "failed", "archived"].includes(run.status));
+    let run = matchingRun ?? await api.post<AmazonReportRun>(
+      `/marketplace/connections/${liveConnection.id}/runs`,
+      {
+        marketplace_id: marketplaceId,
+        report_type: salesReport,
+        data_start_time: start.toISOString(),
+        data_end_time: end.toISOString(),
+        report_options: { dateGranularity: "DAY", asinGranularity: "CHILD" },
+      },
+    );
+    setPhase("Amazon erstellt den read-only Sales-&-Traffic-Bericht …");
+    for (let attempt = 0; attempt < 120 && run.status !== "succeeded"; attempt += 1) {
+      if (["cancelled", "fatal", "failed", "archived"].includes(run.status)) {
+        throw new Error(`amazon_report_${run.status}`);
+      }
+      await wait(5_000);
+      run = (await api.get<MarketplaceRunDetail>(`/marketplace/runs/${run.id}`)).run;
+    }
+    if (run.status !== "succeeded") {
+      throw new Error("amazon_report_still_processing");
+    }
+    setPhase("Neue Amazon-Kennzahlen sind eingelesen; Strategie-Kontext wird aufgebaut …");
+    await onDataUpdated();
+  };
+
   const createAssessment = async () => {
-    if (!view?.can_run || !view.current_payload_sha256) return;
+    if (!view || view.block_reason === "weekly_limit_reached") return;
+    if (!view.status.available || (!liveConnection && !view.can_run)) return;
     setSubmitting(true);
     setError(null);
+    setPhase(liveConnection ? "Der Wochenlauf startet mit dem Amazon-Abruf …" : "Analyse läuft …");
     try {
+      await refreshAmazonEvidence();
+      const prepared = await api.get<MarketplaceStrategyView>("/marketplace/strategy/weekly");
+      setView(prepared);
+      if (prepared.block_reason === "weekly_limit_reached") return;
+      if (!prepared.can_run || !prepared.current_payload_sha256) {
+        throw new Error(prepared.block_reason ?? "no_analysis_data");
+      }
+      setPhase("OpenAI bewertet ausschließlich die freigegebenen Aggregatdaten …");
       const result = await api.post<MarketplaceStrategyView>(
         "/marketplace/strategy/weekly",
         {
-          confirmed_payload_sha256: view.current_payload_sha256,
+          confirmed_payload_sha256: prepared.current_payload_sha256,
           confirmed_aggregate_only: true,
         },
       );
@@ -1151,6 +1250,7 @@ function WeeklyStrategyPanel() {
       }
     } finally {
       setSubmitting(false);
+      setPhase(null);
     }
   };
 
@@ -1161,11 +1261,13 @@ function WeeklyStrategyPanel() {
         <span className="badge">maximal 1× pro Kalenderwoche</span>
       </div>
       <p>
-        Ein Klick verarbeitet alle aktuell freigegebenen Aggregatanalysen und nimmt das validierte
-        Handover des letzten Wochenlaufs als Kontext. OpenAI erhält keine Rohdatei, Reportzeile,
-        ASIN/SKU, Buyer-/Order-PII oder Secrets.
+        Ein Klick holt bei konfigurierter SP-API genau einen read-only Sales-&amp;-Traffic-Bericht
+        für die letzten sieben abgeschlossenen Tage, verarbeitet alle freigegebenen
+        Aggregatanalysen und nimmt das validierte Handover des letzten Wochenlaufs als Kontext.
+        OpenAI erhält keine Rohdatei, Reportzeile, ASIN/SKU, Buyer-/Order-PII oder Secrets.
       </p>
       {loading && <p role="status">Aggregatgrenze wird geprüft …</p>}
+      {phase && <p className="marketplace-status" role="status">{phase}</p>}
       {error && <p className="marketplace-callout warning" role="alert">{error}</p>}
       {view && (
         <>
@@ -1187,7 +1289,7 @@ function WeeklyStrategyPanel() {
             <div><dt>Speicherung bei Anfrage</dt><dd><code>store: false</code></dd></div>
             <div><dt>Amazon-Mutation</dt><dd>nicht vorhanden</dd></div>
           </dl>
-          {weeklyBlockMessage(view) && (
+          {weeklyBlockMessage(view) && !(liveConnection && view.block_reason === "no_analysis_data") && (
             <div
               className={`marketplace-callout ${view.block_reason === "weekly_limit_reached" ? "success" : "warning"}`}
               role="status"
@@ -1210,15 +1312,21 @@ function WeeklyStrategyPanel() {
           <button
             type="button"
             className="weekly-analysis-button"
-            disabled={!view.can_run || submitting}
+            disabled={
+              submitting
+                || view.block_reason === "weekly_limit_reached"
+                || !view.status.available
+                || (!liveConnection && !view.can_run)
+            }
             onClick={() => void createAssessment()}
           >
             {submitting ? "Analyse läuft …" : "Analyse"}
           </button>
           <p className="marketplace-muted">
-            Der Klick bestätigt die einmalige Übermittlung des angezeigten Aggregat-Hashes. Ein
-            fehlgeschlagener Provideraufruf verbraucht das Wochenfenster nicht; ein erfolgreich
-            gespeicherter Lauf sperrt es serverseitig bis zum nächsten Montag.
+            Der Klick bestätigt den Amazon-read-only-Abruf und die einmalige Übermittlung des danach
+            angezeigten Aggregat-Hashes. Ohne Amazon-Zugang werden vorhandene manuelle Importe
+            verwendet. Ein fehlgeschlagener Provideraufruf verbraucht das Wochenfenster nicht; ein
+            erfolgreich gespeicherter Lauf sperrt es serverseitig bis zum nächsten Montag.
           </p>
           <StrategyResult view={view} />
         </>
@@ -1236,11 +1344,21 @@ function AnalysisCard({
   result,
   title,
   showWeeklyStrategy = false,
+  strategyRevision = 0,
+  weeklyConnection = null,
+  weeklyMarketplaceId = null,
+  recentRuns = [],
+  onDataUpdated = async () => undefined,
 }: {
   id: string;
   result: Record<string, unknown>;
   title: string;
   showWeeklyStrategy?: boolean;
+  strategyRevision?: number;
+  weeklyConnection?: AmazonConnectionSummary | null;
+  weeklyMarketplaceId?: string | null;
+  recentRuns?: AmazonReportRun[];
+  onDataUpdated?: () => Promise<void>;
 }) {
   const context = typeof result.context === "object" && result.context !== null
     ? result.context as Record<string, unknown>
@@ -1334,7 +1452,15 @@ function AnalysisCard({
           </ul>
         </>
       )}
-      {showWeeklyStrategy && <WeeklyStrategyPanel />}
+      {showWeeklyStrategy && (
+        <WeeklyStrategyPanel
+          key={`weekly-${strategyRevision}`}
+          liveConnection={weeklyConnection}
+          marketplaceId={weeklyMarketplaceId}
+          recentRuns={recentRuns}
+          onDataUpdated={onDataUpdated}
+        />
+      )}
       <div className="marketplace-actions" aria-label="Zusammenfassung exportieren">
         <button
           type="button"
