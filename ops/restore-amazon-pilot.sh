@@ -22,6 +22,9 @@ export MANTLE_AMAZON_PROXY_ALIAS="${project}-frontend"
 compose() {
   docker compose --project-name "$project" --env-file "$compose_env_file" --file "$compose_file" "$@"
 }
+node_tool() {
+  "$repository_dir/ops/run-node-tool.sh" "$repository_dir" "$backup_dir" ro "$@"
+}
 if [ -n "$(compose ps -aq)" ]; then echo "restore project already has containers: $project" >&2; exit 2; fi
 for volume in erplite_db_data erplite_invoices; do
   if docker volume inspect "${project}_${volume}" >/dev/null 2>&1; then
@@ -30,7 +33,7 @@ for volume in erplite_db_data erplite_invoices; do
   fi
 done
 
-node "$repository_dir/ops/verify-amazon-pilot-backup.mjs" "$backup_dir"
+node_tool "$repository_dir/ops/verify-amazon-pilot-backup.mjs" "$backup_dir"
 compose up -d --wait db
 compose exec -T db pg_restore -U erplite -d erplite --no-owner --no-acl --exit-on-error \
   <"$backup_dir/data/core-schema.dump"
@@ -51,7 +54,7 @@ docker run --rm \
 
 compose up -d --wait backend frontend
 manifest_sha=$(sha256sum "$backup_dir/manifest.json" | cut -d ' ' -f 1)
-revision=$(node -e 'const m=require(process.argv[1]); process.stdout.write(m.repository_revision)' "$backup_dir/manifest.json")
+revision=$(node_tool -e 'const m=require(process.argv[1]); process.stdout.write(m.repository_revision)' "$backup_dir/manifest.json")
 compose exec -T db psql -U erplite -d erplite -X -qAt -v ON_ERROR_STOP=1 -c \
   "INSERT INTO pilot_backup_verifications
      (profile, outcome, manifest_sha256, repository_revision, details)

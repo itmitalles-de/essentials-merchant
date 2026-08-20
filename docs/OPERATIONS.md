@@ -234,6 +234,14 @@ The script builds only the allowlisted images, waits for health, checks the
 persisted module allowlist, and verifies that automatic Amazon schedules equal
 zero. It stops only the target application services if the profile fails closed.
 
+The pilot backup and restore scripts do not require a system-wide Node.js
+installation. `ops/run-node-tool.sh` uses the host runtime when available and
+otherwise runs the manifest tools in the digest-pinned Node 22 image with no
+network, a read-only root filesystem, the repository mounted read-only, and
+only the selected backup directory mounted with the required access. Set
+`MERCHANT_NODE_RUNTIME=container` in a rehearsal to exercise that fallback
+explicitly; it is not a production secret or application setting.
+
 ### Live backup
 
 Create a new host-restricted directory and run the pilot backup against the live

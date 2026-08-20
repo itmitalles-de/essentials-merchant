@@ -17,6 +17,9 @@ output_dir=$(CDPATH='' cd -- "$output_dir" && pwd)
 compose() {
   docker compose --project-name "$project" --env-file "$compose_env_file" --file "$compose_file" "$@"
 }
+node_tool() {
+  "$repository_dir/ops/run-node-tool.sh" "$repository_dir" "$output_dir" rw "$@"
+}
 
 configured=$(compose config --services | sort | tr '\n' ' ')
 running=$(compose ps --services --status running | sort | tr '\n' ' ')
@@ -70,7 +73,7 @@ docker run --rm \
   postgres:16-alpine@sha256:cf78e76683b9ca8c5733cbbdce6c9262b45b6767934dd0a95e671f9a0fc20685 \
   sh -c 'if [ -d /source/amazon-pilot ]; then tar -C /source -czf /backup/pilot-documents.tar.gz amazon-pilot; else mkdir -p /tmp/empty && tar -C /tmp/empty -czf /backup/pilot-documents.tar.gz .; fi'
 
-compose config --format json | node "$repository_dir/ops/redact-compose.mjs" \
+compose config --format json | node_tool "$repository_dir/ops/redact-compose.mjs" \
   >"$output_dir/data/compose-metadata.json"
 : >"$output_dir/data/runtime-image-digests.tsv"
 for service in db backend frontend; do
@@ -80,8 +83,8 @@ for service in db backend frontend; do
 done
 
 revision=$(git -C "$repository_dir" rev-parse HEAD)
-node "$repository_dir/ops/amazon-pilot-backup-manifest.mjs" "$output_dir" "$revision" "$schema_version"
-node "$repository_dir/ops/verify-amazon-pilot-backup.mjs" "$output_dir"
+node_tool "$repository_dir/ops/amazon-pilot-backup-manifest.mjs" "$output_dir" "$revision" "$schema_version"
+node_tool "$repository_dir/ops/verify-amazon-pilot-backup.mjs" "$output_dir"
 manifest_sha=$(sha256sum "$output_dir/manifest.json" | cut -d ' ' -f 1)
 compose exec -T db psql -U erplite -d erplite -X -qAt -v ON_ERROR_STOP=1 -c \
   "INSERT INTO pilot_backup_verifications
