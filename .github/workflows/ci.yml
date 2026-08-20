@@ -5,12 +5,15 @@ on:
     branches: [main]
   pull_request:
 
+permissions:
+  contents: read
+
 jobs:
   backend:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     services:
       postgres:
-        image: postgres:16-alpine
+        image: postgres:16-alpine@sha256:cf78e76683b9ca8c5733cbbdce6c9262b45b6767934dd0a95e671f9a0fc20685
         env:
           POSTGRES_USER: erplite
           POSTGRES_PASSWORD: erplite
@@ -26,44 +29,62 @@ jobs:
       DATABASE_URL: postgres://erplite:erplite@localhost:5432/erplite
       SQLX_OFFLINE: true
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@4360b52568e2003a75bf9bc1d59f33a8e3fc893c
         with:
+          toolchain: 1.90.0
           components: rustfmt, clippy
 
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@49a0bdc70d2e1b713ca9e2869b211fcce03d3c1c
         with:
           workspaces: backend
 
       - name: Format check
         working-directory: backend
-        run: cargo fmt --check
+        run: cargo fmt --all -- --check
 
       - name: Clippy
         working-directory: backend
-        run: cargo clippy --all-targets -- -D warnings
+        run: cargo clippy --locked --all-targets -- -D warnings
+
+      - name: Install pinned SQLx CLI
+        run: cargo install sqlx-cli --version 0.8.6 --locked --no-default-features --features postgres
+
+      - name: Apply migrations to disposable SQLx database
+        working-directory: backend
+        env:
+          SQLX_OFFLINE: false
+        run: cargo sqlx migrate run --source crates/db/migrations
+
+      - name: SQLx offline metadata check
+        working-directory: backend
+        env:
+          SQLX_OFFLINE: false
+        run: cargo sqlx prepare --workspace --check
 
       - name: Install Typst for PDF tests
         env:
           TYPST_VERSION: '0.12.0'
+          TYPST_SHA256: 605130a770ebd59a4a579673079cb913a13e75985231657a71d6239a57539ec3
         run: |
           curl -fsSL "https://github.com/typst/typst/releases/download/v${TYPST_VERSION}/typst-x86_64-unknown-linux-musl.tar.xz" -o /tmp/typst.tar.xz
+          echo "${TYPST_SHA256}  /tmp/typst.tar.xz" | sha256sum -c -
           tar -xJf /tmp/typst.tar.xz -C /tmp
           sudo install "/tmp/typst-x86_64-unknown-linux-musl/typst" /usr/local/bin/typst
 
       - name: Test
         working-directory: backend
-        run: cargo test
+        run: cargo test --locked
 
   frontend:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
-          node-version: '22'
+          node-version: '22.22.0'
           cache: npm
           cache-dependency-path: frontend/package-lock.json
 
@@ -79,13 +100,13 @@ jobs:
         run: npm run lint
 
   commerce:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
-          node-version: '22'
+          node-version: '22.22.0'
           cache: npm
           cache-dependency-path: commerce/package-lock.json
 
@@ -105,9 +126,10 @@ jobs:
         run: npm run build
 
   docker:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     env:
+      COMPOSE_PROJECT_NAME: essentials-merchant-ci
       POSTGRES_PASSWORD: ci-placeholder
       JWT_SECRET: ci-placeholder
       ADMIN_PASSWORD: ci-placeholder
@@ -117,11 +139,11 @@ jobs:
       VENDURE_SUPERADMIN_USERNAME: ci-superadmin
       VENDURE_SUPERADMIN_PASSWORD: ci-placeholder
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
-          node-version: '22'
+          node-version: '22.22.0'
 
       - name: Build all compose images
         run: docker compose build
@@ -145,7 +167,6 @@ jobs:
       - name: Run restart and failure recovery matrix
         working-directory: commerce
         env:
-          COMPOSE_PROJECT_NAME: erplite
           CORE_API_URL: http://localhost:8090/api
           STOREFRONT_API_URL: http://localhost:3001/api/shop
           CORE_ADMIN_USERNAME: admin
@@ -172,3 +193,113 @@ jobs:
       - name: Stop test stack
         if: always()
         run: docker compose down --volumes
+
+  amazon-pilot:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      POSTGRES_PASSWORD: ci-placeholder-postgres
+      JWT_SECRET: ci-placeholder-jwt
+      ADMIN_USERNAME: admin
+      ADMIN_PASSWORD: ci-placeholder
+      INTEGRATION_SECRET: ci-placeholder-integration
+      CORE_ADMIN_USERNAME: admin
+      CORE_ADMIN_PASSWORD: ci-placeholder
+      PILOT_BASE_URL: http://127.0.0.1:8090
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22.22.0'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - working-directory: frontend
+        run: npm ci
+
+      - name: Install pinned Chromium test runtime
+        working-directory: frontend
+        run: npx playwright install --with-deps chromium
+
+      - name: Validate and start exact pilot profile
+        run: scripts/start-amazon-pilot.sh --start --env-file .env.amazon-pilot.example
+
+      - name: Browser and accessibility pilot flow
+        working-directory: frontend
+        run: npm run test:pilot:e2e
+
+      - name: Verify pilot service allowlist
+        run: |
+          test "$(docker compose --project-name essentials-merchant-amazon-pilot --env-file .env.amazon-pilot.example --file compose.amazon-pilot.yml ps --services --status running | sort | tr '\n' ' ')" = "backend db frontend "
+
+      - name: Print pilot logs after failure
+        if: failure()
+        run: docker compose --project-name essentials-merchant-amazon-pilot --env-file .env.amazon-pilot.example --file compose.amazon-pilot.yml logs --no-color
+
+      - name: Stop disposable pilot stack
+        if: always()
+        run: docker compose --project-name essentials-merchant-amazon-pilot --env-file .env.amazon-pilot.example --file compose.amazon-pilot.yml down --volumes
+
+  security:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22.22.0'
+
+      - name: Install locked dependency trees
+        run: |
+          npm ci --prefix frontend
+          npm ci --prefix commerce
+
+      - name: Amazon transport operation contract
+        run: node scripts/check-amazon-operation-allowlist.mjs
+
+      - name: Repository secret scan
+        run: node scripts/scan-secrets.mjs
+
+      - name: Redacted dependency audit
+        run: node scripts/check-dependency-audit.mjs artifacts/security/dependency-audit.json
+
+      - name: Generate pilot and retained-Commerce SBOMs
+        run: |
+          node scripts/generate-sbom.mjs --profile pilot --output artifacts/security/amazon-pilot.cdx.json
+          node scripts/generate-sbom.mjs --profile commerce --output artifacts/security/commerce.cdx.json
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: security-reports
+          path: artifacts/security
+          if-no-files-found: error
+
+      - name: Diff hygiene
+        run: git diff --check
+
+  recovery:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22.22.0'
+
+      - uses: dtolnay/rust-toolchain@4360b52568e2003a75bf9bc1d59f33a8e3fc893c
+        with:
+          toolchain: 1.90.0
+
+      - name: Install pinned SQLx CLI
+        run: cargo install sqlx-cli --version 0.8.6 --locked --no-default-features --features postgres
+
+      - name: Upgrade rehearsal
+        run: ops/test-upgrade-rehearsal.sh
+
+      - name: Existing full-stack backup and restore
+        run: ops/test-backup-restore.sh
+
+      - name: Amazon pilot backup and empty-project restore
+        run: ops/test-amazon-pilot-backup-restore.sh

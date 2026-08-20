@@ -136,7 +136,7 @@ pub struct AmazonConnection {
 #[derive(Debug, Clone, Serialize)]
 pub struct AmazonConnectionSummary {
     pub id: Uuid,
-    pub seller_id: String,
+    pub seller_id_redacted: String,
     pub region: String,
     pub granted_roles: Vec<String>,
     pub marketplace_ids: Vec<String>,
@@ -149,18 +149,61 @@ pub struct AmazonConnectionSummary {
 
 impl AmazonConnectionSummary {
     fn from_connection(connection: AmazonConnection, marketplace_ids: Vec<String>) -> Self {
+        let credential_configured = connection.mode == "fixture"
+            || live_secret_reference_is_configured(&connection.secret_ref);
         Self {
             id: connection.id,
-            seller_id: connection.seller_id,
+            seller_id_redacted: redact_identifier(&connection.seller_id),
             region: connection.region,
             granted_roles: connection.granted_roles,
             marketplace_ids,
             mode: connection.mode,
             enabled: connection.enabled,
-            credential_configured: !connection.secret_ref.trim().is_empty(),
+            credential_configured,
             created_at: connection.created_at,
             updated_at: connection.updated_at,
         }
+    }
+}
+
+pub fn live_secret_reference_is_configured(secret_ref: &str) -> bool {
+    let Ok(raw) = std::env::var(secret_environment_key(secret_ref)) else {
+        return false;
+    };
+    let Ok(value) = serde_json::from_str::<Value>(&raw) else {
+        return false;
+    };
+    ["refresh_token", "client_id", "client_secret"]
+        .iter()
+        .all(|field| {
+            value
+                .get(field)
+                .and_then(Value::as_str)
+                .is_some_and(|value| !value.trim().is_empty())
+        })
+}
+
+fn secret_environment_key(secret_ref: &str) -> String {
+    let normalized = secret_ref
+        .chars()
+        .map(|character| {
+            if character.is_ascii_alphanumeric() {
+                character.to_ascii_uppercase()
+            } else {
+                '_'
+            }
+        })
+        .collect::<String>();
+    format!("AMAZON_SECRET_{normalized}")
+}
+
+fn redact_identifier(identifier: &str) -> String {
+    let tail = identifier.chars().rev().take(4).collect::<Vec<_>>();
+    let tail = tail.into_iter().rev().collect::<String>();
+    if identifier.chars().count() <= 4 {
+        "****".to_owned()
+    } else {
+        format!("****{tail}")
     }
 }
 
@@ -326,6 +369,19 @@ pub struct AmazonReportDocumentInfo {
     pub parser_version: Option<String>,
     pub import_status: String,
     pub import_error: Option<String>,
+    pub transport_bytes: i64,
+    pub decoded_bytes: i64,
+}
+
+#[derive(Debug, Clone, Serialize, sqlx::FromRow)]
+pub struct AmazonTransportObservation {
+    pub id: i64,
+    pub run_id: Uuid,
+    pub operation: String,
+    pub request_id_redacted: Option<String>,
+    pub rate_limit_limit: Option<String>,
+    pub retry_after_seconds: Option<i64>,
+    pub observed_at: DateTime<Utc>,
 }
 
 #[derive(Debug, Clone)]
@@ -342,6 +398,7 @@ pub struct AmazonRunDetail {
     pub snapshot: Option<MetricSnapshot>,
     pub metrics: Vec<NormalizedMetric>,
     pub analyses: Vec<AnalysisResult>,
+    pub transport: Vec<AmazonTransportObservation>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -432,10 +489,22 @@ fn validate_connection_input(input: &AmazonConnectionInput) -> Result<(), String
             "seller, region, secret reference, mode, and a marketplace are required".into(),
         );
     }
+    if !transport_mode_is_consistent(&input.mode, &input.secret_ref) {
+        return Err("fixture connections require a fixture: secret reference, and live connections must not use one".into());
+    }
     if input.marketplace_ids.iter().any(|id| id.trim().is_empty()) {
         return Err("marketplace identifiers cannot be empty".into());
     }
     Ok(())
+}
+
+/// Keep the persisted connection mode and transport selector inseparable. The
+/// worker repeats this check so legacy or directly inserted rows fail closed.
+pub fn transport_mode_is_consistent(mode: &str, secret_ref: &str) -> bool {
+    matches!(
+        (mode, secret_ref.starts_with("fixture:")),
+        ("fixture", true) | ("live", false)
+    )
 }
 
 pub async fn upsert_connection(
@@ -966,6 +1035,29 @@ pub async fn archive_document(
     tx.commit().await
 }
 
+pub async fn record_transport_observation(
+    pool: &PgPool,
+    run_id: Uuid,
+    operation: &str,
+    request_id_redacted: Option<&str>,
+    rate_limit_limit: Option<&str>,
+    retry_after_seconds: Option<i64>,
+) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        "INSERT INTO amazon_transport_observations
+             (run_id, operation, request_id_redacted, rate_limit_limit, retry_after_seconds)
+         VALUES ($1, $2, $3, $4, $5)",
+    )
+    .bind(run_id)
+    .bind(operation)
+    .bind(request_id_redacted)
+    .bind(rate_limit_limit)
+    .bind(retry_after_seconds)
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
 pub async fn load_document_for_parsing(
     pool: &PgPool,
     run_id: Uuid,
@@ -1328,8 +1420,8 @@ pub async fn previous_compatible_snapshot(
          FROM amazon_metric_snapshots
          WHERE connection_id = $1 AND marketplace_id = $2 AND report_type = $3
            AND comparability_key = $4 AND parser_version = $5
-           AND id <> $6 AND created_at < $7
-         ORDER BY created_at DESC LIMIT 1",
+           AND id <> $6 AND period_end < $7
+         ORDER BY period_end DESC, period_start DESC, created_at DESC LIMIT 1",
     )
     .bind(snapshot.connection_id)
     .bind(&snapshot.marketplace_id)
@@ -1337,7 +1429,7 @@ pub async fn previous_compatible_snapshot(
     .bind(&snapshot.comparability_key)
     .bind(&snapshot.parser_version)
     .bind(snapshot.id)
-    .bind(snapshot.created_at)
+    .bind(snapshot.period_start)
     .fetch_optional(pool)
     .await
 }
@@ -1457,7 +1549,9 @@ pub async fn get_run_detail(
     let document = sqlx::query_as::<_, AmazonReportDocumentInfo>(
         "SELECT id, run_id, amazon_report_document_id, sha256, decoded_sha256,
                 content_type, compression_algorithm,
-                downloaded_at, parser_version, import_status, import_error
+                downloaded_at, parser_version, import_status, import_error,
+                octet_length(raw_content)::bigint AS transport_bytes,
+                octet_length(decoded_content)::bigint AS decoded_bytes
          FROM amazon_report_documents WHERE run_id = $1",
     )
     .bind(run_id)
@@ -1478,6 +1572,14 @@ pub async fn get_run_detail(
     .bind(run_id)
     .fetch_all(pool)
     .await?;
+    let transport = sqlx::query_as::<_, AmazonTransportObservation>(
+        "SELECT id, run_id, operation, request_id_redacted, rate_limit_limit,
+                retry_after_seconds, observed_at
+         FROM amazon_transport_observations WHERE run_id = $1 ORDER BY id",
+    )
+    .bind(run_id)
+    .fetch_all(pool)
+    .await?;
     Ok(Some(AmazonRunDetail {
         run,
         events,
@@ -1485,6 +1587,7 @@ pub async fn get_run_detail(
         snapshot,
         metrics,
         analyses,
+        transport,
     }))
 }
 
@@ -1652,5 +1755,117 @@ mod tests {
             "GET_SYNTHETIC_UNKNOWN_REPORT",
             &json!({})
         ));
+    }
+
+    #[test]
+    fn connection_mode_and_transport_selector_cannot_diverge() {
+        assert!(transport_mode_is_consistent("fixture", "fixture:demo"));
+        assert!(transport_mode_is_consistent("live", "pilot_seller"));
+        assert!(!transport_mode_is_consistent("fixture", "pilot_seller"));
+        assert!(!transport_mode_is_consistent("live", "fixture:demo"));
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn previous_snapshot_is_selected_by_report_period_not_import_order(pool: PgPool) {
+        let connection = create_demo_connection(&pool).await.unwrap();
+        let mut snapshots = Vec::new();
+        for (key, period_start, period_end, created_at) in [
+            (
+                "older-period-imported-later",
+                "2026-07-01T00:00:00Z",
+                "2026-07-07T23:59:59Z",
+                "2026-08-20T12:00:00Z",
+            ),
+            (
+                "current-period-imported-first",
+                "2026-07-08T00:00:00Z",
+                "2026-07-14T23:59:59Z",
+                "2026-08-20T11:00:00Z",
+            ),
+        ] {
+            let run_id: Uuid = sqlx::query_scalar(
+                "INSERT INTO amazon_report_runs (
+                     connection_id, marketplace_id, report_type, trigger_source,
+                     idempotency_key, status, completed_at
+                 ) VALUES ($1, 'A1PA6795UKMFR9', $2, 'manual', $3, 'succeeded', now())
+                 RETURNING id",
+            )
+            .bind(connection.id)
+            .bind(SALES_AND_TRAFFIC)
+            .bind(key)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+            let snapshot = sqlx::query_as::<_, MetricSnapshot>(
+                "INSERT INTO amazon_metric_snapshots (
+                     run_id, connection_id, marketplace_id, report_type, parser_version,
+                     period_start, period_end, granularity, comparability_key, summary, created_at
+                 ) VALUES ($1, $2, 'A1PA6795UKMFR9', $3, 'parser-v1',
+                     $4::timestamptz, $5::timestamptz, 'day_child',
+                     'sales-traffic:day_child:7d', '{}', $6::timestamptz)
+                 RETURNING id, run_id, connection_id, marketplace_id, report_type,
+                     parser_version, period_start, period_end, granularity,
+                     comparability_key, summary, created_at",
+            )
+            .bind(run_id)
+            .bind(connection.id)
+            .bind(SALES_AND_TRAFFIC)
+            .bind(period_start)
+            .bind(period_end)
+            .bind(created_at)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+            snapshots.push(snapshot);
+        }
+
+        let previous = previous_compatible_snapshot(&pool, &snapshots[1])
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(previous.id, snapshots[0].id);
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn raw_archive_bytes_and_rows_are_immutable(pool: PgPool) {
+        let connection = create_demo_connection(&pool).await.unwrap();
+        let run = create_manual_run(
+            &pool,
+            connection.id,
+            &CreateAmazonReportRunInput {
+                marketplace_id: connection.marketplace_ids[0].clone(),
+                report_type: SALES_AND_TRAFFIC.to_owned(),
+                data_start_time: None,
+                data_end_time: None,
+                report_options: json!({}),
+            },
+        )
+        .await
+        .unwrap();
+        archive_document(
+            &pool,
+            run.id,
+            "synthetic-document",
+            Some("application/json"),
+            None,
+            b"synthetic immutable transport bytes",
+            b"synthetic immutable transport bytes",
+        )
+        .await
+        .unwrap();
+        assert!(sqlx::query(
+            "UPDATE amazon_report_documents SET raw_content = 'changed'::bytea WHERE run_id = $1",
+        )
+        .bind(run.id)
+        .execute(&pool)
+        .await
+        .is_err());
+        assert!(
+            sqlx::query("DELETE FROM amazon_report_documents WHERE run_id = $1")
+                .bind(run.id)
+                .execute(&pool)
+                .await
+                .is_err()
+        );
     }
 }

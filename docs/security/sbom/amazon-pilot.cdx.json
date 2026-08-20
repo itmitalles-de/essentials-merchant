@@ -1,0 +1,4256 @@
+{
+  "bomFormat": "CycloneDX",
+  "specVersion": "1.5",
+  "serialNumber": "urn:uuid:f40e7680-c65e-450b-a98d-63c50f33806d",
+  "version": 1,
+  "metadata": {
+    "component": {
+      "type": "application",
+      "name": "Essentials+ Merchant Amazon Intelligence Pilot",
+      "version": "lockset-f40e7680c65e",
+      "bom-ref": "application:pilot:lockset:f40e7680c65ec50bc98d63c50f33806ddd2554423f228d96a0c028565de459d7"
+    },
+    "properties": [
+      {
+        "name": "essentials:repository",
+        "value": "itmitalles-de/essentials-merchant"
+      },
+      {
+        "name": "essentials:generation",
+        "value": "deterministic lockfile-derived inventory; no runtime attestation"
+      },
+      {
+        "name": "essentials:lock:frontend/package-lock.json",
+        "value": "6bc2aeca42404f91822e28fb5df124b3a318d7e975371c840403784187a4f975"
+      },
+      {
+        "name": "essentials:lock:backend/Cargo.lock",
+        "value": "e39f1c953779587a55f306797a334c380e82605b673364ecdfc3768df36589bb"
+      }
+    ]
+  },
+  "components": [
+    {
+      "type": "container",
+      "name": "debian",
+      "version": "bookworm-slim",
+      "bom-ref": "oci:debian@sha256:abd67ffcfa541b485a3dff59865ab629aa048a6c613e639d36e7456b0b229241",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "pilot-container"
+        },
+        {
+          "name": "essentials:image-digest",
+          "value": "sha256:abd67ffcfa541b485a3dff59865ab629aa048a6c613e639d36e7456b0b229241"
+        }
+      ]
+    },
+    {
+      "type": "container",
+      "name": "nginx",
+      "version": "1.27-alpine",
+      "bom-ref": "oci:nginx@sha256:65645c7bb6a0661892a8b03b89d0743208a18dd2f3f17a54ef4b76fb8e2f2a10",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "pilot-container"
+        },
+        {
+          "name": "essentials:image-digest",
+          "value": "sha256:65645c7bb6a0661892a8b03b89d0743208a18dd2f3f17a54ef4b76fb8e2f2a10"
+        }
+      ]
+    },
+    {
+      "type": "container",
+      "name": "node",
+      "version": "22-alpine",
+      "bom-ref": "oci:node@sha256:c610fcdfb1d5b4740dd70c284ed3cb16bb857e0f7166196e36a5501df7a3aa32",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "pilot-container"
+        },
+        {
+          "name": "essentials:image-digest",
+          "value": "sha256:c610fcdfb1d5b4740dd70c284ed3cb16bb857e0f7166196e36a5501df7a3aa32"
+        }
+      ]
+    },
+    {
+      "type": "container",
+      "name": "postgres",
+      "version": "16-alpine",
+      "bom-ref": "oci:postgres@sha256:cf78e76683b9ca8c5733cbbdce6c9262b45b6767934dd0a95e671f9a0fc20685",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "pilot-container"
+        },
+        {
+          "name": "essentials:image-digest",
+          "value": "sha256:cf78e76683b9ca8c5733cbbdce6c9262b45b6767934dd0a95e671f9a0fc20685"
+        }
+      ]
+    },
+    {
+      "type": "container",
+      "name": "rust",
+      "version": "1.90-bookworm",
+      "bom-ref": "oci:rust@sha256:3914072ca0c3b8aad871db9169a651ccfce30cf58303e5d6f2db16d1d8a7e58f",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "pilot-container"
+        },
+        {
+          "name": "essentials:image-digest",
+          "value": "sha256:3914072ca0c3b8aad871db9169a651ccfce30cf58303e5d6f2db16d1d8a7e58f"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "adler2",
+      "version": "2.0.1",
+      "purl": "pkg:cargo/adler2@2.0.1",
+      "bom-ref": "cargo:adler2@2.0.1:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "ahash",
+      "version": "0.7.8",
+      "purl": "pkg:cargo/ahash@0.7.8",
+      "bom-ref": "cargo:ahash@0.7.8:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "aho-corasick",
+      "version": "1.1.5",
+      "purl": "pkg:cargo/aho-corasick@1.1.5",
+      "bom-ref": "cargo:aho-corasick@1.1.5:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "allocator-api2",
+      "version": "0.2.21",
+      "purl": "pkg:cargo/allocator-api2@0.2.21",
+      "bom-ref": "cargo:allocator-api2@0.2.21:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "android_system_properties",
+      "version": "0.1.6",
+      "purl": "pkg:cargo/android_system_properties@0.1.6",
+      "bom-ref": "cargo:android_system_properties@0.1.6:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "anyhow",
+      "version": "1.0.104",
+      "purl": "pkg:cargo/anyhow@1.0.104",
+      "bom-ref": "cargo:anyhow@1.0.104:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "argon2",
+      "version": "0.5.3",
+      "purl": "pkg:cargo/argon2@0.5.3",
+      "bom-ref": "cargo:argon2@0.5.3:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "arrayvec",
+      "version": "0.7.8",
+      "purl": "pkg:cargo/arrayvec@0.7.8",
+      "bom-ref": "cargo:arrayvec@0.7.8:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "async-trait",
+      "version": "0.1.92",
+      "purl": "pkg:cargo/async-trait@0.1.92",
+      "bom-ref": "cargo:async-trait@0.1.92:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "atoi",
+      "version": "2.0.0",
+      "purl": "pkg:cargo/atoi@2.0.0",
+      "bom-ref": "cargo:atoi@2.0.0:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "atomic-waker",
+      "version": "1.1.2",
+      "purl": "pkg:cargo/atomic-waker@1.1.2",
+      "bom-ref": "cargo:atomic-waker@1.1.2:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "autocfg",
+      "version": "1.5.1",
+      "purl": "pkg:cargo/autocfg@1.5.1",
+      "bom-ref": "cargo:autocfg@1.5.1:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "axum-core",
+      "version": "0.5.6",
+      "purl": "pkg:cargo/axum-core@0.5.6",
+      "bom-ref": "cargo:axum-core@0.5.6:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "axum",
+      "version": "0.8.9",
+      "purl": "pkg:cargo/axum@0.8.9",
+      "bom-ref": "cargo:axum@0.8.9:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "base64",
+      "version": "0.22.1",
+      "purl": "pkg:cargo/base64@0.22.1",
+      "bom-ref": "cargo:base64@0.22.1:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "base64ct",
+      "version": "1.8.3",
+      "purl": "pkg:cargo/base64ct@1.8.3",
+      "bom-ref": "cargo:base64ct@1.8.3:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "bitflags",
+      "version": "2.13.1",
+      "purl": "pkg:cargo/bitflags@2.13.1",
+      "bom-ref": "cargo:bitflags@2.13.1:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "bitvec",
+      "version": "1.1.1",
+      "purl": "pkg:cargo/bitvec@1.1.1",
+      "bom-ref": "cargo:bitvec@1.1.1:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "blake2",
+      "version": "0.10.6",
+      "purl": "pkg:cargo/blake2@0.10.6",
+      "bom-ref": "cargo:blake2@0.10.6:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "block-buffer",
+      "version": "0.10.4",
+      "purl": "pkg:cargo/block-buffer@0.10.4",
+      "bom-ref": "cargo:block-buffer@0.10.4:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "borsh-derive",
+      "version": "1.8.0",
+      "purl": "pkg:cargo/borsh-derive@1.8.0",
+      "bom-ref": "cargo:borsh-derive@1.8.0:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "borsh",
+      "version": "1.8.0",
+      "purl": "pkg:cargo/borsh@1.8.0",
+      "bom-ref": "cargo:borsh@1.8.0:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "bumpalo",
+      "version": "3.20.3",
+      "purl": "pkg:cargo/bumpalo@3.20.3",
+      "bom-ref": "cargo:bumpalo@3.20.3:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "bytecheck_derive",
+      "version": "0.6.12",
+      "purl": "pkg:cargo/bytecheck_derive@0.6.12",
+      "bom-ref": "cargo:bytecheck_derive@0.6.12:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "bytecheck",
+      "version": "0.6.12",
+      "purl": "pkg:cargo/bytecheck@0.6.12",
+      "bom-ref": "cargo:bytecheck@0.6.12:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "byteorder",
+      "version": "1.5.0",
+      "purl": "pkg:cargo/byteorder@1.5.0",
+      "bom-ref": "cargo:byteorder@1.5.0:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "bytes",
+      "version": "1.12.1",
+      "purl": "pkg:cargo/bytes@1.12.1",
+      "bom-ref": "cargo:bytes@1.12.1:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "cc",
+      "version": "1.4.2",
+      "purl": "pkg:cargo/cc@1.4.2",
+      "bom-ref": "cargo:cc@1.4.2:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "cfg_aliases",
+      "version": "0.2.2",
+      "purl": "pkg:cargo/cfg_aliases@0.2.2",
+      "bom-ref": "cargo:cfg_aliases@0.2.2:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "cfg-if",
+      "version": "1.0.4",
+      "purl": "pkg:cargo/cfg-if@1.0.4",
+      "bom-ref": "cargo:cfg-if@1.0.4:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "chacha20",
+      "version": "0.10.1",
+      "purl": "pkg:cargo/chacha20@0.10.1",
+      "bom-ref": "cargo:chacha20@0.10.1:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "chrono",
+      "version": "0.4.45",
+      "purl": "pkg:cargo/chrono@0.4.45",
+      "bom-ref": "cargo:chrono@0.4.45:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "const-oid",
+      "version": "0.9.6",
+      "purl": "pkg:cargo/const-oid@0.9.6",
+      "bom-ref": "cargo:const-oid@0.9.6:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "cookie",
+      "version": "1.1.1",
+      "purl": "pkg:npm/cookie@1.1.1",
+      "bom-ref": "npm:frontend-runtime:node_modules/cookie",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "frontend-runtime"
+        },
+        {
+          "name": "essentials:lock-path",
+          "value": "node_modules/cookie"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "core-foundation-sys",
+      "version": "0.8.7",
+      "purl": "pkg:cargo/core-foundation-sys@0.8.7",
+      "bom-ref": "cargo:core-foundation-sys@0.8.7:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "cpufeatures",
+      "version": "0.2.17",
+      "purl": "pkg:cargo/cpufeatures@0.2.17",
+      "bom-ref": "cargo:cpufeatures@0.2.17:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "cpufeatures",
+      "version": "0.3.0",
+      "purl": "pkg:cargo/cpufeatures@0.3.0",
+      "bom-ref": "cargo:cpufeatures@0.3.0:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "crc-catalog",
+      "version": "2.5.0",
+      "purl": "pkg:cargo/crc-catalog@2.5.0",
+      "bom-ref": "cargo:crc-catalog@2.5.0:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "crc",
+      "version": "3.4.0",
+      "purl": "pkg:cargo/crc@3.4.0",
+      "bom-ref": "cargo:crc@3.4.0:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "crc32fast",
+      "version": "1.5.0",
+      "purl": "pkg:cargo/crc32fast@1.5.0",
+      "bom-ref": "cargo:crc32fast@1.5.0:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "crossbeam-queue",
+      "version": "0.3.13",
+      "purl": "pkg:cargo/crossbeam-queue@0.3.13",
+      "bom-ref": "cargo:crossbeam-queue@0.3.13:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "crossbeam-utils",
+      "version": "0.8.22",
+      "purl": "pkg:cargo/crossbeam-utils@0.8.22",
+      "bom-ref": "cargo:crossbeam-utils@0.8.22:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "crypto-common",
+      "version": "0.1.7",
+      "purl": "pkg:cargo/crypto-common@0.1.7",
+      "bom-ref": "cargo:crypto-common@0.1.7:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "db",
+      "version": "0.1.0",
+      "purl": "pkg:cargo/db@0.1.0",
+      "bom-ref": "cargo:db@0.1.0:21a3230e0377",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "der",
+      "version": "0.7.10",
+      "purl": "pkg:cargo/der@0.7.10",
+      "bom-ref": "cargo:der@0.7.10:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "deranged",
+      "version": "0.5.8",
+      "purl": "pkg:cargo/deranged@0.5.8",
+      "bom-ref": "cargo:deranged@0.5.8:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "digest",
+      "version": "0.10.7",
+      "purl": "pkg:cargo/digest@0.10.7",
+      "bom-ref": "cargo:digest@0.10.7:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "displaydoc",
+      "version": "0.2.7",
+      "purl": "pkg:cargo/displaydoc@0.2.7",
+      "bom-ref": "cargo:displaydoc@0.2.7:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "domain",
+      "version": "0.1.0",
+      "purl": "pkg:cargo/domain@0.1.0",
+      "bom-ref": "cargo:domain@0.1.0:21a3230e0377",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "dotenvy",
+      "version": "0.15.7",
+      "purl": "pkg:cargo/dotenvy@0.15.7",
+      "bom-ref": "cargo:dotenvy@0.15.7:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "either",
+      "version": "1.17.0",
+      "purl": "pkg:cargo/either@1.17.0",
+      "bom-ref": "cargo:either@1.17.0:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "equivalent",
+      "version": "1.0.2",
+      "purl": "pkg:cargo/equivalent@1.0.2",
+      "bom-ref": "cargo:equivalent@1.0.2:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "errno",
+      "version": "0.3.14",
+      "purl": "pkg:cargo/errno@0.3.14",
+      "bom-ref": "cargo:errno@0.3.14:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "etcetera",
+      "version": "0.8.0",
+      "purl": "pkg:cargo/etcetera@0.8.0",
+      "bom-ref": "cargo:etcetera@0.8.0:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "event-listener",
+      "version": "5.4.2",
+      "purl": "pkg:cargo/event-listener@5.4.2",
+      "bom-ref": "cargo:event-listener@5.4.2:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "find-msvc-tools",
+      "version": "0.1.10",
+      "purl": "pkg:cargo/find-msvc-tools@0.1.10",
+      "bom-ref": "cargo:find-msvc-tools@0.1.10:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "flate2",
+      "version": "1.1.9",
+      "purl": "pkg:cargo/flate2@1.1.9",
+      "bom-ref": "cargo:flate2@1.1.9:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "flume",
+      "version": "0.11.1",
+      "purl": "pkg:cargo/flume@0.11.1",
+      "bom-ref": "cargo:flume@0.11.1:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "foldhash",
+      "version": "0.1.5",
+      "purl": "pkg:cargo/foldhash@0.1.5",
+      "bom-ref": "cargo:foldhash@0.1.5:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "form_urlencoded",
+      "version": "1.2.2",
+      "purl": "pkg:cargo/form_urlencoded@1.2.2",
+      "bom-ref": "cargo:form_urlencoded@1.2.2:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "funty",
+      "version": "2.0.0",
+      "purl": "pkg:cargo/funty@2.0.0",
+      "bom-ref": "cargo:funty@2.0.0:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "futures-channel",
+      "version": "0.3.34",
+      "purl": "pkg:cargo/futures-channel@0.3.34",
+      "bom-ref": "cargo:futures-channel@0.3.34:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "futures-core",
+      "version": "0.3.34",
+      "purl": "pkg:cargo/futures-core@0.3.34",
+      "bom-ref": "cargo:futures-core@0.3.34:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "futures-executor",
+      "version": "0.3.34",
+      "purl": "pkg:cargo/futures-executor@0.3.34",
+      "bom-ref": "cargo:futures-executor@0.3.34:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "futures-intrusive",
+      "version": "0.5.0",
+      "purl": "pkg:cargo/futures-intrusive@0.5.0",
+      "bom-ref": "cargo:futures-intrusive@0.5.0:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "futures-io",
+      "version": "0.3.34",
+      "purl": "pkg:cargo/futures-io@0.3.34",
+      "bom-ref": "cargo:futures-io@0.3.34:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "futures-sink",
+      "version": "0.3.34",
+      "purl": "pkg:cargo/futures-sink@0.3.34",
+      "bom-ref": "cargo:futures-sink@0.3.34:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "futures-task",
+      "version": "0.3.34",
+      "purl": "pkg:cargo/futures-task@0.3.34",
+      "bom-ref": "cargo:futures-task@0.3.34:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "futures-util",
+      "version": "0.3.34",
+      "purl": "pkg:cargo/futures-util@0.3.34",
+      "bom-ref": "cargo:futures-util@0.3.34:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "generic-array",
+      "version": "0.14.7",
+      "purl": "pkg:cargo/generic-array@0.14.7",
+      "bom-ref": "cargo:generic-array@0.14.7:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "getrandom",
+      "version": "0.2.17",
+      "purl": "pkg:cargo/getrandom@0.2.17",
+      "bom-ref": "cargo:getrandom@0.2.17:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "getrandom",
+      "version": "0.4.3",
+      "purl": "pkg:cargo/getrandom@0.4.3",
+      "bom-ref": "cargo:getrandom@0.4.3:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "hashbrown",
+      "version": "0.12.3",
+      "purl": "pkg:cargo/hashbrown@0.12.3",
+      "bom-ref": "cargo:hashbrown@0.12.3:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "hashbrown",
+      "version": "0.15.5",
+      "purl": "pkg:cargo/hashbrown@0.15.5",
+      "bom-ref": "cargo:hashbrown@0.15.5:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "hashbrown",
+      "version": "0.17.1",
+      "purl": "pkg:cargo/hashbrown@0.17.1",
+      "bom-ref": "cargo:hashbrown@0.17.1:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "hashlink",
+      "version": "0.10.0",
+      "purl": "pkg:cargo/hashlink@0.10.0",
+      "bom-ref": "cargo:hashlink@0.10.0:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "heck",
+      "version": "0.5.0",
+      "purl": "pkg:cargo/heck@0.5.0",
+      "bom-ref": "cargo:heck@0.5.0:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "hex",
+      "version": "0.4.3",
+      "purl": "pkg:cargo/hex@0.4.3",
+      "bom-ref": "cargo:hex@0.4.3:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "hkdf",
+      "version": "0.12.4",
+      "purl": "pkg:cargo/hkdf@0.12.4",
+      "bom-ref": "cargo:hkdf@0.12.4:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "hmac",
+      "version": "0.12.1",
+      "purl": "pkg:cargo/hmac@0.12.1",
+      "bom-ref": "cargo:hmac@0.12.1:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "home",
+      "version": "0.5.12",
+      "purl": "pkg:cargo/home@0.5.12",
+      "bom-ref": "cargo:home@0.5.12:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "http-body-util",
+      "version": "0.1.4",
+      "purl": "pkg:cargo/http-body-util@0.1.4",
+      "bom-ref": "cargo:http-body-util@0.1.4:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "http-body",
+      "version": "1.1.0",
+      "purl": "pkg:cargo/http-body@1.1.0",
+      "bom-ref": "cargo:http-body@1.1.0:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "http",
+      "version": "1.5.0",
+      "purl": "pkg:cargo/http@1.5.0",
+      "bom-ref": "cargo:http@1.5.0:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "httparse",
+      "version": "1.10.1",
+      "purl": "pkg:cargo/httparse@1.10.1",
+      "bom-ref": "cargo:httparse@1.10.1:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "httpdate",
+      "version": "1.0.3",
+      "purl": "pkg:cargo/httpdate@1.0.3",
+      "bom-ref": "cargo:httpdate@1.0.3:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "hyper-rustls",
+      "version": "0.27.9",
+      "purl": "pkg:cargo/hyper-rustls@0.27.9",
+      "bom-ref": "cargo:hyper-rustls@0.27.9:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "hyper-util",
+      "version": "0.1.20",
+      "purl": "pkg:cargo/hyper-util@0.1.20",
+      "bom-ref": "cargo:hyper-util@0.1.20:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "hyper",
+      "version": "1.11.0",
+      "purl": "pkg:cargo/hyper@1.11.0",
+      "bom-ref": "cargo:hyper@1.11.0:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "iana-time-zone-haiku",
+      "version": "0.1.2",
+      "purl": "pkg:cargo/iana-time-zone-haiku@0.1.2",
+      "bom-ref": "cargo:iana-time-zone-haiku@0.1.2:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "iana-time-zone",
+      "version": "0.1.65",
+      "purl": "pkg:cargo/iana-time-zone@0.1.65",
+      "bom-ref": "cargo:iana-time-zone@0.1.65:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "icu_collections",
+      "version": "2.2.0",
+      "purl": "pkg:cargo/icu_collections@2.2.0",
+      "bom-ref": "cargo:icu_collections@2.2.0:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "icu_locale_core",
+      "version": "2.2.0",
+      "purl": "pkg:cargo/icu_locale_core@2.2.0",
+      "bom-ref": "cargo:icu_locale_core@2.2.0:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "icu_normalizer_data",
+      "version": "2.2.0",
+      "purl": "pkg:cargo/icu_normalizer_data@2.2.0",
+      "bom-ref": "cargo:icu_normalizer_data@2.2.0:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "icu_normalizer",
+      "version": "2.2.0",
+      "purl": "pkg:cargo/icu_normalizer@2.2.0",
+      "bom-ref": "cargo:icu_normalizer@2.2.0:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "icu_properties_data",
+      "version": "2.2.0",
+      "purl": "pkg:cargo/icu_properties_data@2.2.0",
+      "bom-ref": "cargo:icu_properties_data@2.2.0:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "icu_properties",
+      "version": "2.2.0",
+      "purl": "pkg:cargo/icu_properties@2.2.0",
+      "bom-ref": "cargo:icu_properties@2.2.0:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "icu_provider",
+      "version": "2.2.0",
+      "purl": "pkg:cargo/icu_provider@2.2.0",
+      "bom-ref": "cargo:icu_provider@2.2.0:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "idna_adapter",
+      "version": "1.2.2",
+      "purl": "pkg:cargo/idna_adapter@1.2.2",
+      "bom-ref": "cargo:idna_adapter@1.2.2:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "idna",
+      "version": "1.1.0",
+      "purl": "pkg:cargo/idna@1.1.0",
+      "bom-ref": "cargo:idna@1.1.0:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "indexmap",
+      "version": "2.14.0",
+      "purl": "pkg:cargo/indexmap@2.14.0",
+      "bom-ref": "cargo:indexmap@2.14.0:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "ipnet",
+      "version": "2.12.1",
+      "purl": "pkg:cargo/ipnet@2.12.1",
+      "bom-ref": "cargo:ipnet@2.12.1:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "itoa",
+      "version": "1.0.18",
+      "purl": "pkg:cargo/itoa@1.0.18",
+      "bom-ref": "cargo:itoa@1.0.18:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "js-sys",
+      "version": "0.3.104",
+      "purl": "pkg:cargo/js-sys@0.3.104",
+      "bom-ref": "cargo:js-sys@0.3.104:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "jsonwebtoken",
+      "version": "9.3.1",
+      "purl": "pkg:cargo/jsonwebtoken@9.3.1",
+      "bom-ref": "cargo:jsonwebtoken@9.3.1:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "lazy_static",
+      "version": "1.5.0",
+      "purl": "pkg:cargo/lazy_static@1.5.0",
+      "bom-ref": "cargo:lazy_static@1.5.0:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "libc",
+      "version": "0.2.189",
+      "purl": "pkg:cargo/libc@0.2.189",
+      "bom-ref": "cargo:libc@0.2.189:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "libm",
+      "version": "0.2.16",
+      "purl": "pkg:cargo/libm@0.2.16",
+      "bom-ref": "cargo:libm@0.2.16:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "libredox",
+      "version": "0.1.19",
+      "purl": "pkg:cargo/libredox@0.1.19",
+      "bom-ref": "cargo:libredox@0.1.19:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "libsqlite3-sys",
+      "version": "0.30.1",
+      "purl": "pkg:cargo/libsqlite3-sys@0.30.1",
+      "bom-ref": "cargo:libsqlite3-sys@0.30.1:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "litemap",
+      "version": "0.8.2",
+      "purl": "pkg:cargo/litemap@0.8.2",
+      "bom-ref": "cargo:litemap@0.8.2:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "lock_api",
+      "version": "0.4.14",
+      "purl": "pkg:cargo/lock_api@0.4.14",
+      "bom-ref": "cargo:lock_api@0.4.14:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "log",
+      "version": "0.4.33",
+      "purl": "pkg:cargo/log@0.4.33",
+      "bom-ref": "cargo:log@0.4.33:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "lru-slab",
+      "version": "0.1.2",
+      "purl": "pkg:cargo/lru-slab@0.1.2",
+      "bom-ref": "cargo:lru-slab@0.1.2:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "matchers",
+      "version": "0.2.0",
+      "purl": "pkg:cargo/matchers@0.2.0",
+      "bom-ref": "cargo:matchers@0.2.0:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "matchit",
+      "version": "0.8.4",
+      "purl": "pkg:cargo/matchit@0.8.4",
+      "bom-ref": "cargo:matchit@0.8.4:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "md-5",
+      "version": "0.10.6",
+      "purl": "pkg:cargo/md-5@0.10.6",
+      "bom-ref": "cargo:md-5@0.10.6:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "memchr",
+      "version": "2.8.3",
+      "purl": "pkg:cargo/memchr@2.8.3",
+      "bom-ref": "cargo:memchr@2.8.3:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "memo-map",
+      "version": "0.3.3",
+      "purl": "pkg:cargo/memo-map@0.3.3",
+      "bom-ref": "cargo:memo-map@0.3.3:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "mime",
+      "version": "0.3.17",
+      "purl": "pkg:cargo/mime@0.3.17",
+      "bom-ref": "cargo:mime@0.3.17:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "minijinja",
+      "version": "2.23.0",
+      "purl": "pkg:cargo/minijinja@2.23.0",
+      "bom-ref": "cargo:minijinja@2.23.0:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "miniz_oxide",
+      "version": "0.8.9",
+      "purl": "pkg:cargo/miniz_oxide@0.8.9",
+      "bom-ref": "cargo:miniz_oxide@0.8.9:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "mio",
+      "version": "1.2.2",
+      "purl": "pkg:cargo/mio@1.2.2",
+      "bom-ref": "cargo:mio@1.2.2:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "nu-ansi-term",
+      "version": "0.50.3",
+      "purl": "pkg:cargo/nu-ansi-term@0.50.3",
+      "bom-ref": "cargo:nu-ansi-term@0.50.3:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "num-bigint-dig",
+      "version": "0.8.6",
+      "purl": "pkg:cargo/num-bigint-dig@0.8.6",
+      "bom-ref": "cargo:num-bigint-dig@0.8.6:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "num-bigint",
+      "version": "0.4.8",
+      "purl": "pkg:cargo/num-bigint@0.4.8",
+      "bom-ref": "cargo:num-bigint@0.4.8:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "num-conv",
+      "version": "0.2.2",
+      "purl": "pkg:cargo/num-conv@0.2.2",
+      "bom-ref": "cargo:num-conv@0.2.2:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "num-integer",
+      "version": "0.1.46",
+      "purl": "pkg:cargo/num-integer@0.1.46",
+      "bom-ref": "cargo:num-integer@0.1.46:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "num-iter",
+      "version": "0.1.46",
+      "purl": "pkg:cargo/num-iter@0.1.46",
+      "bom-ref": "cargo:num-iter@0.1.46:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "num-traits",
+      "version": "0.2.19",
+      "purl": "pkg:cargo/num-traits@0.2.19",
+      "bom-ref": "cargo:num-traits@0.2.19:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "once_cell",
+      "version": "1.21.4",
+      "purl": "pkg:cargo/once_cell@1.21.4",
+      "bom-ref": "cargo:once_cell@1.21.4:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "parking_lot_core",
+      "version": "0.9.12",
+      "purl": "pkg:cargo/parking_lot_core@0.9.12",
+      "bom-ref": "cargo:parking_lot_core@0.9.12:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "parking_lot",
+      "version": "0.12.5",
+      "purl": "pkg:cargo/parking_lot@0.12.5",
+      "bom-ref": "cargo:parking_lot@0.12.5:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "parking",
+      "version": "2.2.1",
+      "purl": "pkg:cargo/parking@2.2.1",
+      "bom-ref": "cargo:parking@2.2.1:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "password-hash",
+      "version": "0.5.0",
+      "purl": "pkg:cargo/password-hash@0.5.0",
+      "bom-ref": "cargo:password-hash@0.5.0:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "pdf",
+      "version": "0.1.0",
+      "purl": "pkg:cargo/pdf@0.1.0",
+      "bom-ref": "cargo:pdf@0.1.0:21a3230e0377",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "pem-rfc7468",
+      "version": "0.7.0",
+      "purl": "pkg:cargo/pem-rfc7468@0.7.0",
+      "bom-ref": "cargo:pem-rfc7468@0.7.0:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "pem",
+      "version": "3.0.6",
+      "purl": "pkg:cargo/pem@3.0.6",
+      "bom-ref": "cargo:pem@3.0.6:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "percent-encoding",
+      "version": "2.3.2",
+      "purl": "pkg:cargo/percent-encoding@2.3.2",
+      "bom-ref": "cargo:percent-encoding@2.3.2:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "pin-project-lite",
+      "version": "0.2.17",
+      "purl": "pkg:cargo/pin-project-lite@0.2.17",
+      "bom-ref": "cargo:pin-project-lite@0.2.17:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "pkcs1",
+      "version": "0.7.5",
+      "purl": "pkg:cargo/pkcs1@0.7.5",
+      "bom-ref": "cargo:pkcs1@0.7.5:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "pkcs8",
+      "version": "0.10.2",
+      "purl": "pkg:cargo/pkcs8@0.10.2",
+      "bom-ref": "cargo:pkcs8@0.10.2:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "pkg-config",
+      "version": "0.3.33",
+      "purl": "pkg:cargo/pkg-config@0.3.33",
+      "bom-ref": "cargo:pkg-config@0.3.33:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "plain",
+      "version": "0.2.3",
+      "purl": "pkg:cargo/plain@0.2.3",
+      "bom-ref": "cargo:plain@0.2.3:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "potential_utf",
+      "version": "0.1.5",
+      "purl": "pkg:cargo/potential_utf@0.1.5",
+      "bom-ref": "cargo:potential_utf@0.1.5:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "powerfmt",
+      "version": "0.2.0",
+      "purl": "pkg:cargo/powerfmt@0.2.0",
+      "bom-ref": "cargo:powerfmt@0.2.0:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "ppv-lite86",
+      "version": "0.2.21",
+      "purl": "pkg:cargo/ppv-lite86@0.2.21",
+      "bom-ref": "cargo:ppv-lite86@0.2.21:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "proc-macro-crate",
+      "version": "3.5.0",
+      "purl": "pkg:cargo/proc-macro-crate@3.5.0",
+      "bom-ref": "cargo:proc-macro-crate@3.5.0:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "proc-macro2",
+      "version": "1.0.107",
+      "purl": "pkg:cargo/proc-macro2@1.0.107",
+      "bom-ref": "cargo:proc-macro2@1.0.107:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "ptr_meta_derive",
+      "version": "0.1.4",
+      "purl": "pkg:cargo/ptr_meta_derive@0.1.4",
+      "bom-ref": "cargo:ptr_meta_derive@0.1.4:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "ptr_meta",
+      "version": "0.1.4",
+      "purl": "pkg:cargo/ptr_meta@0.1.4",
+      "bom-ref": "cargo:ptr_meta@0.1.4:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "quinn-proto",
+      "version": "0.11.16",
+      "purl": "pkg:cargo/quinn-proto@0.11.16",
+      "bom-ref": "cargo:quinn-proto@0.11.16:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "quinn-udp",
+      "version": "0.5.15",
+      "purl": "pkg:cargo/quinn-udp@0.5.15",
+      "bom-ref": "cargo:quinn-udp@0.5.15:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "quinn",
+      "version": "0.11.11",
+      "purl": "pkg:cargo/quinn@0.11.11",
+      "bom-ref": "cargo:quinn@0.11.11:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "quote",
+      "version": "1.0.47",
+      "purl": "pkg:cargo/quote@1.0.47",
+      "bom-ref": "cargo:quote@1.0.47:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "r-efi",
+      "version": "6.0.0",
+      "purl": "pkg:cargo/r-efi@6.0.0",
+      "bom-ref": "cargo:r-efi@6.0.0:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "radium",
+      "version": "0.7.0",
+      "purl": "pkg:cargo/radium@0.7.0",
+      "bom-ref": "cargo:radium@0.7.0:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "rand_chacha",
+      "version": "0.3.1",
+      "purl": "pkg:cargo/rand_chacha@0.3.1",
+      "bom-ref": "cargo:rand_chacha@0.3.1:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "rand_core",
+      "version": "0.10.1",
+      "purl": "pkg:cargo/rand_core@0.10.1",
+      "bom-ref": "cargo:rand_core@0.10.1:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "rand_core",
+      "version": "0.6.4",
+      "purl": "pkg:cargo/rand_core@0.6.4",
+      "bom-ref": "cargo:rand_core@0.6.4:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "rand_pcg",
+      "version": "0.10.2",
+      "purl": "pkg:cargo/rand_pcg@0.10.2",
+      "bom-ref": "cargo:rand_pcg@0.10.2:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "rand",
+      "version": "0.10.2",
+      "purl": "pkg:cargo/rand@0.10.2",
+      "bom-ref": "cargo:rand@0.10.2:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "rand",
+      "version": "0.8.7",
+      "purl": "pkg:cargo/rand@0.8.7",
+      "bom-ref": "cargo:rand@0.8.7:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "react-dom",
+      "version": "19.2.8",
+      "purl": "pkg:npm/react-dom@19.2.8",
+      "bom-ref": "npm:frontend-runtime:node_modules/react-dom",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "frontend-runtime"
+        },
+        {
+          "name": "essentials:lock-path",
+          "value": "node_modules/react-dom"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "react-router-dom",
+      "version": "7.18.2",
+      "purl": "pkg:npm/react-router-dom@7.18.2",
+      "bom-ref": "npm:frontend-runtime:node_modules/react-router-dom",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "frontend-runtime"
+        },
+        {
+          "name": "essentials:lock-path",
+          "value": "node_modules/react-router-dom"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "react-router",
+      "version": "7.18.2",
+      "purl": "pkg:npm/react-router@7.18.2",
+      "bom-ref": "npm:frontend-runtime:node_modules/react-router",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "frontend-runtime"
+        },
+        {
+          "name": "essentials:lock-path",
+          "value": "node_modules/react-router"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "react",
+      "version": "19.2.8",
+      "purl": "pkg:npm/react@19.2.8",
+      "bom-ref": "npm:frontend-runtime:node_modules/react",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "frontend-runtime"
+        },
+        {
+          "name": "essentials:lock-path",
+          "value": "node_modules/react"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "redox_syscall",
+      "version": "0.5.18",
+      "purl": "pkg:cargo/redox_syscall@0.5.18",
+      "bom-ref": "cargo:redox_syscall@0.5.18:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "redox_syscall",
+      "version": "0.9.1",
+      "purl": "pkg:cargo/redox_syscall@0.9.1",
+      "bom-ref": "cargo:redox_syscall@0.9.1:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "regex-automata",
+      "version": "0.4.18",
+      "purl": "pkg:cargo/regex-automata@0.4.18",
+      "bom-ref": "cargo:regex-automata@0.4.18:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "regex-syntax",
+      "version": "0.8.11",
+      "purl": "pkg:cargo/regex-syntax@0.8.11",
+      "bom-ref": "cargo:regex-syntax@0.8.11:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "rend",
+      "version": "0.4.2",
+      "purl": "pkg:cargo/rend@0.4.2",
+      "bom-ref": "cargo:rend@0.4.2:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "reqwest",
+      "version": "0.12.28",
+      "purl": "pkg:cargo/reqwest@0.12.28",
+      "bom-ref": "cargo:reqwest@0.12.28:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "ring",
+      "version": "0.17.14",
+      "purl": "pkg:cargo/ring@0.17.14",
+      "bom-ref": "cargo:ring@0.17.14:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "rkyv_derive",
+      "version": "0.7.46",
+      "purl": "pkg:cargo/rkyv_derive@0.7.46",
+      "bom-ref": "cargo:rkyv_derive@0.7.46:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "rkyv",
+      "version": "0.7.46",
+      "purl": "pkg:cargo/rkyv@0.7.46",
+      "bom-ref": "cargo:rkyv@0.7.46:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "rsa",
+      "version": "0.9.10",
+      "purl": "pkg:cargo/rsa@0.9.10",
+      "bom-ref": "cargo:rsa@0.9.10:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "rust_decimal_macros",
+      "version": "1.40.0",
+      "purl": "pkg:cargo/rust_decimal_macros@1.40.0",
+      "bom-ref": "cargo:rust_decimal_macros@1.40.0:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "rust_decimal",
+      "version": "1.42.1",
+      "purl": "pkg:cargo/rust_decimal@1.42.1",
+      "bom-ref": "cargo:rust_decimal@1.42.1:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "rustc-hash",
+      "version": "2.1.3",
+      "purl": "pkg:cargo/rustc-hash@2.1.3",
+      "bom-ref": "cargo:rustc-hash@2.1.3:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "rustls-pki-types",
+      "version": "1.15.1",
+      "purl": "pkg:cargo/rustls-pki-types@1.15.1",
+      "bom-ref": "cargo:rustls-pki-types@1.15.1:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "rustls-webpki",
+      "version": "0.103.14",
+      "purl": "pkg:cargo/rustls-webpki@0.103.14",
+      "bom-ref": "cargo:rustls-webpki@0.103.14:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "rustls",
+      "version": "0.23.43",
+      "purl": "pkg:cargo/rustls@0.23.43",
+      "bom-ref": "cargo:rustls@0.23.43:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "rustversion",
+      "version": "1.0.23",
+      "purl": "pkg:cargo/rustversion@1.0.23",
+      "bom-ref": "cargo:rustversion@1.0.23:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "ryu",
+      "version": "1.0.23",
+      "purl": "pkg:cargo/ryu@1.0.23",
+      "bom-ref": "cargo:ryu@1.0.23:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "sales-traffic-json-parser",
+      "version": "2",
+      "bom-ref": "parser:sales-traffic-json-v2"
+    },
+    {
+      "type": "library",
+      "name": "scheduler",
+      "version": "0.27.0",
+      "purl": "pkg:npm/scheduler@0.27.0",
+      "bom-ref": "npm:frontend-runtime:node_modules/scheduler",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "frontend-runtime"
+        },
+        {
+          "name": "essentials:lock-path",
+          "value": "node_modules/scheduler"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "scopeguard",
+      "version": "1.2.0",
+      "purl": "pkg:cargo/scopeguard@1.2.0",
+      "bom-ref": "cargo:scopeguard@1.2.0:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "seahash",
+      "version": "4.1.0",
+      "purl": "pkg:cargo/seahash@4.1.0",
+      "bom-ref": "cargo:seahash@4.1.0:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "serde_core",
+      "version": "1.0.229",
+      "purl": "pkg:cargo/serde_core@1.0.229",
+      "bom-ref": "cargo:serde_core@1.0.229:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "serde_derive",
+      "version": "1.0.229",
+      "purl": "pkg:cargo/serde_derive@1.0.229",
+      "bom-ref": "cargo:serde_derive@1.0.229:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "serde_json",
+      "version": "1.0.151",
+      "purl": "pkg:cargo/serde_json@1.0.151",
+      "bom-ref": "cargo:serde_json@1.0.151:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "serde_path_to_error",
+      "version": "0.1.20",
+      "purl": "pkg:cargo/serde_path_to_error@0.1.20",
+      "bom-ref": "cargo:serde_path_to_error@0.1.20:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "serde_urlencoded",
+      "version": "0.7.1",
+      "purl": "pkg:cargo/serde_urlencoded@0.7.1",
+      "bom-ref": "cargo:serde_urlencoded@0.7.1:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "serde",
+      "version": "1.0.229",
+      "purl": "pkg:cargo/serde@1.0.229",
+      "bom-ref": "cargo:serde@1.0.229:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "server",
+      "version": "0.1.0",
+      "purl": "pkg:cargo/server@0.1.0",
+      "bom-ref": "cargo:server@0.1.0:21a3230e0377",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "set-cookie-parser",
+      "version": "2.7.2",
+      "purl": "pkg:npm/set-cookie-parser@2.7.2",
+      "bom-ref": "npm:frontend-runtime:node_modules/set-cookie-parser",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "frontend-runtime"
+        },
+        {
+          "name": "essentials:lock-path",
+          "value": "node_modules/set-cookie-parser"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "sha1",
+      "version": "0.10.7",
+      "purl": "pkg:cargo/sha1@0.10.7",
+      "bom-ref": "cargo:sha1@0.10.7:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "sha2",
+      "version": "0.10.9",
+      "purl": "pkg:cargo/sha2@0.10.9",
+      "bom-ref": "cargo:sha2@0.10.9:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "sharded-slab",
+      "version": "0.1.7",
+      "purl": "pkg:cargo/sharded-slab@0.1.7",
+      "bom-ref": "cargo:sharded-slab@0.1.7:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "shlex",
+      "version": "2.0.1",
+      "purl": "pkg:cargo/shlex@2.0.1",
+      "bom-ref": "cargo:shlex@2.0.1:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "signal-hook-registry",
+      "version": "1.4.8",
+      "purl": "pkg:cargo/signal-hook-registry@1.4.8",
+      "bom-ref": "cargo:signal-hook-registry@1.4.8:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "signature",
+      "version": "2.2.0",
+      "purl": "pkg:cargo/signature@2.2.0",
+      "bom-ref": "cargo:signature@2.2.0:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "simd-adler32",
+      "version": "0.3.10",
+      "purl": "pkg:cargo/simd-adler32@0.3.10",
+      "bom-ref": "cargo:simd-adler32@0.3.10:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "simdutf8",
+      "version": "0.1.5",
+      "purl": "pkg:cargo/simdutf8@0.1.5",
+      "bom-ref": "cargo:simdutf8@0.1.5:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "simple_asn1",
+      "version": "0.6.4",
+      "purl": "pkg:cargo/simple_asn1@0.6.4",
+      "bom-ref": "cargo:simple_asn1@0.6.4:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "slab",
+      "version": "0.4.12",
+      "purl": "pkg:cargo/slab@0.4.12",
+      "bom-ref": "cargo:slab@0.4.12:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "smallvec",
+      "version": "1.15.2",
+      "purl": "pkg:cargo/smallvec@1.15.2",
+      "bom-ref": "cargo:smallvec@1.15.2:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "socket2",
+      "version": "0.6.5",
+      "purl": "pkg:cargo/socket2@0.6.5",
+      "bom-ref": "cargo:socket2@0.6.5:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "spin",
+      "version": "0.9.9",
+      "purl": "pkg:cargo/spin@0.9.9",
+      "bom-ref": "cargo:spin@0.9.9:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "spki",
+      "version": "0.7.3",
+      "purl": "pkg:cargo/spki@0.7.3",
+      "bom-ref": "cargo:spki@0.7.3:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "sqlx-core",
+      "version": "0.8.6",
+      "purl": "pkg:cargo/sqlx-core@0.8.6",
+      "bom-ref": "cargo:sqlx-core@0.8.6:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "sqlx-macros-core",
+      "version": "0.8.6",
+      "purl": "pkg:cargo/sqlx-macros-core@0.8.6",
+      "bom-ref": "cargo:sqlx-macros-core@0.8.6:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "sqlx-macros",
+      "version": "0.8.6",
+      "purl": "pkg:cargo/sqlx-macros@0.8.6",
+      "bom-ref": "cargo:sqlx-macros@0.8.6:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "sqlx-mysql",
+      "version": "0.8.6",
+      "purl": "pkg:cargo/sqlx-mysql@0.8.6",
+      "bom-ref": "cargo:sqlx-mysql@0.8.6:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "sqlx-postgres",
+      "version": "0.8.6",
+      "purl": "pkg:cargo/sqlx-postgres@0.8.6",
+      "bom-ref": "cargo:sqlx-postgres@0.8.6:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "sqlx-sqlite",
+      "version": "0.8.6",
+      "purl": "pkg:cargo/sqlx-sqlite@0.8.6",
+      "bom-ref": "cargo:sqlx-sqlite@0.8.6:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "sqlx",
+      "version": "0.8.6",
+      "purl": "pkg:cargo/sqlx@0.8.6",
+      "bom-ref": "cargo:sqlx@0.8.6:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "stable_deref_trait",
+      "version": "1.2.1",
+      "purl": "pkg:cargo/stable_deref_trait@1.2.1",
+      "bom-ref": "cargo:stable_deref_trait@1.2.1:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "stringprep",
+      "version": "0.1.5",
+      "purl": "pkg:cargo/stringprep@0.1.5",
+      "bom-ref": "cargo:stringprep@0.1.5:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "subtle",
+      "version": "2.6.1",
+      "purl": "pkg:cargo/subtle@2.6.1",
+      "bom-ref": "cargo:subtle@2.6.1:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "syn",
+      "version": "1.0.109",
+      "purl": "pkg:cargo/syn@1.0.109",
+      "bom-ref": "cargo:syn@1.0.109:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "syn",
+      "version": "2.0.119",
+      "purl": "pkg:cargo/syn@2.0.119",
+      "bom-ref": "cargo:syn@2.0.119:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "syn",
+      "version": "3.0.3",
+      "purl": "pkg:cargo/syn@3.0.3",
+      "bom-ref": "cargo:syn@3.0.3:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "sync_wrapper",
+      "version": "1.0.2",
+      "purl": "pkg:cargo/sync_wrapper@1.0.2",
+      "bom-ref": "cargo:sync_wrapper@1.0.2:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "synstructure",
+      "version": "0.13.2",
+      "purl": "pkg:cargo/synstructure@0.13.2",
+      "bom-ref": "cargo:synstructure@0.13.2:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "tap",
+      "version": "1.0.1",
+      "purl": "pkg:cargo/tap@1.0.1",
+      "bom-ref": "cargo:tap@1.0.1:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "thiserror-impl",
+      "version": "2.0.20",
+      "purl": "pkg:cargo/thiserror-impl@2.0.20",
+      "bom-ref": "cargo:thiserror-impl@2.0.20:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "thiserror",
+      "version": "2.0.20",
+      "purl": "pkg:cargo/thiserror@2.0.20",
+      "bom-ref": "cargo:thiserror@2.0.20:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "thread_local",
+      "version": "1.1.10",
+      "purl": "pkg:cargo/thread_local@1.1.10",
+      "bom-ref": "cargo:thread_local@1.1.10:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "time-core",
+      "version": "0.1.9",
+      "purl": "pkg:cargo/time-core@0.1.9",
+      "bom-ref": "cargo:time-core@0.1.9:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "time-macros",
+      "version": "0.2.32",
+      "purl": "pkg:cargo/time-macros@0.2.32",
+      "bom-ref": "cargo:time-macros@0.2.32:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "time",
+      "version": "0.3.55",
+      "purl": "pkg:cargo/time@0.3.55",
+      "bom-ref": "cargo:time@0.3.55:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "tinystr",
+      "version": "0.8.3",
+      "purl": "pkg:cargo/tinystr@0.8.3",
+      "bom-ref": "cargo:tinystr@0.8.3:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "tinyvec_macros",
+      "version": "0.1.1",
+      "purl": "pkg:cargo/tinyvec_macros@0.1.1",
+      "bom-ref": "cargo:tinyvec_macros@0.1.1:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "tinyvec",
+      "version": "1.12.0",
+      "purl": "pkg:cargo/tinyvec@1.12.0",
+      "bom-ref": "cargo:tinyvec@1.12.0:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "tokio-macros",
+      "version": "2.7.2",
+      "purl": "pkg:cargo/tokio-macros@2.7.2",
+      "bom-ref": "cargo:tokio-macros@2.7.2:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "tokio-rustls",
+      "version": "0.26.4",
+      "purl": "pkg:cargo/tokio-rustls@0.26.4",
+      "bom-ref": "cargo:tokio-rustls@0.26.4:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "tokio-stream",
+      "version": "0.1.19",
+      "purl": "pkg:cargo/tokio-stream@0.1.19",
+      "bom-ref": "cargo:tokio-stream@0.1.19:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "tokio",
+      "version": "1.53.1",
+      "purl": "pkg:cargo/tokio@1.53.1",
+      "bom-ref": "cargo:tokio@1.53.1:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "toml_datetime",
+      "version": "1.1.1+spec-1.1.0",
+      "purl": "pkg:cargo/toml_datetime@1.1.1%2Bspec-1.1.0",
+      "bom-ref": "cargo:toml_datetime@1.1.1+spec-1.1.0:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "toml_edit",
+      "version": "0.25.13+spec-1.1.0",
+      "purl": "pkg:cargo/toml_edit@0.25.13%2Bspec-1.1.0",
+      "bom-ref": "cargo:toml_edit@0.25.13+spec-1.1.0:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "toml_parser",
+      "version": "1.1.3+spec-1.1.0",
+      "purl": "pkg:cargo/toml_parser@1.1.3%2Bspec-1.1.0",
+      "bom-ref": "cargo:toml_parser@1.1.3+spec-1.1.0:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "tower-http",
+      "version": "0.6.11",
+      "purl": "pkg:cargo/tower-http@0.6.11",
+      "bom-ref": "cargo:tower-http@0.6.11:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "tower-layer",
+      "version": "0.3.3",
+      "purl": "pkg:cargo/tower-layer@0.3.3",
+      "bom-ref": "cargo:tower-layer@0.3.3:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "tower-service",
+      "version": "0.3.3",
+      "purl": "pkg:cargo/tower-service@0.3.3",
+      "bom-ref": "cargo:tower-service@0.3.3:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "tower",
+      "version": "0.5.3",
+      "purl": "pkg:cargo/tower@0.5.3",
+      "bom-ref": "cargo:tower@0.5.3:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "tracing-attributes",
+      "version": "0.1.31",
+      "purl": "pkg:cargo/tracing-attributes@0.1.31",
+      "bom-ref": "cargo:tracing-attributes@0.1.31:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "tracing-core",
+      "version": "0.1.36",
+      "purl": "pkg:cargo/tracing-core@0.1.36",
+      "bom-ref": "cargo:tracing-core@0.1.36:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "tracing-log",
+      "version": "0.2.0",
+      "purl": "pkg:cargo/tracing-log@0.2.0",
+      "bom-ref": "cargo:tracing-log@0.2.0:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "tracing-subscriber",
+      "version": "0.3.23",
+      "purl": "pkg:cargo/tracing-subscriber@0.3.23",
+      "bom-ref": "cargo:tracing-subscriber@0.3.23:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "tracing",
+      "version": "0.1.44",
+      "purl": "pkg:cargo/tracing@0.1.44",
+      "bom-ref": "cargo:tracing@0.1.44:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "try-lock",
+      "version": "0.2.5",
+      "purl": "pkg:cargo/try-lock@0.2.5",
+      "bom-ref": "cargo:try-lock@0.2.5:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "typenum",
+      "version": "1.20.1",
+      "purl": "pkg:cargo/typenum@1.20.1",
+      "bom-ref": "cargo:typenum@1.20.1:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "unicode-bidi",
+      "version": "0.3.18",
+      "purl": "pkg:cargo/unicode-bidi@0.3.18",
+      "bom-ref": "cargo:unicode-bidi@0.3.18:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "unicode-ident",
+      "version": "1.0.24",
+      "purl": "pkg:cargo/unicode-ident@1.0.24",
+      "bom-ref": "cargo:unicode-ident@1.0.24:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "unicode-normalization",
+      "version": "0.1.25",
+      "purl": "pkg:cargo/unicode-normalization@0.1.25",
+      "bom-ref": "cargo:unicode-normalization@0.1.25:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "unicode-properties",
+      "version": "0.1.4",
+      "purl": "pkg:cargo/unicode-properties@0.1.4",
+      "bom-ref": "cargo:unicode-properties@0.1.4:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "untrusted",
+      "version": "0.9.0",
+      "purl": "pkg:cargo/untrusted@0.9.0",
+      "bom-ref": "cargo:untrusted@0.9.0:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "url",
+      "version": "2.5.8",
+      "purl": "pkg:cargo/url@2.5.8",
+      "bom-ref": "cargo:url@2.5.8:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "utf8_iter",
+      "version": "1.0.4",
+      "purl": "pkg:cargo/utf8_iter@1.0.4",
+      "bom-ref": "cargo:utf8_iter@1.0.4:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "uuid",
+      "version": "1.24.0",
+      "purl": "pkg:cargo/uuid@1.24.0",
+      "bom-ref": "cargo:uuid@1.24.0:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "valuable",
+      "version": "0.1.1",
+      "purl": "pkg:cargo/valuable@0.1.1",
+      "bom-ref": "cargo:valuable@0.1.1:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "vcpkg",
+      "version": "0.2.15",
+      "purl": "pkg:cargo/vcpkg@0.2.15",
+      "bom-ref": "cargo:vcpkg@0.2.15:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "version_check",
+      "version": "0.9.5",
+      "purl": "pkg:cargo/version_check@0.9.5",
+      "bom-ref": "cargo:version_check@0.9.5:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "want",
+      "version": "0.3.1",
+      "purl": "pkg:cargo/want@0.3.1",
+      "bom-ref": "cargo:want@0.3.1:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "wasi",
+      "version": "0.11.1+wasi-snapshot-preview1",
+      "purl": "pkg:cargo/wasi@0.11.1%2Bwasi-snapshot-preview1",
+      "bom-ref": "cargo:wasi@0.11.1+wasi-snapshot-preview1:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "wasite",
+      "version": "0.1.0",
+      "purl": "pkg:cargo/wasite@0.1.0",
+      "bom-ref": "cargo:wasite@0.1.0:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "wasm-bindgen-futures",
+      "version": "0.4.77",
+      "purl": "pkg:cargo/wasm-bindgen-futures@0.4.77",
+      "bom-ref": "cargo:wasm-bindgen-futures@0.4.77:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "wasm-bindgen-macro-support",
+      "version": "0.2.127",
+      "purl": "pkg:cargo/wasm-bindgen-macro-support@0.2.127",
+      "bom-ref": "cargo:wasm-bindgen-macro-support@0.2.127:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "wasm-bindgen-macro",
+      "version": "0.2.127",
+      "purl": "pkg:cargo/wasm-bindgen-macro@0.2.127",
+      "bom-ref": "cargo:wasm-bindgen-macro@0.2.127:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "wasm-bindgen-shared",
+      "version": "0.2.127",
+      "purl": "pkg:cargo/wasm-bindgen-shared@0.2.127",
+      "bom-ref": "cargo:wasm-bindgen-shared@0.2.127:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "wasm-bindgen",
+      "version": "0.2.127",
+      "purl": "pkg:cargo/wasm-bindgen@0.2.127",
+      "bom-ref": "cargo:wasm-bindgen@0.2.127:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "web-sys",
+      "version": "0.3.104",
+      "purl": "pkg:cargo/web-sys@0.3.104",
+      "bom-ref": "cargo:web-sys@0.3.104:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "web-time",
+      "version": "1.1.0",
+      "purl": "pkg:cargo/web-time@1.1.0",
+      "bom-ref": "cargo:web-time@1.1.0:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "webpki-roots",
+      "version": "1.0.9",
+      "purl": "pkg:cargo/webpki-roots@1.0.9",
+      "bom-ref": "cargo:webpki-roots@1.0.9:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "whoami",
+      "version": "1.6.1",
+      "purl": "pkg:cargo/whoami@1.6.1",
+      "bom-ref": "cargo:whoami@1.6.1:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "windows_aarch64_gnullvm",
+      "version": "0.48.5",
+      "purl": "pkg:cargo/windows_aarch64_gnullvm@0.48.5",
+      "bom-ref": "cargo:windows_aarch64_gnullvm@0.48.5:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "windows_aarch64_gnullvm",
+      "version": "0.52.6",
+      "purl": "pkg:cargo/windows_aarch64_gnullvm@0.52.6",
+      "bom-ref": "cargo:windows_aarch64_gnullvm@0.52.6:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "windows_aarch64_msvc",
+      "version": "0.48.5",
+      "purl": "pkg:cargo/windows_aarch64_msvc@0.48.5",
+      "bom-ref": "cargo:windows_aarch64_msvc@0.48.5:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "windows_aarch64_msvc",
+      "version": "0.52.6",
+      "purl": "pkg:cargo/windows_aarch64_msvc@0.52.6",
+      "bom-ref": "cargo:windows_aarch64_msvc@0.52.6:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "windows_i686_gnu",
+      "version": "0.48.5",
+      "purl": "pkg:cargo/windows_i686_gnu@0.48.5",
+      "bom-ref": "cargo:windows_i686_gnu@0.48.5:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "windows_i686_gnu",
+      "version": "0.52.6",
+      "purl": "pkg:cargo/windows_i686_gnu@0.52.6",
+      "bom-ref": "cargo:windows_i686_gnu@0.52.6:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "windows_i686_gnullvm",
+      "version": "0.52.6",
+      "purl": "pkg:cargo/windows_i686_gnullvm@0.52.6",
+      "bom-ref": "cargo:windows_i686_gnullvm@0.52.6:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "windows_i686_msvc",
+      "version": "0.48.5",
+      "purl": "pkg:cargo/windows_i686_msvc@0.48.5",
+      "bom-ref": "cargo:windows_i686_msvc@0.48.5:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "windows_i686_msvc",
+      "version": "0.52.6",
+      "purl": "pkg:cargo/windows_i686_msvc@0.52.6",
+      "bom-ref": "cargo:windows_i686_msvc@0.52.6:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "windows_x86_64_gnu",
+      "version": "0.48.5",
+      "purl": "pkg:cargo/windows_x86_64_gnu@0.48.5",
+      "bom-ref": "cargo:windows_x86_64_gnu@0.48.5:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "windows_x86_64_gnu",
+      "version": "0.52.6",
+      "purl": "pkg:cargo/windows_x86_64_gnu@0.52.6",
+      "bom-ref": "cargo:windows_x86_64_gnu@0.52.6:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "windows_x86_64_gnullvm",
+      "version": "0.48.5",
+      "purl": "pkg:cargo/windows_x86_64_gnullvm@0.48.5",
+      "bom-ref": "cargo:windows_x86_64_gnullvm@0.48.5:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "windows_x86_64_gnullvm",
+      "version": "0.52.6",
+      "purl": "pkg:cargo/windows_x86_64_gnullvm@0.52.6",
+      "bom-ref": "cargo:windows_x86_64_gnullvm@0.52.6:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "windows_x86_64_msvc",
+      "version": "0.48.5",
+      "purl": "pkg:cargo/windows_x86_64_msvc@0.48.5",
+      "bom-ref": "cargo:windows_x86_64_msvc@0.48.5:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "windows_x86_64_msvc",
+      "version": "0.52.6",
+      "purl": "pkg:cargo/windows_x86_64_msvc@0.52.6",
+      "bom-ref": "cargo:windows_x86_64_msvc@0.52.6:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "windows-core",
+      "version": "0.62.2",
+      "purl": "pkg:cargo/windows-core@0.62.2",
+      "bom-ref": "cargo:windows-core@0.62.2:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "windows-implement",
+      "version": "0.60.2",
+      "purl": "pkg:cargo/windows-implement@0.60.2",
+      "bom-ref": "cargo:windows-implement@0.60.2:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "windows-interface",
+      "version": "0.59.3",
+      "purl": "pkg:cargo/windows-interface@0.59.3",
+      "bom-ref": "cargo:windows-interface@0.59.3:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "windows-link",
+      "version": "0.2.1",
+      "purl": "pkg:cargo/windows-link@0.2.1",
+      "bom-ref": "cargo:windows-link@0.2.1:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "windows-result",
+      "version": "0.4.1",
+      "purl": "pkg:cargo/windows-result@0.4.1",
+      "bom-ref": "cargo:windows-result@0.4.1:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "windows-strings",
+      "version": "0.5.1",
+      "purl": "pkg:cargo/windows-strings@0.5.1",
+      "bom-ref": "cargo:windows-strings@0.5.1:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "windows-sys",
+      "version": "0.48.0",
+      "purl": "pkg:cargo/windows-sys@0.48.0",
+      "bom-ref": "cargo:windows-sys@0.48.0:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "windows-sys",
+      "version": "0.52.0",
+      "purl": "pkg:cargo/windows-sys@0.52.0",
+      "bom-ref": "cargo:windows-sys@0.52.0:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "windows-sys",
+      "version": "0.61.2",
+      "purl": "pkg:cargo/windows-sys@0.61.2",
+      "bom-ref": "cargo:windows-sys@0.61.2:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "windows-targets",
+      "version": "0.48.5",
+      "purl": "pkg:cargo/windows-targets@0.48.5",
+      "bom-ref": "cargo:windows-targets@0.48.5:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "windows-targets",
+      "version": "0.52.6",
+      "purl": "pkg:cargo/windows-targets@0.52.6",
+      "bom-ref": "cargo:windows-targets@0.52.6:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "winnow",
+      "version": "1.0.4",
+      "purl": "pkg:cargo/winnow@1.0.4",
+      "bom-ref": "cargo:winnow@1.0.4:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "writeable",
+      "version": "0.6.3",
+      "purl": "pkg:cargo/writeable@0.6.3",
+      "bom-ref": "cargo:writeable@0.6.3:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "wyz",
+      "version": "0.5.1",
+      "purl": "pkg:cargo/wyz@0.5.1",
+      "bom-ref": "cargo:wyz@0.5.1:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "yoke-derive",
+      "version": "0.8.2",
+      "purl": "pkg:cargo/yoke-derive@0.8.2",
+      "bom-ref": "cargo:yoke-derive@0.8.2:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "yoke",
+      "version": "0.8.3",
+      "purl": "pkg:cargo/yoke@0.8.3",
+      "bom-ref": "cargo:yoke@0.8.3:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "zerocopy-derive",
+      "version": "0.8.56",
+      "purl": "pkg:cargo/zerocopy-derive@0.8.56",
+      "bom-ref": "cargo:zerocopy-derive@0.8.56:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "zerocopy",
+      "version": "0.8.56",
+      "purl": "pkg:cargo/zerocopy@0.8.56",
+      "bom-ref": "cargo:zerocopy@0.8.56:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "zerofrom-derive",
+      "version": "0.1.7",
+      "purl": "pkg:cargo/zerofrom-derive@0.1.7",
+      "bom-ref": "cargo:zerofrom-derive@0.1.7:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "zerofrom",
+      "version": "0.1.8",
+      "purl": "pkg:cargo/zerofrom@0.1.8",
+      "bom-ref": "cargo:zerofrom@0.1.8:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "zeroize",
+      "version": "1.9.0",
+      "purl": "pkg:cargo/zeroize@1.9.0",
+      "bom-ref": "cargo:zeroize@1.9.0:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "zerotrie",
+      "version": "0.2.4",
+      "purl": "pkg:cargo/zerotrie@0.2.4",
+      "bom-ref": "cargo:zerotrie@0.2.4:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "zerovec-derive",
+      "version": "0.11.3",
+      "purl": "pkg:cargo/zerovec-derive@0.11.3",
+      "bom-ref": "cargo:zerovec-derive@0.11.3:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "zerovec",
+      "version": "0.11.6",
+      "purl": "pkg:cargo/zerovec@0.11.6",
+      "bom-ref": "cargo:zerovec@0.11.6:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "zmij",
+      "version": "1.0.23",
+      "purl": "pkg:cargo/zmij@1.0.23",
+      "bom-ref": "cargo:zmij@1.0.23:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    }
+  ]
+}

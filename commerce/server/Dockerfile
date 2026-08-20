@@ -1,4 +1,4 @@
-FROM node:22-bookworm-slim AS dependencies
+FROM node:22-bookworm-slim@sha256:d649c27dae7ba0137b3cef5dd75baa422c08dc3d9e3fc0c23dfb172dc3cc6436 AS dependencies
 WORKDIR /app
 COPY package.json package-lock.json ./
 COPY server/package.json server/package.json
@@ -10,7 +10,7 @@ COPY server server
 WORKDIR /app/server
 RUN npm run build
 
-FROM node:22-bookworm-slim AS runtime
+FROM node:22-bookworm-slim@sha256:d649c27dae7ba0137b3cef5dd75baa422c08dc3d9e3fc0c23dfb172dc3cc6436 AS runtime
 ENV NODE_ENV=production
 WORKDIR /app
 RUN groupadd --system shop && useradd --system --gid shop --create-home shop

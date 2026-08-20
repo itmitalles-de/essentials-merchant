@@ -341,7 +341,7 @@ export interface AmazonReportDefinition {
 
 export interface AmazonConnectionSummary {
   id: string;
-  seller_id: string;
+  seller_id_redacted: string;
   region: string;
   granted_roles: string[];
   marketplace_ids: string[];
@@ -401,8 +401,29 @@ export interface MarketplaceOverview {
 export interface MarketplaceRunDetail {
   run: AmazonReportRun;
   events: Array<{ id: number; status: string; message: string | null; created_at: string }>;
-  document: { sha256: string; decoded_sha256: string; import_status: string; import_error: string | null; parser_version: string | null; downloaded_at: string } | null;
+  document: { sha256: string; decoded_sha256: string; import_status: string; import_error: string | null; parser_version: string | null; downloaded_at: string; transport_bytes: number; decoded_bytes: number } | null;
   snapshot: { id: string; period_start: string | null; period_end: string | null; granularity: string; comparability_key: string; summary: Record<string, unknown> } | null;
   metrics: Array<{ id: number; metric_name: string; dimension_type: string; dimension_key: string; value_numeric: string; unit: string; currency_code: string | null }>;
   analyses: Array<{ id: string; result: Record<string, unknown>; created_at: string }>;
+  transport: Array<{ id: number; operation: string; request_id_redacted: string | null; rate_limit_limit: string | null; retry_after_seconds: number | null; observed_at: string }>;
+}
+
+export interface AmazonPilotStatus {
+  profile: "amazon-read-only";
+  title: string;
+  enabled: boolean;
+  compliant: boolean;
+  active_modules: string[];
+  disabled_modules: string[];
+  mutation_modules: string[];
+  unexpected_active_modules: string[];
+  missing_required_modules: string[];
+  automatic_schedules_enabled: number;
+  last_backup_verification: {
+    outcome: "passed" | "failed";
+    manifest_sha256: string;
+    repository_revision: string;
+    details: Record<string, unknown>;
+    verified_at: string;
+  } | null;
 }

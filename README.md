@@ -1,262 +1,199 @@
 # Essentials+ Merchant
 
-Essentials+ Merchant is a compact ERP and commerce system for German small businesses. The Rust
-Core remains authoritative for SKUs, ERP master data, available stock, imported orders, invoices,
-and immutable accounting entries. Vendure is a separate commerce subsystem for merchandising,
-cart, checkout, promotions, payments, and Shop/Admin APIs.
+Essentials+ Merchant is currently scoped to one internal pilot: **read-only Amazon Marketplace
+Intelligence**. It acquires approved Amazon Reports data, preserves immutable raw evidence, creates
+versioned deterministic snapshots and analyses, and exports only PII-minimized aggregates.
 
-Status: active development. The repository has automated synthetic coverage for the Core↔Vendure
-vertical flow, restart and failure recovery, correction invoices, deterministic read-only Amazon
-report intelligence, and backup/restore. It is not a claim of production readiness, legal or tax
-compliance, DATEV import compatibility, or live provider verification.
+The retained ERP and Commerce implementation remains in this repository and stays covered by its
+existing tests. It is outside the pilot runtime: Vendure, Storefront, checkout, payment, shipping,
+fulfillment mutation, DATEV activation, and every Amazon business mutation are disabled. No
+production, Amazon-account, legal, tax, carrier, payment, or DATEV compatibility claim is made.
 
-The repository slug and existing internal names remain `erplite`. Crates, migrations, PostgreSQL
-databases, Docker volumes, token storage, and mapping tables are compatibility contracts and are
-not presentation branding.
+The repository is `itmitalles-de/essentials-merchant`. Historical internal `erplite` and
+`shop-suite-*` values remain stable persistence and integration contracts; databases, volumes,
+migrations, token keys, and mapping IDs are deliberately not renamed. See
+[compatibility identifiers](docs/COMPATIBILITY_IDENTIFIERS.md).
 
-## Architecture
+## Pilot profile
 
-| Component | Responsibility | Persistence |
-| --- | --- | --- |
-| Rust/Axum Core and React admin (`backend`, `frontend`) | ERP, inventory, imported orders, immutable invoices/accounting, modules, diagnostics, Marketplace Intelligence | `erplite` PostgreSQL and `erplite_invoices` |
-| Vendure 3.7.2 server and worker (`commerce/server`) | Commerce catalog projection, cart, checkout, synthetic test payment, Shop/Admin APIs | Separate `vendure` PostgreSQL and `vendure_assets` |
-| Next.js Storefront (`commerce/storefront`) | German synthetic storefront | Vendure Shop API only |
+The persisted profile `amazon-read-only` enables exactly:
 
-Core and Vendure never share a database or distributed transaction. Durable outboxes, an inbox,
-stable idempotency keys, leases, retries, and monotonic product sequences provide at-least-once
-delivery with replay-safe consumers. See [.agent/ARCHITECTURE.md](.agent/ARCHITECTURE.md).
+- `core.operations`, `core.catalog`, `core.inventory`, and `core.orders`;
+- `marketplace.amazon_intelligence` and `intelligence.rules`;
+- `pilot.amazon_read_only`.
 
-## Essentials+ module contract
+It disables Commerce/Storefront, `payment.test`, every real payment module, every shipping module,
+`export.datev`, and custom mutating modules. Existing `not_installed` states are preserved. The
+backend applies the profile atomically, disables Amazon schedules, holds pre-existing nonterminal
+live runs, and refuses startup if any unexpected module remains active. A server-wide middleware
+returns HTTP 409 `pilot_read_only` for all unsafe methods except the small Amazon
+configuration/acquisition/analysis allowlist; hiding navigation is never the security boundary.
 
-The React administration is the thematically grouped Essentials+ Merchant Admin-Center.
-Administrators see the complete catalog; normal users see only enabled modules for which they have
-an explicit grant. Canonical module states are `not_installed`, `needs_configuration`, `disabled`,
-`enabled`, and `degraded`.
+The standalone topology contains exactly PostgreSQL, the Rust backend, and the React admin:
 
-Core modules are required. Optional modules and connectors declare version, group, type,
-dependencies, conflicts, compatibility, configuration and secret requirements, API/navigation
-boundaries, jobs, webhooks, healthcheck, data ownership, and backup/restore behavior. State changes
-are transactional, idempotent, and audited. Disabling a module blocks its API and navigation and
-stops its worker claims, jobs, or webhooks without deleting configuration, mappings, reports, or
-history.
-
-Implemented catalog IDs include:
-
-- `core.catalog`, `core.inventory`, `core.orders`
-- `commerce.vendure`, `commerce.storefront`
-- `payment.test`, `shipping.manual`, plus separately disabled `shipping.dhl` and `shipping.dpd`
-- `accounting.invoices`, `accounting.corrections`, `export.datev`
-- `marketplace.amazon_intelligence`, `intelligence.rules`, and `custom.catalog`
-
-Connector activation requires server-side configuration health. The synthetic payment and manual
-shipping modules are for local tests only. DHL and DPD are separate catalog modules and never part
-of Marketplace Intelligence.
-
-## Integration reliability and diagnostics
-
-Core↔Vendure service requests use HMAC-SHA-256 over method, path, timestamp, nonce, and body hash.
-Core persists used nonces, rejects replayed or expired requests, accepts a current and an optional
-previous key during coordinated rotation, and limits adapter request bodies to 256 KiB. Tokens and
-payloads are absent from diagnostics.
-
-The administrator-only integration view shows Core and Vendure queue counts, oldest open event,
-last success, sanitized error, lease state, mappings, health/readiness, and an audit trail. Manual
-requeue accepts only dead events, requires an idempotency key, and never exposes full payloads.
-
-Production defaults remain a five-minute lease, exponential retries capped at one hour, and dead
-state after 20 attempts. Automated recovery tests override these values only in `APP_ENV=test`.
-The tested outage and restart cases are listed in [docs/FAILURE_MATRIX.md](docs/FAILURE_MATRIX.md).
-
-## Correction invoices and accounting export
-
-An issued invoice is an immutable snapshot. A full correction:
-
-- receives a unique `KR-YYYY-NNNN` number and an explicit reference to the original;
-- copies lines, tax amounts, customer/company snapshots, and totals with reversed decimal signs;
-- is idempotent and limited to one full correction per original invoice;
-- creates no stock movement and never mutates the original;
-- renders a PDF with the correction reference and records immutable audit history.
-
-Migration `0014_accounting_export_model.sql` derives immutable accounting entries from issued
-invoices and corrections. The guarded `POST /api/exports/datev` endpoint creates deterministic,
-byte-identical UTF-8-with-BOM EXTF Buchungsstapel files with CRLF, semicolon fields, header 700,
-format version 13, decimal commas, explicit S/H signs, account/tax mappings, and correction
-references. Export batches, parameters, entry IDs, hashes, and creator are immutable.
-
-The renderer follows the public DATEV Developer Portal format description and local tests, but its
-output has not been accepted by the DATEV checking program or imported into a real DATEV sandbox.
-`export.datev` therefore stays disabled and carries an explicit external-validation gate. No legal,
-tax, or DATEV-compatibility claim is made.
-
-Authoritative format references: [DATEV format structure](https://developer.datev.de/de/file-format/details/datev-format/getting-started),
-[booking batch fields](https://developer.datev.de/de/file-format/details/datev-format/format-description/booking-batch),
-[character sets](https://developer.datev.de/de/file-format/details/datev-format/character-set), and
-[DATEV validation tools](https://developer.datev.de/de/file-format/details/datev-format/tools).
-
-## Marketplace Intelligence
-
-`marketplace.amazon_intelligence` is disabled by default and read-only toward Amazon. The live
-transport uses Reports API `v2021-06-30` with Login with Amazon OAuth. AWS IAM/SigV4 is not
-implemented. A connection persists seller ID, region (`na`, `eu`, `fe`), marketplace IDs, granted
-roles, mode, and a logical secret reference only. Refresh token, client secret, and access token
-never enter the database, logs, or frontend. The current report registry requests no RDT.
-
-Manual and scheduled retrieval use the same persistent job path: `createReport`, exponential
-`getReport` polling, terminal `DONE`/`CANCELLED`/`FATAL`, immediate `getReportDocument`, pre-signed
-download, optional GZIP decompression, transport and decoded SHA-256, immutable raw archive,
-versioned parsing, normalized metrics, compatible snapshot, and deterministic analysis. Claims,
-leases, retries, expired URLs, partial downloads, and uniqueness constraints make the flow safe
-across duplicate triggers and worker restarts.
-
-| Report type | Official shape and role | Essentials+ Merchant handling |
-| --- | --- | --- |
-| `GET_SALES_AND_TRAFFIC_REPORT` | JSON; Brand Analytics; requestable/schedulable | JSON parser v2, explicit date/ASIN granularity, sales/units/traffic/conversion, analysis |
-| `GET_FBA_INVENTORY_PLANNING_DATA` | Tab-delimited; Amazon Fulfillment; request-only | TSV parser v1, inventory, 30-day shipments, stock cover, analysis; marketplace availability must be checked |
-| `GET_FBA_FULFILLMENT_CUSTOMER_RETURNS_DATA` | Tab-delimited; Pricing or Amazon Fulfillment; request-only | Immutable raw archive only because order IDs/comments can contain sensitive data |
-| `GET_V2_SETTLEMENT_REPORT_DATA_FLAT_FILE_V2` | Tab-delimited settlement report; Finance and Accounting | Immutable raw archive only; no deprecated predecessor is implemented |
-
-The parsers tolerate unknown fields and column order, reject duplicate dimensions and malformed
-encoding, report missing required fields, and use `Decimal` rather than binary floats. Snapshot
-comparison requires identical report type, parser version, marketplace, date/ASIN granularity, and
-period length. Incompatible snapshots are reported as missing comparison data.
-
-Analysis is deterministic and rule-based. Results contain facts, delta, overall trend, anomalies,
-hypotheses, two-to-five possible actions, expected impact, effort, risk, evidence references,
-uncertainty, and missing data. Exports are allowlist-based aggregates and strip buyer/customer,
-address, email, order-ID, comment, and phone fields. No external LLM provider is implemented, and
-the software never changes Amazon prices, ads, listings, inventory, or orders.
-
-The local fixture client and fake SP-API server use fully synthetic documents and exercise OAuth,
-Reports endpoints, polling, rate limits, terminal states, compressed and partial documents,
-parser errors, retries, restart safety, raw-only types, and PII filtering. They are not a production
-Amazon acceptance.
-
-Authoritative references: [Reports API v2021-06-30](https://developer-docs.amazon.com/sp-api/docs/reports-api),
-[official Sales & Traffic schema](https://github.com/amzn/selling-partner-api-models/blob/main/schemas/reports/sellerSalesAndTrafficReport.json),
-[FBA report types](https://developer-docs.amazon.com/sp-api/docs/report-type-values-fba),
-[LWA authorization](https://developer-docs.amazon.com/sp-api/docs/authorizing-selling-partner-api-applications),
-[removal of the SigV4 requirement](https://developer-docs.amazon.com/sp-api/changelog/sp-api-will-no-longer-require-aws-iam-or-aws-signature-version-4),
-and [Settlement predecessor removal](https://developer-docs.amazon.com/sp-api/changelog/update-removal-of-xml-settlement-report-and-flat-file-settlement-report-date-changed-to-november-11-2026).
-
-## Payment and shipping provider boundary
-
-Provider-neutral TypeScript ports define payment authorization/capture/failure/refund and shipping
-creation/in-transit/delivery/failure states, idempotency, amount/currency/order checks,
-reconciliation, audit, timeout, retryable errors, carrier, and tracking. A complete in-memory fake
-provider and signed callback verifier cover these contracts without credentials.
-
-Stripe Payment Intents and DHL Parcel Germany are the documented production candidates. No live
-adapter is enabled: account-specific contracts, secrets, webhook setup, sandbox credentials, and
-provider acceptance are external gates. `payment.test` fails closed when its Core module is disabled
-or unavailable; `shipping.manual` is protected at the Core fulfillment API.
-
-Candidate evaluation uses Stripe's official [idempotent request](https://docs.stripe.com/api/idempotent_requests)
-and [webhook](https://docs.stripe.com/webhooks) contracts plus DHL's official
-[Post & Parcel Germany authentication API](https://developer.dhl.com/api-reference/authentication-api-post-paket-deutschland?lang=de).
-
-## Docker Compose
-
-Create a local environment from `.env.example`; never reuse production credentials or data.
-
-```bash
-cp .env.example .env
-docker network inspect proxy_net >/dev/null 2>&1 || docker network create proxy_net
-docker compose up -d --build --wait
-docker compose ps
+```text
+Admin UI  ->  Core API  ->  PostgreSQL + immutable Amazon archive
+                 |
+                 +---- LWA + Amazon Reports API only (explicit live gate)
 ```
 
-Default endpoints are the Essentials+ Merchant admin on `http://localhost:8090`, Vendure Shop API on
-`http://localhost:3000/shop-api`, Vendure Dashboard on `http://localhost:3000/dashboard`, and the
-Storefront on `http://localhost:3001`.
+Vendure, Storefront, payment, shipping, carrier, and DATEV services are absent from
+`compose.amazon-pilot.yml`. Their code, databases, compatibility identifiers, ports, fakes, and
+tests remain available to the retained full-stack test topology.
 
-The first Vendure start runs committed TypeORM migrations and populates only synthetic
-infrastructure data. Products continue to originate in Core. The test payment must not be exposed
-as a production method.
+## Safe local start
 
-## Automated checks
+Prepare a local ignored environment from `.env.amazon-pilot.example`. The launcher defaults to a
+dry configuration check, fixes the Compose project name to
+`essentials-merchant-amazon-pilot`, prints no secrets, and never deletes data:
 
-Core checks require a disposable PostgreSQL URL whose user may create temporary databases:
+```bash
+scripts/start-amazon-pilot.sh --env-file .env.amazon-pilot
+```
+
+Starting requires the explicit `--start` switch. After startup, the launcher checks the running
+service set and persisted module state as machine-readable JSON. It stops the application services
+and exits nonzero if a Commerce, payment, shipping, or DATEV service/module is unexpectedly active
+or an Amazon schedule exists. Full operating instructions are in
+[docs/OPERATIONS.md](docs/OPERATIONS.md).
+
+## Amazon transport boundary
+
+The pilot transport accepts exactly five operations:
+
+1. Login with Amazon access-token refresh;
+2. Reports API `createReport`;
+3. Reports API `getReport`;
+4. Reports API `getReportDocument`;
+5. HTTPS download from the validated presigned Amazon/AWS/CloudFront host.
+
+HTTP method and path are derived from a sealed operation enum. Callers cannot provide arbitrary
+Amazon URLs. Redirects are disabled, resource IDs are validated, request IDs are stored only as
+short SHA-256 references, and persisted transport errors cannot contain a presigned URL. A
+repository-wide contract check fails if a forbidden mutation marker, mutating method, Amazon SDK,
+additional Amazon host/header owner, or changed allowlist appears.
+
+The pilot has no client or reachable endpoint for Listings Items, Product Pricing, Orders,
+Inventory, Ads, Fulfillment, or mutating Feeds. It can never change prices, ads, listings,
+inventory, orders, returns, or fulfillment settings. `createReport` is treated only as acquisition
+of an analytical read model.
+
+## Reports, archive, and analysis
+
+The retained registry and fixture parser support several historical report fixtures, but the first
+allowed live request is only `GET_SALES_AND_TRAFFIC_REPORT`. Live execution additionally requires:
+
+- administrator role and a manual one-shot request;
+- one explicitly approved seller hash, region, and marketplace;
+- Brand Analytics role and confirmed marketplace participation;
+- a completed UTC period of one to seven days with `DAY`/`CHILD` granularity;
+- a shaped server-side secret and an ignored staging-approval file;
+- no RDT, buyer/order raw dataset, or scheduler.
+
+Transport and decoded bytes are hashed separately and archived immutably. Parsers are versioned,
+use decimals, tolerate unknown fields, and expose missing fields. Snapshot comparison requires the
+same report type, marketplace dimension, granularity, period length, and parser version.
+Deterministic rule output separates facts, delta, trend, anomalies, hypotheses, possible actions,
+uncertainty, missing data, and evidence references. Actions are suggestions only and are never
+executed.
+
+The admin banner reads **Essentials+ Merchant - Amazon Intelligence Pilot - Read-only**. The UI
+shows exact active/disabled modules, redacted seller ID, region, marketplaces, role status, recent
+report/retry/rate-limit state, archive hashes and sizes, parser/snapshot compatibility, missing
+data, analyses, and the most recent backup verification. It never displays tokens, client secrets,
+refresh tokens, buyer data, or full Amazon payloads.
+
+Synthetic fixtures and the fake SP-API prove repository behavior only. The real staging gate is
+currently **BLOCKED** until approved credentials, seller roles, marketplace participation, and
+encrypted archive storage are supplied. See
+[Amazon staging gate](docs/operations/AMAZON_STAGING_GATE.md). Raw reports and business metrics must
+never be committed or copied into a general PR description.
+
+## Retained systems outside the pilot
+
+The Rust Core remains authoritative for the historical ERP model. Vendure 3.7.2 remains a separate
+Commerce subsystem with its own PostgreSQL database and asset volume. Durable outboxes, inboxes,
+HMAC-authenticated internal requests, replay protection, leases, retries, monotonic projections,
+correction invoices, immutable accounting entries, provider-neutral payment/shipping ports, and
+synthetic providers remain implemented and tested.
+
+None of those retained mutation paths is part of the pilot. Stripe adapters/webhooks, DHL and DPD
+adapters/labels, DATEV activation, additional marketplaces, external AI, automated procurement,
+multi-tenancy, and Kubernetes are explicitly frozen for this milestone. See
+[deferred external gates](docs/DEFERRED_EXTERNAL_GATES.md) and
+[deferred capabilities](docs/NICE_TO_HAVE.md).
+
+## Verification
+
+Rust checks use the pinned Rust 1.90 toolchain, locked dependencies, SQLx offline metadata, and a
+disposable PostgreSQL user able to create test databases:
 
 ```bash
 cd backend
-cargo fmt --check
-SQLX_OFFLINE=true cargo clippy --workspace --all-targets -- -D warnings
-DATABASE_URL=postgres://USER:PASSWORD@HOST/DISPOSABLE_DB SQLX_OFFLINE=true cargo test --workspace
-cargo sqlx prepare --workspace --check -- --all-targets
+cargo fmt --all -- --check
+SQLX_OFFLINE=true cargo clippy --locked --workspace --all-targets -- -D warnings
+DATABASE_URL=postgres://USER:PASSWORD@HOST/DISPOSABLE_DB SQLX_OFFLINE=false cargo sqlx migrate run --source crates/db/migrations
+DATABASE_URL=postgres://USER:PASSWORD@HOST/DISPOSABLE_DB SQLX_OFFLINE=false cargo sqlx prepare --workspace --check
+DATABASE_URL=postgres://USER:PASSWORD@HOST/DISPOSABLE_DB SQLX_OFFLINE=true cargo test --locked --workspace
 ```
 
-Frontend and commerce checks:
+Frontend and retained Commerce checks:
 
 ```bash
-cd frontend
-npm ci
-npm run build
-npm run lint
-
-cd ../commerce
-npm ci
-npm run lint
-npm test
-npm run build
+npm --prefix frontend ci
+npm --prefix frontend run build
+npm --prefix frontend run lint
+npm --prefix commerce ci
+npm --prefix commerce run lint
+npm --prefix commerce test
+npm --prefix commerce run build
 ```
 
-The clean Compose vertical test is `npm run test:vertical`. The deliberate outage matrix is
-`npm run test:recovery` and requires the synthetic test-only variables documented in
-[docs/FAILURE_MATRIX.md](docs/FAILURE_MATRIX.md). Both tests retain data for diagnosis and must run
-only against a disposable Compose project.
-
-Backup/restore and upgrade rehearsals create and delete isolated, randomly named synthetic stacks:
+Pilot-specific checks include:
 
 ```bash
-ops/test-backup-restore.sh
-ops/test-upgrade-rehearsal.sh
+node scripts/check-amazon-operation-allowlist.mjs
+node scripts/check-dependency-audit.mjs artifacts/security/dependency-audit.json
+node scripts/scan-secrets.mjs
+npm --prefix frontend run test:pilot:e2e
+ops/test-amazon-pilot-backup-restore.sh
 ```
 
-The verification status of every layer is recorded in
-[docs/VERIFICATION_MATRIX.md](docs/VERIFICATION_MATRIX.md).
+The Playwright/axe flow logs in as administrator, verifies the banner and exact module state, runs a
+fake report through polling/snapshot/analysis/export, probes disabled mutation routes, and rejects
+serious/critical accessibility findings. It does not start or test the Storefront. Existing clean
+vertical, failure/recovery, full backup/restore, and upgrade rehearsals remain required and are not
+weakened. See the [verification matrix](docs/VERIFICATION_MATRIX.md) and
+[failure matrix](docs/FAILURE_MATRIX.md).
 
-## Backup and restore
+## Pilot backup and restore
 
-`ops/backup.sh` quiesces both application writers, creates separate logical PostgreSQL dumps,
-archives Core documents and Vendure assets, exports module configuration without secrets, and
-writes a manifest with SHA-256 checksums, UTC timestamp, Git revision, app/schema versions, every
-store, and redacted Compose metadata. The stack is resumed even if the backup fails.
+The pilot backup contains the Core schema, allowlisted module/audit records, immutable Amazon raw
+archives, normalized snapshots, analyses, parser versions, transport hashes, document subtree,
+Git commit, and image digests. It explicitly excludes LWA refresh tokens, client/access secrets,
+buyer data, and all retained Commerce/payment/shipping business tables.
 
-`ops/restore.sh` verifies every checksum and refuses a project that already has containers or any
-declared volume. It restores only into a completely empty, explicitly named Compose project. The
-rehearsal then reruns the complete SKU-to-fulfillment test. See
-[docs/OPERATIONS.md](docs/OPERATIONS.md).
+Restore refuses any non-empty target project. The synthetic rehearsal uses a raw report larger
+than 2 MiB and compares report inventory, raw hashes, parser versions, snapshots, analysis,
+module/audit state, schedule state, and the read-only profile after an empty-project restore.
 
-## SQLx and Vendure migrations
+## Supply chain and advisories
 
-Core migrations live in `backend/crates/db/migrations`; Vendure migrations live in
-`commerce/server/src/migrations`. Runtime schema synchronization is disabled. Generate migrations
-and SQLx offline metadata only against disposable databases, review the result, and run
-`ops/test-upgrade-rehearsal.sh` before deployment. Never generate or test migrations against
-production.
+GitHub Actions are pinned to full commit SHAs, runner/toolchain versions are fixed, container images
+use immutable digests, and the Typst release archive is SHA-256 verified. Pilot and retained
+Commerce CycloneDX SBOMs plus a redacted dependency report are committed under `docs/security/`;
+CI regenerates and checks them without automatic force fixes.
 
-## Current external risks
+The current retained Commerce tree has 12 production package findings (six high and six moderate,
+zero critical) representing 11 distinct GHSAs, all reachable only through Vendure dependencies.
+Vendure and Storefront are not started by the pilot, which reduces exposure but does not remediate
+those advisories. Vendure remains pinned consistently at 3.7.2 because npm's suggested automatic
+change is incompatible. Every finding, code-path assessment, control, upstream status, decision,
+and review date is recorded in [docs/security/VENDURE_ADVISORIES.md](docs/security/VENDURE_ADVISORIES.md).
 
-- Vendure packages are already pinned together at 3.7.2, the current 3.7.x patch verified on
-  2026-08-13. The [official 3.7.2 release](https://github.com/vendurehq/vendure/releases/tag/v3.7.2)
-  fixes four Vendure advisories and needs no migration. `npm audit
-  --omit=dev` still reports 12 transitive production advisories (six high, six moderate); its
-  proposed automatic remedy is an incompatible downgrade, so no forced audit fix is applied.
-- No Amazon seller/role/marketplace/RDT acceptance, Stripe sandbox, DHL sandbox, DATEV checker, or
-  production integration was used. Local fakes prove contracts and recovery, not provider behavior.
-- One default Vendure channel and integer saleable stock are supported. Fractional Core quantities
-  are rounded down for shop availability.
-- HMAC protects message authenticity/replay, but production traffic still requires TLS and private
-  service networking.
-- Shipping labels, multi-warehouse, B2B channels, other providers/marketplaces, external AI,
-  automation, multi-tenancy, and Kubernetes are deliberately deferred in
-  [docs/NICE_TO_HAVE.md](docs/NICE_TO_HAVE.md).
+## Next safe external action
 
-## Next three steps
-
-1. Run the documented Amazon staging gate with an approved synthetic-safe seller context and one
-   non-restricted report, then record marketplace/role/rate-limit evidence without credentials.
-2. Complete Stripe and DHL account onboarding, implement the real adapters behind the tested
-   ports, and run their official sandbox and webhook/reconciliation acceptance suites.
-3. Validate generated EXTF fixtures with the DATEV checking program and an approved empty test
-   client before enabling `export.datev` anywhere outside development.
+After an authorized operator supplies the ignored secret and approval files, run the staging gate
+in validation mode. Only after every local and authorization check passes may that operator invoke
+one explicit manual Sales & Traffic request. A second compatible snapshot is permitted only after
+the first real job succeeds; no scheduler or write integration is enabled.

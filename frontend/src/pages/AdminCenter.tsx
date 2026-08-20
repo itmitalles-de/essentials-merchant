@@ -1,11 +1,13 @@
 import { useEffect, useMemo, useState } from "react";
 import { api } from "../api";
 import type { ConnectorHealth, EssentialsModule } from "../types";
+import { usePilotStatus } from "../hooks/usePilotStatus";
 
 export function AdminCenter() {
   const [modules, setModules] = useState<EssentialsModule[]>([]);
   const [health, setHealth] = useState<Record<string, ConnectorHealth>>({});
   const [error, setError] = useState<string | null>(null);
+  const pilot = usePilotStatus();
 
   const reload = () => {
     api.get<EssentialsModule[]>("/modules").then(setModules).catch((err: Error) => setError(err.message));
@@ -44,13 +46,22 @@ export function AdminCenter() {
   return (
     <div style={{ display: "grid", gap: "1rem", maxWidth: 900 }}>
       <div className="card">
-        <h1>Essentials+ Merchant · Admin-Center</h1>
+        <h1>{pilot?.enabled ? pilot.title : "Essentials+ Merchant · Admin-Center"}</h1>
         <p>
           Module sind thematisch gruppiert. Deaktivieren entfernt die Navigation und stoppt zugehörige
           Jobs sowie Webhooks, ohne vorhandene Daten zu löschen.
         </p>
         {error && <p style={{ color: "var(--danger)" }}>{error}</p>}
       </div>
+      {pilot?.enabled && (
+        <section className="card" data-testid="pilot-module-status">
+          <h2>Pilotmodulstatus</h2>
+          <p><strong>Konformität:</strong> {pilot.compliant ? "fail-closed und konform" : "nicht konform"} · automatische Reportzeitpläne: {pilot.automatic_schedules_enabled}</p>
+          <p><strong>Aktiv:</strong> {pilot.active_modules.join(", ")}</p>
+          <p><strong>Mutierende Module deaktiviert:</strong> {pilot.mutation_modules.join(", ")}</p>
+          <p><strong>Letzte Backupprüfung:</strong> {pilot.last_backup_verification ? `${pilot.last_backup_verification.outcome} · ${new Date(pilot.last_backup_verification.verified_at).toLocaleString("de-DE")}` : "noch ungeprüft"}</p>
+        </section>
+      )}
       {Object.entries(groups).map(([group, entries]) => (
         <section className="card" key={group}>
           <h2>{group}</h2>
@@ -77,11 +88,11 @@ export function AdminCenter() {
                 </div>
                 <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
                   {module.module_kind === "connector" && (
-                    <button className="secondary" onClick={() => checkHealth(module.module_id)}>
+                    <button className="secondary" onClick={() => checkHealth(module.module_id)} disabled={Boolean(pilot?.enabled)}>
                       Konfiguration prüfen
                     </button>
                   )}
-                  <button className="secondary" onClick={() => toggle(module)} disabled={module.required || module.state === "not_installed"}>
+                  <button className="secondary" onClick={() => toggle(module)} disabled={Boolean(pilot?.enabled) || module.required || module.state === "not_installed"}>
                     {module.enabled ? "Deaktivieren" : "Aktivieren"}
                   </button>
                 </div>

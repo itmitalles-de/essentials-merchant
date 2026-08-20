@@ -77,6 +77,15 @@ async fn upsert_connection(
     if user.role != "administrator" {
         return Err(StatusCode::FORBIDDEN);
     }
+    let pilot_enabled = db::modules::is_enabled(&state.pool, db::modules::AMAZON_READ_ONLY_PILOT)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    if pilot_enabled
+        && input.mode == "live"
+        && (input.marketplace_ids.len() != 1 || input.secret_ref != "pilot_seller")
+    {
+        return Err(StatusCode::PRECONDITION_FAILED);
+    }
     db::marketplace::upsert_connection(&state.pool, &input)
         .await
         .map(Json)
@@ -108,6 +117,9 @@ async fn create_run(
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
         .ok_or(StatusCode::NOT_FOUND)?;
+    if connection.mode == "live" && user.role != "administrator" {
+        return Err(StatusCode::FORBIDDEN);
+    }
     if !connection.enabled
         || !db::marketplace::marketplace_exists(&state.pool, connection_id, &input.marketplace_id)
             .await
@@ -116,6 +128,17 @@ async fn create_run(
         || !db::marketplace::report_options_are_supported(&input.report_type, &input.report_options)
     {
         return Err(StatusCode::BAD_REQUEST);
+    }
+    let pilot_enabled = db::modules::is_enabled(&state.pool, db::modules::AMAZON_READ_ONLY_PILOT)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    if pilot_enabled
+        && connection.mode == "live"
+        && !crate::marketplace::pilot_live_request_is_safe(&state.pool, &connection, &input)
+            .await
+            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+    {
+        return Err(StatusCode::PRECONDITION_FAILED);
     }
     let run = db::marketplace::create_manual_run(&state.pool, connection_id, &input)
         .await

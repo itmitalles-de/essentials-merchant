@@ -23,8 +23,9 @@ database, volume, migration, mapping, token-storage, and `shop-suite-*` identifi
 
 **Reason:** Presentation branding must not break deployed persistence, APIs, or imports.
 
-**Consequences:** Any future internal rename is a separate versioned migration with backup,
-rollback, and compatibility planning. The repository slug and license are unchanged.
+**Consequences:** The repository slug is `itmitalles-de/essentials-merchant`. Any future internal
+identifier rename is a separate versioned migration with backup, rollback, and compatibility
+planning. The license is unchanged.
 
 ## 2026-08-13 — Durable delivery plus signed internal requests
 
@@ -107,3 +108,48 @@ not reproducible recovery strategies.
 
 **Consequences:** The incompatible npm forced fix is prohibited. Every change to persistence must
 rerun SQLx/migrations, the two-database recovery flow, and checksum-backed restore rehearsal.
+
+## 2026-08-19 — Make Amazon Intelligence the only active external pilot
+
+**Decision:** The persisted `amazon-read-only` profile has an exact positive module allowlist and a
+server-wide fail-closed HTTP mutation boundary. Its standalone Compose topology contains only
+PostgreSQL, Core, and the admin frontend. Vendure, Storefront, payment, shipping, DATEV, schedules,
+and custom mutations are absent or disabled; retained code and tests remain.
+
+**Reason:** A runtime assembled from an explicit small boundary is reviewable and materially
+reduces attack surface while keeping historical ERP/Commerce compatibility intact. Navigation
+visibility alone cannot establish a read-only system.
+
+**Consequences:** Any unknown or future active module, including a required one, makes the profile
+non-compliant. Applying the profile preserves `not_installed` state, disables schedules, and holds
+queued live jobs. Other providers and DATEV receive no implementation work before a successful
+Amazon pilot and later approval.
+
+## 2026-08-19 — Seal transport to an exact Amazon operation enum
+
+**Decision:** Pilot code derives HTTP method and path only from LWA refresh, `createReport`,
+`getReport`, `getReportDocument`, or validated presigned download operations. A repository contract
+check owns the Amazon host/header markers and rejects mutation clients, mutating methods, SDKs, and
+allowlist drift.
+
+**Reason:** A descriptive allowlist next to a free-form request builder would not prevent a future
+caller from reaching a write API.
+
+**Consequences:** Live Sales & Traffic acquisition also requires a server-side seller/region/
+marketplace approval and administrator one-shot request. Redirects and non-Amazon download hosts
+are rejected; persisted request IDs and failures are redacted. The staging gate stays blocked when
+external credentials or roles are unavailable.
+
+## 2026-08-19 — Reduce dormant Commerce exposure without claiming remediation
+
+**Decision:** Vendure/Storefront are not started in the Amazon profile. Actions, language/runtime
+versions, images, and downloaded archives are pinned or checksum-verified; lockfile-derived SBOMs
+and a redacted dependency gate are maintained. Known Vendure-path advisories remain individually
+open until a compatible upstream remediation exists.
+
+**Reason:** Removing an unnecessary runtime reduces reachable attack surface, but it does not fix
+retained dependency vulnerabilities. Forced incompatible audit fixes are not trustworthy release
+engineering.
+
+**Consequences:** Security documents distinguish installed, reachable-in-pilot, compensated, and
+remediated states. CI fails on new/critical audit drift and never runs automatic force-fixes.

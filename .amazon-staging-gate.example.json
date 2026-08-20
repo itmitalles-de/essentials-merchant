@@ -1,0 +1,12 @@
+{
+  "seller_id": "",
+  "seller_approved": false,
+  "region": "eu",
+  "marketplace_id": "",
+  "marketplace_participation_confirmed": false,
+  "roles_confirmed": ["Brand Analytics"],
+  "data_start_time": "",
+  "data_end_time": "",
+  "encrypted_archive_target_confirmed": false,
+  "approval_reference": ""
+}

@@ -21,6 +21,12 @@ const files = Object.fromEntries(
         },
     ]),
 );
+const composeMetadata = JSON.parse(readFileSync(join(backupDir, 'data/compose-metadata.json'), 'utf8'));
+const parserVersions = JSON.parse(readFileSync(join(backupDir, 'data/parser-versions.json'), 'utf8'));
+const runtimeImageDigests = Object.fromEntries(
+    readFileSync(join(backupDir, 'data/runtime-image-digests.tsv'), 'utf8')
+        .trim().split('\n').filter(Boolean).map(line => line.split('\t')),
+);
 const manifest = {
     format: 'essentials-plus-merchant-backup-v1',
     created_at: new Date().toISOString(),
@@ -34,6 +40,12 @@ const manifest = {
         core_sqlx: Number(coreSchema),
         vendure_typeorm: Number(vendureSchema),
     },
+    parser_versions: parserVersions,
+    container_images: {
+        declared: Object.fromEntries(Object.entries(composeMetadata.services ?? {})
+            .map(([name, service]) => [name, service.image])),
+        runtime_image_digests: runtimeImageDigests,
+    },
     stores: [
         'core-postgres',
         'vendure-postgres',
@@ -42,6 +54,8 @@ const manifest = {
         'module-configurations-without-secrets',
         'integration-mappings-inbox-outbox',
         'marketplace-raw-and-normalized-data',
+        'parser-versions',
+        'git-commit-and-image-digests',
         'redacted-compose-metadata',
     ],
     consistency: 'Core and Vendure writers were quiesced before both logical dumps and volume archives.',

@@ -1,7 +1,7 @@
 #!/bin/sh
 set -eu
 
-repository_dir=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+repository_dir=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)
 run_id="${$}-$(date -u +%Y%m%d%H%M%S)"
 source_project="merchant-backup-source-${run_id}"
 restore_project="merchant-backup-restore-${run_id}"
@@ -61,9 +61,9 @@ CORE_ADMIN_USERNAME="$ADMIN_USERNAME" CORE_ADMIN_PASSWORD="$ADMIN_PASSWORD" \
 
 # Prove both non-database stores survive as byte-identical archives. The data
 # is deliberately synthetic and contains no customer or provider material.
-docker run --rm -v "${source_project}_erplite_invoices:/target" alpine:3.20 \
+docker run --rm -v "${source_project}_erplite_invoices:/target" postgres:16-alpine@sha256:cf78e76683b9ca8c5733cbbdce6c9262b45b6767934dd0a95e671f9a0fc20685 \
     sh -c "printf '%s' 'synthetic immutable invoice fixture' > /target/backup-fixture.txt"
-docker run --rm -v "${source_project}_vendure_assets:/target" alpine:3.20 \
+docker run --rm -v "${source_project}_vendure_assets:/target" postgres:16-alpine@sha256:cf78e76683b9ca8c5733cbbdce6c9262b45b6767934dd0a95e671f9a0fc20685 \
     sh -c "printf '%s' 'synthetic vendure asset fixture' > /target/backup-fixture.txt"
 
 source_order_count=$(compose "$source_project" exec -T db \
@@ -95,9 +95,9 @@ test "$source_inbox_count" = "$(compose "$restore_project" exec -T db \
     psql -U erplite -d erplite -qAt -v ON_ERROR_STOP=1 \
     -c "SELECT count(*) FROM integration_inbox")"
 
-test "$(docker run --rm -v "${restore_project}_erplite_invoices:/source:ro" alpine:3.20 \
+test "$(docker run --rm -v "${restore_project}_erplite_invoices:/source:ro" postgres:16-alpine@sha256:cf78e76683b9ca8c5733cbbdce6c9262b45b6767934dd0a95e671f9a0fc20685 \
     cat /source/backup-fixture.txt)" = 'synthetic immutable invoice fixture'
-test "$(docker run --rm -v "${restore_project}_vendure_assets:/source:ro" alpine:3.20 \
+test "$(docker run --rm -v "${restore_project}_vendure_assets:/source:ro" postgres:16-alpine@sha256:cf78e76683b9ca8c5733cbbdce6c9262b45b6767934dd0a95e671f9a0fc20685 \
     cat /source/backup-fixture.txt)" = 'synthetic vendure asset fixture'
 
 # The restored stack must still complete the entire SKU-to-fulfillment path.

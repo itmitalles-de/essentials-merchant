@@ -1,7 +1,7 @@
 #!/bin/sh
 set -eu
 
-repository_dir=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+repository_dir=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)
 container="merchant-upgrade-rehearsal-${$}"
 database_url=''
 
@@ -14,7 +14,7 @@ docker run --rm -d --name "$container" \
     -e POSTGRES_USER=merchant_upgrade \
     -e POSTGRES_PASSWORD=synthetic-upgrade-only \
     -e POSTGRES_DB=merchant_upgrade \
-    -p 127.0.0.1::5432 postgres:16-alpine >/dev/null
+    -p 127.0.0.1::5432 postgres:16-alpine@sha256:cf78e76683b9ca8c5733cbbdce6c9262b45b6767934dd0a95e671f9a0fc20685 >/dev/null
 
 attempt=0
 until docker exec "$container" pg_isready -U merchant_upgrade -d merchant_upgrade >/dev/null 2>&1; do
@@ -106,7 +106,7 @@ BEGIN
             WHERE raw_content = decoded_content AND sha256 = decoded_sha256) <> 1 THEN
         RAISE EXCEPTION 'marketplace raw archive was not migrated losslessly';
     END IF;
-    IF (SELECT max(version) FROM _sqlx_migrations) <> 14 THEN
+    IF (SELECT max(version) FROM _sqlx_migrations) <> 15 THEN
         RAISE EXCEPTION 'unexpected final migration version';
     END IF;
 END $$;

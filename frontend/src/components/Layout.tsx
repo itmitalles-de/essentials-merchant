@@ -7,11 +7,13 @@ import { useLanguage } from "../contexts/LanguageContext";
 import { ThemeToggle } from "./ThemeToggle";
 import { LanguageToggle } from "./LanguageToggle";
 import type { EssentialsModule } from "../types";
+import { usePilotStatus } from "../hooks/usePilotStatus";
 
 export function Layout() {
   const { username, role, logout } = useAuth();
   const { t } = useLanguage();
   const [modules, setModules] = useState<EssentialsModule[]>([]);
+  const pilot = usePilotStatus();
 
   useEffect(() => {
     api.get<EssentialsModule[]>("/modules").then(setModules).catch(() => setModules([]));
@@ -32,11 +34,11 @@ export function Layout() {
       >
         <div style={{ fontWeight: 700, marginBottom: "0.8rem" }}>Essentials+ Merchant</div>
         <NavItem to="/">{t("nav.dashboard")}</NavItem>
-        {enabled("core.orders") && <NavItem to="/customers">{t("nav.customers")}</NavItem>}
-        {enabled("accounting.invoices") && <NavItem to="/invoices">{t("nav.invoices")}</NavItem>}
-        {enabled("core.catalog") && <NavItem to="/articles">{t("nav.articles")}</NavItem>}
-        {enabled("core.orders") && <NavItem to="/sales-orders">{t("nav.salesOrders")}</NavItem>}
-        {enabled("core.catalog") && <NavItem to="/settings">{t("nav.settings")}</NavItem>}
+        {!pilot?.enabled && enabled("core.orders") && <NavItem to="/customers">{t("nav.customers")}</NavItem>}
+        {!pilot?.enabled && enabled("accounting.invoices") && <NavItem to="/invoices">{t("nav.invoices")}</NavItem>}
+        {!pilot?.enabled && enabled("core.catalog") && <NavItem to="/articles">{t("nav.articles")}</NavItem>}
+        {!pilot?.enabled && enabled("core.orders") && <NavItem to="/sales-orders">{t("nav.salesOrders")}</NavItem>}
+        {!pilot?.enabled && enabled("core.catalog") && <NavItem to="/settings">{t("nav.settings")}</NavItem>}
         {enabled("marketplace.amazon_intelligence") && <NavItem to="/marketplace">Marketplace Intelligence</NavItem>}
         {role === "administrator" && <NavItem to="/admin-center">Admin-Center</NavItem>}
         {role === "administrator" && enabled("commerce.vendure") && <NavItem to="/integration-diagnostics">Integrationsdiagnose</NavItem>}
@@ -49,6 +51,14 @@ export function Layout() {
         </button>
       </nav>
       <main style={{ flex: 1, padding: "1.5rem" }}>
+        {pilot?.enabled && (
+          <div className="card" role="status" data-testid="pilot-banner" style={{ borderColor: pilot.compliant ? "var(--accent)" : "var(--danger)", marginBottom: "1rem" }}>
+            <strong>{pilot.title}</strong>
+            <div style={{ color: "var(--fg-muted)", marginTop: "0.25rem" }}>
+              {pilot.compliant ? "Fail-closed Pilotprofil aktiv" : "Pilotprofil ist nicht konform – keine Live-Anforderung ausführen"}
+            </div>
+          </div>
+        )}
         <Outlet />
       </main>
     </div>

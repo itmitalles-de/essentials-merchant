@@ -6,6 +6,13 @@ pub struct Config {
     pub integration_auth: crate::integration_auth::IntegrationAuth,
     pub outbox_policy: db::commerce::OutboxPolicy,
     pub pdf_storage_dir: String,
+    pub module_profile: Option<ModuleProfile>,
+    pub marketplace_worker_interval_seconds: u64,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ModuleProfile {
+    AmazonReadOnly,
 }
 
 impl Config {
@@ -24,7 +31,21 @@ impl Config {
             },
             pdf_storage_dir: std::env::var("PDF_STORAGE_DIR")
                 .unwrap_or_else(|_| "/data/invoices".into()),
+            module_profile: module_profile_from_env(),
+            marketplace_worker_interval_seconds: env_u64("MARKETPLACE_WORKER_INTERVAL_SECONDS", 30)
+                .clamp(1, 3_600),
         }
+    }
+}
+
+fn module_profile_from_env() -> Option<ModuleProfile> {
+    match std::env::var("ESSENTIALS_MODULE_PROFILE")
+        .unwrap_or_default()
+        .trim()
+    {
+        "" => None,
+        "amazon-read-only" => Some(ModuleProfile::AmazonReadOnly),
+        value => panic!("unsupported ESSENTIALS_MODULE_PROFILE: {value}"),
     }
 }
 
@@ -57,6 +78,13 @@ fn integration_auth_from_env() -> crate::integration_auth::IntegrationAuth {
 }
 
 fn env_i32(name: &str, default: i32) -> i32 {
+    std::env::var(name)
+        .ok()
+        .and_then(|value| value.parse().ok())
+        .unwrap_or(default)
+}
+
+fn env_u64(name: &str, default: u64) -> u64 {
     std::env::var(name)
         .ok()
         .and_then(|value| value.parse().ok())

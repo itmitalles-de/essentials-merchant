@@ -2,114 +2,78 @@
 
 ## Product and branch
 
-- Visible product name: **Essentials+ Merchant**.
-- Repository and compatibility identifiers remain `erplite`; crate, database, volume, migration,
-  token-storage, mapping, and `shop-suite-*` identifiers were not renamed.
-- Active branch: `main`; pull request #3 was merged as `78b741f`.
-- This is active development, not a production, legal, tax, DATEV, Amazon, payment, or carrier
+- Visible product and repository: **Essentials+ Merchant**, `itmitalles-de/essentials-merchant`.
+- Active work: `pilot/merchant-amazon-read-only`, based on `main` commit
+  `f4ad7813512e7e845418579343c9cca395e81156`.
+- Historical `erplite`, crate, database, volume, migration, token-storage, mapping, and
+  `shop-suite-*` values remain deliberate compatibility contracts.
+- The latest pre-branch CI run checked during discovery, `31711079422`, completed successfully.
+- This is an internal pilot, not production, Amazon-account, legal, tax, DATEV, payment, or carrier
   certification.
 
-## Implemented and working
+## Active milestone
 
-- The existing Rust Core↔Vendure vertical remains the ownership boundary: Core owns ERP,
-  inventory, imported orders, immutable invoices/accounting, modules, diagnostics, and Marketplace
-  Intelligence; Vendure owns commerce and has a separate PostgreSQL database.
-- Core and Vendure delivery now has signed HMAC requests, persistent nonces/replay protection,
-  current/previous key rotation, request limits, sanitized errors, configurable leases/backoff, and
-  deterministic test-only process failpoints.
-- Administrator-only integration diagnostics expose queue counts, oldest open events, last
-  success/error, leases, mappings, readiness, and audit without payloads, credentials, or buyer
-  data. Dead-event requeue is protected, idempotent, and audited.
-- The Essentials+ module contract is persisted and enforced server-side. Required Core modules,
-  dependencies/conflicts, connector configuration health, user grants, thematic navigation, jobs,
-  webhooks, and data-preserving disable behavior are represented. Direct disabled Marketplace,
-  DATEV, payment, and shipping calls are tested.
-- Issued invoices are immutable. Full correction invoices have separate numbering, source
-  reference, reversed Decimal lines/taxes/totals, immutable history/PDF, one-per-source and request
-  idempotency, and no inventory side effect.
-- Migration `0014_accounting_export_model.sql` provides immutable accounting entries and stored
-  export batches. The deterministic EXTF-v13 renderer stays behind the disabled `export.datev`
-  external-validation gate.
-- `marketplace.amazon_intelligence` is disabled by default and Amazon-read-only. LWA/Reports
-  `v2021-06-30`, fixture and local fake transports, persistent/restart-safe jobs, exact raw archive,
-  versioned Sales & Traffic JSON v2 and Inventory Planning TSV parsers, compatible snapshots,
-  deterministic analysis, scheduler, UI, and PII-minimized export are implemented. Returns and
-  Settlement V2 remain raw-only.
-- Provider-neutral payment/shipping ports, complete synthetic providers, signed callback replay
-  protection, reconciliation/status/idempotency contracts, and module-aware test payment/manual
-  shipping are implemented. Stripe Payment Intents and DHL Parcel Germany are candidates only;
-  real adapters remain externally gated.
-- Coordinated backup, checksum verification, empty-project restore, and v10-to-v14 upgrade
-  rehearsal cover both databases, Core documents, Vendure assets, module configuration without
-  secrets, integration state, and Marketplace data.
+The only active external integration is read-only Amazon Marketplace Intelligence. The reproducible
+`amazon-read-only` module profile enables exactly the required Core modules,
+`marketplace.amazon_intelligence`, `intelligence.rules`, and `pilot.amazon_read_only`. It disables
+Vendure Commerce, Storefront, every payment/shipping module, DATEV, custom mutations, and all Amazon
+schedules. `compose.amazon-pilot.yml` starts only database, backend, and admin frontend.
 
-## Verified locally on 2026-08-13
+The backend additionally enforces a global fail-closed mutation policy. Core, Commerce,
+integration, payment, shipping, fulfillment, scheduler, and DATEV writes return HTTP 409 while the
+pilot is active. The exact Amazon transport allowlist is LWA refresh, `createReport`, `getReport`,
+`getReportDocument`, and validated presigned document download; method/path cannot be supplied by a
+caller. No Amazon business-mutation client or external LLM provider exists.
 
-- Rust: formatting, offline Clippy with `-D warnings`, SQLx prepare/check, offline build, and 55
-  tests pass against disposable PostgreSQL 16.
-- Frontend: build and lint pass; three pre-existing Fast Refresh warnings remain non-failing.
-- Commerce: lint/typecheck, 10 server tests, 2 Storefront tests, Vendure Dashboard/server build,
-  and Next.js build pass.
-- Upgrade rehearsal: synthetic schema v10 data migrates losslessly through migration 14.
-- Recovery Compose matrix: passed twice consecutively with different synthetic IDs, including
-  service/DB/full-stack restarts, active/expired leases, failpoints, backoff/dead/requeue, stale
-  events, exactly one order/stock/payment, no invoice, and HMAC rotation/replay checks.
-- Backup/restore rehearsal: six checksums, both databases and both document stores verified; the
-  full SKU-to-fulfillment flow passed before and after restore.
-- `npm audit --omit=dev` still reports 12 transitive production findings (6 moderate, 6 high). Its
-  proposed force fix downgrades Vendure incompatibly and was not applied.
+The admin UI identifies the pilot as read-only and shows exact module state, redacted Amazon
+connection/report/transport/archive/parser/snapshot diagnostics, missing data, deterministic
+analysis, and backup verification. It excludes credentials, buyer data, and raw payloads.
 
-See `docs/VERIFICATION_MATRIX.md` for evidence layers and limits.
+## Retained but outside the pilot
 
-## External gates and known risks
+The existing Core↔Vendure vertical, Storefront, immutable invoices/accounting/DATEV renderer,
+provider-neutral payment/shipping ports, fakes, recovery tests, and compatibility data remain in the
+repository. They are not deleted or started by the pilot. Stripe/webhooks, DHL, DPD, carrier
+labels, DATEV activation, other marketplaces, external AI, multi-tenancy, and Kubernetes are
+frozen until a later explicitly approved milestone after Amazon success.
 
-- No real Amazon seller/role/marketplace/RDT request was made. Marketplace availability and roles
-  must be verified per selected seller and marketplace before enabling live mode.
-- No Stripe or DHL sandbox/account contract was configured; only local ports and fake providers
-  are verified. DPD is cataloged as a separate disabled connector, not implemented as a live
-  adapter.
-- No DATEV checking-program or test-client import was performed, so `export.datev` remains disabled
-  and no compatibility claim is made.
-- No production-sized backup, external encrypted retention, RPO/RTO, live upgrade, or production
-  verification was performed.
-- Vendure is pinned consistently at 3.7.2. Current transitive npm advisories require upstream or a
-  separately reviewed compatible remediation.
+## Verification status — 2026-08-19
 
-## Next three steps
+- Current branch passed Rust fmt, SQLx-offline Clippy with warnings denied, migrations 1–15,
+  SQLx prepare/check and 60 tests against disposable PostgreSQL 16. Frontend clean install,
+  build/lint and the Chromium/axe pilot flow pass from an empty three-service pilot project.
+- The exact local Pilot Compose graph (`db`, `backend`, `frontend`), seven-module persisted profile,
+  zero schedules, eight HTTP 409 mutation/archive/connector-health probes, operation allowlist, secret scan,
+  dependency gate, syntax checks and workflow parsing pass.
+- Retained Commerce clean install/lint, 10 server tests, 2 Storefront tests, Vendure/Dashboard/Next
+  builds, clean vertical, recovery matrix, general backup/empty restore, pilot backup/empty restore
+  with a >2 MB raw archive, and the migration-10-to-15 upgrade rehearsal pass.
+- Current audits: frontend production dependencies 0 findings; retained Commerce 12 production
+  package findings (six high, six moderate, zero critical), representing 11 distinct GHSAs through
+  Vendure 3.7.2. They are triaged individually and remain open; the incompatible npm force-fix was
+  not applied.
+- Pilot and retained-Commerce CycloneDX SBOMs plus a redacted dependency report are present.
+  `cargo-audit`, Syft and Trivy were unavailable locally, so no Rust/container advisory-free claim
+  is made. Exact evidence and its limits are in `docs/VERIFICATION_MATRIX.md`.
 
-1. Run the documented Amazon staging gate for one approved non-restricted report and record
-   marketplace/role/rate-limit evidence without credentials or buyer PII.
-2. Complete Stripe and DHL onboarding, implement real adapters behind the tested ports, and pass
-   their official sandbox webhook/reconciliation contracts.
-3. Validate EXTF output with the DATEV checking program and an approved empty test client before
-   enabling `export.datev` outside development.
+## External gates
+
+- **BLOCKED:** no approved Amazon SP-API credential, seller hash, Brand Analytics role, confirmed
+  marketplace participation, or encrypted raw-archive attestation was supplied. No real request
+  was made and no fixture/local result is described as live.
+- The first permitted real request is one manual `GET_SALES_AND_TRAFFIC_REPORT` for one confirmed
+  marketplace and a completed one-to-seven-day period, after validation of the ignored approval
+  and secret files. No scheduler and no RDT are allowed.
+- A second snapshot is allowed only after the first real request succeeds, using the same report,
+  marketplace dimension, granularity, period length, and parser version.
+- Production-sized storage, external encryption/retention, measured RPO/RTO, and real provider
+  behavior remain unverified.
 
 ## Authoritative files
 
 - `README.md`, `.agent/ARCHITECTURE.md`, `.agent/DECISIONS.md`, `.agent/TODO.md`
+- `docs/PILOT_SCOPE.md`, `docs/COMPATIBILITY_IDENTIFIERS.md`,
+  `docs/operations/AMAZON_STAGING_GATE.md`, `docs/DEFERRED_EXTERNAL_GATES.md`
 - `docs/FAILURE_MATRIX.md`, `docs/VERIFICATION_MATRIX.md`, `docs/OPERATIONS.md`, `docs/API.md`
-- migrations `0010` through `0014`
-- `commerce/test/recovery.mjs`, `commerce/test/vertical.mjs`, and `ops/`
-
-## Last handoff
-
-2026-08-13: pull request #3 was merged into `main` as `78b741f`; local `main` and `origin/main`
-were synchronized with a clean worktree. The post-merge CI run `31710613289` had passed backend,
-frontend, and Commerce when work was paused; its Docker/Compose job was still building and its
-final result was deliberately not awaited.
-
-The following work was **not** completed and must not be presented as verified:
-
-- no live Amazon SP-API request, seller-role acceptance, RDT flow, or production rate-limit test;
-- no real Stripe, DHL, DPD, or other provider adapter/sandbox acceptance;
-- no DATEV checking-program or test-client validation;
-- no production-sized backup/restore, external encrypted retention, measured RPO/RTO, or live
-  upgrade rehearsal;
-- no staged HMAC key rotation behind production-like TLS/network controls;
-- no automated browser/accessibility matrix beyond the existing build, lint, and component/admin
-  coverage;
-- no external LLM provider and no automatic marketplace write operations, both intentionally out
-  of scope;
-- no remediation of the 12 transitive Commerce advisories because the available forced npm fix is
-  incompatible; and
-- no deletion of the merged feature branch.
+- `docs/security/VENDURE_ADVISORIES.md`, `docs/security/dependency-audit-2026-08-19.json`, SBOMs
+- migration `0015_amazon_read_only_pilot.sql`, `compose.amazon-pilot.yml`, `scripts/`, and `ops/`

@@ -5,6 +5,7 @@ mod datev;
 mod integration_auth;
 mod marketplace;
 mod pdf_gen;
+mod pilot;
 mod routes;
 mod state;
 
@@ -13,7 +14,7 @@ use std::sync::Arc;
 
 use axum::extract::State;
 use axum::http::StatusCode;
-use axum::{routing::get, Json, Router};
+use axum::{middleware, routing::get, Json, Router};
 use serde_json::{json, Value};
 use tower_http::cors::CorsLayer;
 
@@ -22,13 +23,25 @@ use state::AppState;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    if std::env::args().nth(1).as_deref() == Some("--healthcheck") {
+        let address = "127.0.0.1:8000".parse()?;
+        std::net::TcpStream::connect_timeout(&address, std::time::Duration::from_secs(2))?;
+        return Ok(());
+    }
     tracing_subscriber::fmt::init();
 
     let config = Config::from_env();
 
     let pool = db::connect(&config.database_url).await?;
     db::migrate(&pool).await?;
-    bootstrap::seed_admin(&pool, &config).await?;
+    let admin = bootstrap::seed_admin(&pool, &config).await?;
+    if config.module_profile == Some(config::ModuleProfile::AmazonReadOnly) {
+        let status = db::modules::apply_amazon_read_only_profile(&pool, admin.id).await?;
+        if !status.compliant {
+            anyhow::bail!("Amazon read-only module profile is not compliant");
+        }
+        tracing::info!(profile = status.profile, "applied persisted module profile");
+    }
 
     std::fs::create_dir_all(&config.pdf_storage_dir)?;
     let marketplace_worker =
@@ -58,6 +71,7 @@ async fn main() -> anyhow::Result<()> {
         )
         .nest("/marketplace", routes::marketplace::router())
         .nest("/modules", routes::modules::router())
+        .nest("/pilot", pilot::router())
         .nest("/sales-orders", routes::sales_orders::router())
         .nest(
             "/integrations/vendure",
@@ -66,8 +80,11 @@ async fn main() -> anyhow::Result<()> {
         .nest("/vat-rates", routes::vat_rates::router());
 
     let worker_pool = state.pool.clone();
+    let marketplace_worker_interval_seconds = config.marketplace_worker_interval_seconds;
     tokio::spawn(async move {
-        let mut interval = tokio::time::interval(std::time::Duration::from_secs(30));
+        let mut interval = tokio::time::interval(std::time::Duration::from_secs(
+            marketplace_worker_interval_seconds,
+        ));
         loop {
             interval.tick().await;
             if let Err(error) = marketplace_worker.cycle(&worker_pool).await {
@@ -79,6 +96,10 @@ async fn main() -> anyhow::Result<()> {
     let app = Router::new()
         .nest("/api", api)
         .layer(CorsLayer::permissive())
+        .layer(middleware::from_fn_with_state(
+            state.pool.clone(),
+            pilot::enforce_read_only,
+        ))
         .with_state(state);
 
     let addr = SocketAddr::from(([0, 0, 0, 0], 8000));

@@ -43,6 +43,26 @@ Application effects have 90-second deadlines. Compose infrastructure start/resta
 separate 180-second deadline so slow disposable-volume synchronization is not mistaken for a
 delivery failure; no fixed sleep is used for readiness.
 
+## Amazon read-only pilot cases
+
+These cases add to, and do not weaken, the Core↔Vendure matrix above:
+
+| Failure or boundary case | Injection | Required automated evidence |
+| --- | --- | --- |
+| Unexpected active module | Enable any module outside the exact pilot allowlist, including a future `required` module | Startup/status is non-compliant and the launcher stops pilot application services |
+| Disabled mutation route | Call Core, Commerce, payment, shipping, scheduler, integration, DATEV, raw-archive download, or stateful connector-health probe while the pilot is active | Server returns HTTP 409 `pilot_read_only` before business logic |
+| Future Amazon mutation client | Add a forbidden operation/method/host owner or provider SDK marker | Repository contract check fails |
+| Unapproved live request | Omit or mismatch seller hash, region, marketplace, role, period, or secret shape | Route and worker both reject the job; no Amazon request is sent |
+| Pre-existing live queue | Apply the pilot profile while a live run is nonterminal | Run is held as failed with `pilot_manual_gate_required`; scheduler stays disabled |
+| Presigned redirect or host confusion | Return HTTP redirect or a non-Amazon download host | Download is rejected and no signed URL is persisted in an error |
+| Archive mutation | Update immutable transport/decoded bytes or delete a document | PostgreSQL trigger rejects the transaction |
+| Interrupted pilot backup | Missing/checksum-altered dump, archive, manifest field, or non-empty restore target | Verification/restore aborts before accepting the target |
+| Unsafe pilot backup content | Persist a malformed live secret reference or a non-Sales raw archive | Backup refuses before quiescing or copying pilot data |
+
+The Playwright pilot flow additionally proves banner and module visibility, a fixture report through
+polling/snapshot/analysis/export, route-level mutation rejection, absence of exposed credential
+strings, and zero serious/critical axe findings. It does not access Amazon or the Storefront.
+
 ## Reproducible disposable run
 
 Create the external Compose network once, then run only with synthetic values and a unique project

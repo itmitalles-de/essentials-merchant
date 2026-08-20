@@ -5,6 +5,12 @@ established shapes. Every human route uses the Core bearer token; administrator-
 verify `role=administrator`. Module-bound routes fail with HTTP 409 and `module_disabled` before
 business logic when the corresponding module is off.
 
+When `pilot.amazon_read_only` is enabled, a second server-wide policy applies before route
+handlers. Only safe reads plus the explicitly listed Amazon acquisition and deterministic analysis
+commands are accepted. Every other `POST`, `PUT`, `PATCH`, or `DELETE` request returns HTTP 409
+with `pilot_read_only`; this includes otherwise valid Core, Commerce, payment, shipping, DATEV,
+scheduler, and integration mutation routes.
+
 ## Modules
 
 `GET /api/modules` returns the complete manifest catalog to administrators. Normal users receive
@@ -17,6 +23,12 @@ connector health in one transaction, then audits the transition.
 `GET /api/modules/{module_id}/health` is administrator-only. Synthetic/manual connectors return
 their stored deterministic health. DHL/DPD checks only whether the server-side secret reference is
 configured; it does not call or mutate a carrier.
+
+`GET /api/pilot/status` is administrator-only. It returns the exact active pilot-module set,
+unexpected active modules, disabled mutating modules, schedule count, and the most recent pilot
+backup verification. Redacted connection/report diagnostics come separately from the Marketplace
+overview and run-detail reads. Neither surface returns secret references or values, complete seller
+IDs, buyer data, or report payloads.
 
 ## Integration diagnostics
 
@@ -60,6 +72,7 @@ All routes below are protected by `marketplace.amazon_intelligence`:
 - `GET /api/marketplace`: connection status without secrets, registry, schedules, recent runs,
   snapshots/analyses.
 - `POST /api/marketplace/demo`: administrator-only synthetic fixture connection.
+- `POST /api/marketplace/connections`: administrator-only redacted connection configuration.
 - `POST /api/marketplace/connections/{id}/runs`: manual report job with marketplace, report type,
   UTC range, and allowlisted options.
 - `PUT /api/marketplace/connections/{id}/schedules`: administrator-only interval schedule using the
@@ -73,6 +86,16 @@ All routes below are protected by `marketplace.amazon_intelligence`:
 Unknown `GET_*` report types are accepted only by the fixture connection, archived as raw bytes,
 and end as raw-only rather than successfully analysed. Live connections accept only registry types
 whose role, region, marketplace, and options validate.
+
+The Amazon pilot narrows this retained API further. Schedules and raw-document downloads are
+blocked; connector health probes that persist a result are also blocked. Fixture jobs remain
+available, and live jobs require administrator role plus a scoped,
+server-side `pilot_seller` secret reference and staging approval matching the seller hash, region,
+and marketplace. The only permitted
+live report is `GET_SALES_AND_TRAFFIC_REPORT`, requested manually for one completed UTC period of
+one to seven days with `DAY`/`CHILD` options. The transport itself is sealed to LWA refresh,
+`createReport`, `getReport`, `getReportDocument`, and the validated presigned report download.
+Method and path are derived from that operation enum; callers cannot supply arbitrary Amazon URLs.
 
 ## Direct connector boundaries
 

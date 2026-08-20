@@ -1,11 +1,11 @@
 #!/bin/sh
 set -eu
 
-repository_dir=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+repository_dir=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)
 project=${COMPOSE_PROJECT_NAME:?COMPOSE_PROJECT_NAME must identify a new isolated stack}
 compose_env_file=${COMPOSE_ENV_FILE:-/dev/null}
 backup_dir=${1:?usage: COMPOSE_PROJECT_NAME=new-name ops/restore.sh BACKUP_DIRECTORY}
-backup_dir=$(CDPATH= cd -- "$backup_dir" && pwd)
+backup_dir=$(CDPATH='' cd -- "$backup_dir" && pwd)
 
 case "$project" in
     *[!A-Za-z0-9_-]*|'') echo "invalid COMPOSE_PROJECT_NAME" >&2; exit 2 ;;
@@ -31,6 +31,8 @@ node "$repository_dir/ops/verify-backup.mjs" "$backup_dir"
 compose up -d --wait db vendure-db
 compose exec -T db pg_restore -U erplite -d erplite --clean --if-exists --no-owner --no-acl --exit-on-error \
     <"$backup_dir/data/core-postgres.dump"
+# Expansion is intentionally performed by the shell inside vendure-db.
+# shellcheck disable=SC2016
 compose exec -T vendure-db sh -c \
     'pg_restore -U "$POSTGRES_USER" -d "$POSTGRES_DB" --clean --if-exists --no-owner --no-acl --exit-on-error' \
     <"$backup_dir/data/vendure-postgres.dump"
@@ -55,7 +57,7 @@ restore_volume() {
     docker run --rm \
         -v "${project}_${logical_name}:/target" \
         -v "$backup_dir/data:/backup:ro" \
-        postgres:16-alpine \
+        postgres:16-alpine@sha256:cf78e76683b9ca8c5733cbbdce6c9262b45b6767934dd0a95e671f9a0fc20685 \
         tar -C /target -xzf "/backup/$archive_name"
 }
 
