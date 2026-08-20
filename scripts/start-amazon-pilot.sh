@@ -37,8 +37,8 @@ compose=(docker compose --project-name "$PROJECT_NAME" --env-file "$ENV_FILE" --
 
 # Quiet validation deliberately avoids rendering environment values.
 "${compose[@]}" config --quiet
-mapfile -t services < <("${compose[@]}" config --services)
-expected=(db backend frontend)
+mapfile -t services < <("${compose[@]}" config --services | sort)
+expected=(backend db frontend)
 if [[ " ${services[*]} " != " ${expected[*]} " ]]; then
   echo "Pilot service allowlist mismatch; refusing to continue." >&2
   exit 1
@@ -51,7 +51,12 @@ fi
 
 "${compose[@]}" up --detach --build db backend frontend
 
-mapfile -t running < <("${compose[@]}" ps --services --status running)
+mapfile -t running < <("${compose[@]}" ps --services --status running | sort)
+if [[ " ${running[*]} " != " ${expected[*]} " ]]; then
+  "${compose[@]}" stop backend frontend >/dev/null
+  echo "Not all allowlisted pilot services are running; application services stopped fail-closed." >&2
+  exit 1
+fi
 for forbidden in vendure-db vendure-server vendure-worker storefront payment shipping datev; do
   if printf '%s\n' "${running[@]}" | grep -Fqx "$forbidden"; then
     "${compose[@]}" stop backend frontend >/dev/null

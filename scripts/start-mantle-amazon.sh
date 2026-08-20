@@ -38,8 +38,8 @@ fi
 
 compose=(docker compose --project-name "$PROJECT_NAME" --env-file "$ENV_FILE" --file "$COMPOSE_FILE")
 "${compose[@]}" config --quiet
-mapfile -t services < <("${compose[@]}" config --services)
-expected=(db backend frontend)
+mapfile -t services < <("${compose[@]}" config --services | sort)
+expected=(backend db frontend)
 if [[ " ${services[*]} " != " ${expected[*]} " ]]; then
   echo "Live service allowlist mismatch; refusing to continue." >&2
   exit 1
@@ -58,7 +58,7 @@ fi
 
 "${compose[@]}" up --detach --build --wait db backend frontend
 
-mapfile -t running < <("${compose[@]}" ps --services --status running)
+mapfile -t running < <("${compose[@]}" ps --services --status running | sort)
 if [[ " ${running[*]} " != " ${expected[*]} " ]]; then
   "${compose[@]}" stop backend frontend >/dev/null
   echo "Not all allowlisted live services are healthy; application services stopped." >&2
