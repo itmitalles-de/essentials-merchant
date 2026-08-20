@@ -39,6 +39,13 @@ if (!privacySafeLogFormat.includes("$request_method")
 if (/\$(?:args|query_string|request_uri)\b|\$request(?:\s|['"])/.test(privacySafeLogFormat)) {
   fail("Frontend access logs must not record upload query parameters");
 }
+const weeklyStrategyProxy = frontendProxy.match(
+  /location\s*=\s*\/api\/marketplace\/strategy\/weekly\s*\{([\s\S]*?)\n\s*\}/,
+)?.[1] ?? "";
+if (!/proxy_read_timeout\s+150s\s*;/.test(weeklyStrategyProxy)
+    || !/proxy_set_header\s+X-Mantle-Pilot-Proxy\s+"v1"\s*;/.test(weeklyStrategyProxy)) {
+  fail("Weekly strategy proxy must retain its exact bounded long-running route");
+}
 
 const backupReportAllowlistBody = pilotBackup.match(
   /WHERE run\.report_type NOT IN \(([\s\S]*?)\)/,
@@ -143,7 +150,7 @@ if ([...productionStrategyTransport.matchAll(/reqwest::Client::builder\s*\(/g)].
 for (const marker of [
   "Policy::none()",
   '"store": false',
-  'input_boundary: "separate_public_research_then_aggregate_history_and_handover"',
+  'input_boundary: "separate_public_research_then_curated_business_context_aggregate_history_and_handover"',
   '"type": "web_search"',
   '"max_tool_calls": MAX_WEB_SEARCH_CALLS',
   '"include": ["web_search_call.action.sources"]',
