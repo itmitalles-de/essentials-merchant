@@ -19,13 +19,10 @@ that never receives internal Amazon evidence.
 
 ## Current Mantle deployment
 
-The checked-out live revision is
-`77a2608f222bdc099d696518784cc95052fc9b33` in Compose project
-`essentials-merchant-amazon` on `192.168.178.15`. The running backend was built
-from `04808832d4a88982a750df9636f488662eb253f6`; the running frontend was built
-from `77a2608f222bdc099d696518784cc95052fc9b33`. Parent revision
-`d53581fe5a00b1c39b4b923ac65264af80251938` changes only the pinned Simple
-Business UI contract and is not a runtime deployment. Internal operators use
+The deployed backend and frontend revision is
+`ef1c63bc9e4fff2c86d3f482a2aa83411e5ac32b` in Compose project
+`essentials-merchant-amazon` on `192.168.178.15`. A later documentation-only
+handover commit does not change the runtime revision. Internal operators use
 `https://ai-marketing.mantle-climbing.de`; the retained fallback is
 `https://merchant.mantle-climbing.de/ai-marketing`. Both names resolve
 internally to the Docker host. This hostname has its own Caddy source matcher
@@ -103,17 +100,21 @@ made no second provider call.
 The live image IDs are:
 
 - PostgreSQL: `sha256:75f5a96988cdf694a215073c3e9c001b706b371e2f94df3967f2efdec2787f6b`
-- backend: `sha256:36c34249b6833b7aa0401e4bd007c462601bd4f9b9db9ca4c826533755a03caf`
-- frontend: `sha256:10871780498e12fb16f90e8359a22439d07112a6c6040b60eff688a1955074c2`
+- backend: `sha256:b67a2f9a7651f211ade769e90150fd3c12ddc5fb5ff48838148a3d13cfa1ee96`
+- frontend: `sha256:5df9fb4dd4dbea568cee617071d26605bb747fc37c399ab34e78abbba9f1350e`
 
-The final provider path passed Rust check and Clippy with warnings denied,
-strategy tests 8/8, an isolated DB suite 65/65, frontend build/lint, focused
-Chromium/axe E2E 3/3, Nginx validation, the Amazon-operation allowlist, secret
-scanning, and the synthetic JSON/CSV/TSV import/comparison/export flow. The
-successful live row uses model `gpt-5.6`, prompt
+The final provider path passed Rust formatting and Clippy with warnings denied,
+isolated database tests 23/23, isolated server tests 68/68, frontend build/lint,
+focused Chromium/axe E2E 3/3, Nginx validation, the Amazon-operation allowlist,
+secret scanning, and the synthetic JSON/CSV/TSV import/comparison/export flow.
+The successful live row uses model `gpt-5.6`, prompt
 `mantle-amazon-weekly-strategy-v4`, 15 bounded public sources, and the immutable
 13-source/30-entry Mantle/Sphagnum baseline. It was stored once for week
-`2026-08-17`; the next eligible action is 2026-08-24 00:00 Europe/Berlin.
+`2026-08-17`; the next eligible action is 2026-08-24 00:00 Europe/Berlin. That
+next action is already prepared for prompt `mantle-amazon-weekly-strategy-v5`
+with 13 newest-first weekly analysis documents, six reviewed identifier-free
+product aggregates, and the previous validated handover. The active weekly
+lock was not bypassed for another paid call.
 
 The three operator-visible failures were resolved at their causes: exact weekly
 Nginx timeout (`fff8ede`), bounded provider timeout (`c35b5e6`), and invalid or
@@ -135,18 +136,22 @@ Live Chromium reached `/ai-marketing` with the no-login shell, exactly one
 weekly `Analyse` button, the expected post-success lock, branded favicon,
 working light/dark themes, fixed output sections, public/global context,
 validated rationale and handover, the sanitized persistent activity log, and
-zero disclosed secret values. Schema 21 is active, automatic schedules remain
-zero, and the final application-log scan found zero sensitive markers.
+zero disclosed secret values. The gear-linked settings page exposes 178
+observed products and six append-only reviewed mappings without sending ASINs,
+SKUs, connection IDs, or marketplace IDs to the provider. Schema 22 is active,
+automatic schedules remain zero, and the final application-log scan found zero
+sensitive markers.
 
 The final live backup is
-`/opt/essentials-merchant-amazon-backups/live-ai-context-77a2608-20260820T1540Z`.
+`/opt/essentials-merchant-amazon-backups/product-context-ef1c63b-20260820T1758Z`.
 It has mode `0700` and manifest SHA-256
-`f1a06fa3cb5d6f070ce0ca90f0a2c2457962c4267b5333014ec0f3c7d3c15e4d`.
-The exact schema-21 allowlist includes the immutable curated baseline and the
-validated AI assessment but excludes all provider-secret rows. An isolated
-empty-target restore retained the Sales and Ads evidence, parser versions,
-business baseline, and handover chain while restoring zero provider secrets and
-zero schedules. Production itself was not used as a restore target.
+`5d0c6698cffba428631046222aac18447df798109895cd2e685d5b9aa4135fd2`.
+The exact schema-22 allowlist includes the immutable curated baseline, validated
+AI assessment, and six product-mapping revisions but excludes all
+provider-secret rows. An isolated empty-target restore retained 22 reports, 20
+snapshots, 21 deterministic analyses, the business baseline, handover chain,
+and all six mapping revisions while restoring zero provider secrets and zero
+schedules. Production itself was not used as a restore target.
 
 ## Relationship to the Mantle wiki toolchain
 

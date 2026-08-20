@@ -28,6 +28,9 @@ competing root task list.
 - [x] Backfill one contiguous 91-day real Sales and Traffic baseline as 13
   comparable seven-day periods, persist the 13-snapshot aggregate, and
   re-anchor the latest period for chronological incremental weekly context.
+- [x] Add append-only, operator-confirmed product mappings under the settings
+  gear and prepare the next run with 13 weekly analysis documents, six
+  identifier-free product aggregates, and the previous validated handover.
 - [x] Handle Amazon's valid child-ASIN parent-reassignment edge case without
   accepting exact duplicates; retry the affected report and validate the fix
   with all 21 isolated Marketplace tests.
@@ -36,9 +39,9 @@ competing root task list.
 - [x] Pass focused Rust/DB/frontend/Chromium/security/operation-boundary tests,
   synthetic JSON/CSV/TSV import/comparison/export, idempotence, and Nginx
   validation.
-- [x] Back up the final schema-21 live state and prove the exact allowlist on an
-  isolated empty target with the knowledge and assessment rows intact, zero
-  provider secrets, and zero schedules.
+- [x] Back up the final schema-22 live state and prove the exact allowlist on an
+  isolated empty target with the knowledge, assessment, and six mapping
+  revision rows intact, zero provider secrets, and zero schedules.
 - [x] Verify HTTPS 200, no login/config clutter on the analysis page, no secret
   markers in logs, and no identity/restart/start-time change for all 26
   non-target containers.
@@ -62,10 +65,12 @@ competing root task list.
 
 ## Explicitly deferred
 
-- Read-only Amazon Ads API acquisition is the only sensible next analysis
-  extension, after observing the next weekly cycle. Automatic Amazon actions,
-  Stripe, DHL/DPD, DATEV, multi-tenancy, Kubernetes, and unrelated Merchant work
-  remain outside this milestone.
+- Review and label the highest-impact unmapped products through the live GUI to
+  improve the existing evidence before adding another source. Read-only Amazon
+  Ads API acquisition remains the only sensible data-source extension after
+  observing the next weekly cycle. Automatic Amazon actions, Stripe, DHL/DPD,
+  DATEV, multi-tenancy, Kubernetes, and unrelated Merchant work remain outside
+  this milestone.
 - Retained stopped restore volumes and historical partial backup directories
   require a separate human retention/deletion decision. Never use
   `docker compose down -v` on production.

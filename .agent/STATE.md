@@ -15,8 +15,9 @@
 - The dedicated no-login profile issues only a 12-hour
   `mantle-amazon-read-only` session. Its exact method/path allowlist covers
   pilot status, aggregate import/view/export, weekly strategy, curated context,
-  and write-only provider setup. Regular login, ERP/settings APIs, raw report
-  downloads, schedules, and every Merchant/Amazon mutation remain denied.
+  product-mapping revisions, and write-only provider setup. Regular login,
+  ERP/settings APIs, raw report downloads, schedules, and every
+  Merchant/Amazon mutation remain denied.
 - Caddy admits only `192.168.178.0/24`, `10.0.0.0/8`, and `100.64.0.0/10` for
   this hostname. There is no public registration or frontend host bind.
 - OpenAI and Amazon secrets can be set or replaced on the gear-linked settings
@@ -31,12 +32,15 @@
   public-only market/competitor/global-event research request, then runs a
   tool-free structured synthesis. Raw reports, product/customer/campaign
   identifiers, and internal metrics never enter the public-search request.
-- The synthesis receives a closed aggregate DTO, the immutable curated
-  Mantle/Sphagnum baseline, and the previous validated handover. Migration 21
-  permits exactly one immutable baseline; the live baseline contains 13 source
-  manifests and 30 reviewed statements. Raw Markdown, Notes, PII, and secrets
-  were not imported.
-- Prompt v4 separates facts, supported derivations, hypotheses, actions,
+- The synthesis receives a closed aggregate DTO, up to 13 newest-first weekly
+  analysis documents, identifier-free aggregates for reviewed product
+  mappings, the immutable curated Mantle/Sphagnum baseline, and the previous
+  validated handover. Migration 21 permits exactly one immutable baseline; the
+  live baseline contains 13 source manifests and 30 reviewed statements.
+  Migration 22 stores append-only mapping revisions. Raw Markdown, Notes, PII,
+  secrets, Child ASINs, SKUs, connection IDs, and marketplace IDs do not cross
+  the AI boundary.
+- Prompt v5 separates facts, supported derivations, hypotheses, actions,
   uncertainty, missing evidence, sources, open questions, and the next-run
   handover. Dynamic evidence enums prevent invented evidence references.
 - The action-first UI has a stable graphical result layout, a light/dark
@@ -48,20 +52,20 @@
 ## Verified live state on 2026-08-20
 
 - Host `192.168.178.15`, Compose project `essentials-merchant-amazon`, exactly
-  PostgreSQL/backend/frontend. The host checkout and backend are
-  `2812c0d85c864bdb58fe88dfcf2453989b4a8ce0`; the unchanged frontend remains
-  `77a2608f222bdc099d696518784cc95052fc9b33`.
+  PostgreSQL/backend/frontend. The deployed backend and frontend revision is
+  `ef1c63bc9e4fff2c86d3f482a2aa83411e5ac32b`.
 - Live image IDs:
   - PostgreSQL:
     `sha256:75f5a96988cdf694a215073c3e9c001b706b371e2f94df3967f2efdec2787f6b`
   - backend:
-    `sha256:fd81da095cf87b80c73644a7c91bf89a78cb3e083f1257e464a49be676b7c7e7`
+    `sha256:b67a2f9a7651f211ade769e90150fd3c12ddc5fb5ff48838148a3d13cfa1ee96`
   - frontend:
-    `sha256:10871780498e12fb16f90e8359a22439d07112a6c6040b60eff688a1955074c2`
-- The route returns HTTPS 200. PostgreSQL is healthy at schema 21. Live counts:
+    `sha256:5df9fb4dd4dbea568cee617071d26605bb747fc37c399ab34e78abbba9f1350e`
+- The route returns HTTPS 200. PostgreSQL is healthy at schema 22. Live counts:
   one immutable knowledge row, one successful weekly assessment, two encrypted
-  provider rows, zero automatic schedules, and seven archived report
-  documents.
+  provider rows, zero automatic schedules, 22 archived report documents, 20
+  snapshots, 21 deterministic analyses, and six enabled current product
+  mappings covering six of 178 observed live products.
 - One authorized real Sales and Traffic acquisition completed report creation,
   polling, download, immutable archive, parsing, deterministic analysis, public
   research, and paid AI synthesis without logging business metrics or raw
@@ -73,9 +77,15 @@
 - A one-time real 91-day baseline from 2026-05-21 through 2026-08-19 now
   contains 13 distinct, contiguous seven-day periods and one persisted
   13-snapshot aggregate. The current period was re-anchored after the
-  historical backfill, so the bounded eight-result weekly context is in exact
+  historical backfill, so the bounded 13-result weekly context is in exact
   newest-first chronological order. No automatic schedule or second paid AI
   call was created; the existing weekly lock and handover remain intact.
+- Six reviewed Sphagnum product mappings were entered through the new internal
+  append-only mapping API. An immediate identical retry returned `unchanged`
+  for all six revisions. The next eligible weekly run is prepared with 13
+  analysis documents, six identifier-free product aggregates, prompt
+  `mantle-amazon-weekly-strategy-v5`, and the previous validated handover. No
+  extra paid call was made while the weekly lock is active.
 - Amazon returned one legitimate edge case in which a child ASIN had two
   different parent relationships within the same report period. Commit
   `2812c0d` keeps exact duplicates fail-closed while disambiguating only those
@@ -91,26 +101,30 @@
   2. bounded OpenAI provider timeout and stage-specific errors (`c35b5e6`),
   3. truncated/invalid strict output via dynamic evidence enums and a larger
      bounded output allowance (`0480883`).
-- Frontend revision `77a2608` restores safe run metadata after reload. Live
-  Chromium verified no login form, exactly one weekly action, locked state
+- Live Chromium verified no login form, exactly one weekly action, locked state
   after success, fixed result sections, global context, visible rationale and
-  handover, no settings forms on the analysis page, and no secret-shaped text.
-- Relevant validation passed: Rust check and Clippy with warnings denied,
-  strategy tests 8/8, isolated DB suite 65/65, frontend build/lint, focused
+  handover, no settings forms on the analysis page, a working gear-linked
+  product-mapping workflow with 178 observed-product options and six current
+  rows, and no secret-shaped text.
+- Relevant validation passed: Rust format and Clippy with warnings denied,
+  isolated database tests 23/23, isolated server tests 68/68, frontend
+  build/lint, focused
   Chromium/axe E2E 3/3, Nginx config test, Amazon operation allowlist, secret
   scan, synthetic JSON/CSV/TSV import/comparison/export, and idempotence.
 - The baseline parser hotfix additionally passed the focused regression test,
   all 21 Marketplace tests against an isolated disposable PostgreSQL instance,
-  and Clippy with warnings denied. Production log scanning after deployment
-  found zero secret markers. Only the backend container changed identity;
-  PostgreSQL, frontend, Caddy, and every unrelated container retained theirs.
+  and Clippy with warnings denied. The final product-context deployment
+  recreated only this project's backend and frontend; PostgreSQL, Caddy, and
+  every unrelated container retained their identities. Production log scanning
+  after deployment found zero secret markers.
 - Verified final live backup:
-  `/opt/essentials-merchant-amazon-backups/live-ai-context-77a2608-20260820T1540Z`,
+  `/opt/essentials-merchant-amazon-backups/product-context-ef1c63b-20260820T1758Z`,
   mode `0700`, manifest SHA-256
-  `f1a06fa3cb5d6f070ce0ca90f0a2c2457962c4267b5333014ec0f3c7d3c15e4d`.
-  The exact schema-21 allowlist passed an isolated empty-target restore with the
-  knowledge row and AI assessment intact, zero provider secrets, and zero
-  schedules. Production itself was not used as a restore target.
+  `5d0c6698cffba428631046222aac18447df798109895cd2e685d5b9aa4135fd2`.
+  The exact schema-22 allowlist passed an isolated empty-target restore with
+  the knowledge row, AI assessment, and six mapping revisions intact, zero
+  provider secrets, and zero schedules. Production itself was not used as a
+  restore target.
 - Before/after comparison found the same 26 non-target running containers with
   exact identity, image, restart count, and start time; baseline SHA-256
   `fe6c775817727763a60b1b3a6608adc2f17c2ea910abd10176873b0cac6391a9`.
@@ -129,8 +143,10 @@
   `store:false` prevents Responses application-state storage but is not itself
   a zero-retention claim.
 - There is no remaining Amazon gate for the current read-only Sales and Traffic
-  path. Read-only Amazon Ads API acquisition is explicitly deferred and is the
-  only sensible next analysis extension after observing the next weekly cycle.
+  path. The immediate evidence-quality step is to review the highest-impact
+  unmapped products through the GUI. Read-only Amazon Ads API acquisition stays
+  the only deferred data-source extension after observing the next weekly
+  cycle.
 
 ## Authoritative files
 
@@ -138,7 +154,8 @@
   `marketplace.rs`, and `strategy_ai.rs`
 - `backend/crates/db/migrations/0019_pilot_provider_secrets.sql`,
   `0020_manual_amazon_ads_evidence.sql`,
-  `0021_mantle_business_knowledge.sql`, and marketplace DB code
+  `0021_mantle_business_knowledge.sql`,
+  `0022_amazon_product_mapping.sql`, and marketplace DB code
 - `frontend/src/pilot.ts`, `ProviderSettingsPanel.tsx`,
   `PilotProviderSettings.tsx`, `MarketplaceIntelligence.tsx`, `AuthContext.tsx`,
   `App.tsx`, and `nginx.conf`
