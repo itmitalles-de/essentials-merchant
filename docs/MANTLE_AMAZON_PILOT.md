@@ -112,7 +112,7 @@ Nginx timeout (`fff8ede`), bounded provider timeout (`c35b5e6`), and invalid or
 truncated structured evidence output (`0480883`). Frontend revision `77a2608`
 also restores the sanitized terminal activity context after a page reload.
 
-GitHub did not start any job for parent-head run `32387256617`: every job was
+GitHub did not start any job for recent run `32388594705`: every job was
 rejected before checkout because recent account payments failed or the Actions
 spending limit must be increased. This is an external CI-account gate, not a
 test failure; it must be cleared and the final exact head rerun before PR #5 can

@@ -40,7 +40,7 @@ competing root task list.
 ## External GitHub Actions gate
 
 - [ ] Fix the GitHub account payment/Actions spending-limit issue, then rerun
-  all seven jobs for the final PR #5 head. Parent run `32387256617` rejected
+  all seven jobs for the final PR #5 head. Recent run `32388594705` rejected
   every job before checkout, so it produced no test result. Keep PR #5 draft
   until the exact final head is green.
 

@@ -105,11 +105,11 @@
 
 ## External gates
 
-- Draft PR #5 is mergeable, but latest observed parent run `32387256617` could
-  not start any of its seven jobs because the GitHub account has failed recent
-  payments or needs a higher Actions spending limit. Local/live validation is
-  green; keep the PR draft until that external billing gate is cleared and the
-  final exact head reruns.
+- Draft PR #5 is mergeable, but recent PR runs, including `32388594705`, could
+  not start any of their seven jobs because the GitHub account has failed
+  recent payments or needs a higher Actions spending limit. Local/live
+  validation is green; keep the PR draft until that external billing gate is
+  cleared and the final exact head reruns.
 - The paid OpenAI call is technically proven. The operator must still confirm
   the dedicated OpenAI project budget and applicable provider data controls;
   `store:false` prevents Responses application-state storage but is not itself
