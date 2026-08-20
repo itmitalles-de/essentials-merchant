@@ -1,0 +1,14 @@
+# These two advisories affect optional packages that Cargo retains in the
+# lockfile but that are excluded from every compiled workspace target. The CI
+# reachability checks and docs/security/RUST_ADVISORIES.md are part of this
+# exception; do not add an advisory here without the same evidence.
+[advisories]
+ignore = ["RUSTSEC-2026-0235", "RUSTSEC-2023-0071"]
+informational_warnings = ["unmaintained"]
+severity_threshold = "low"
+
+[output]
+deny = ["unmaintained"]
+format = "terminal"
+quiet = false
+show_tree = true

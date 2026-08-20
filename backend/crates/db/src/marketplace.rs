@@ -327,6 +327,41 @@ pub struct ParsedSnapshot {
     pub metrics: Vec<ParsedMetric>,
 }
 
+#[derive(Debug, Clone)]
+pub struct ManualImportStoreInput<'a> {
+    pub uploaded_by: Uuid,
+    pub raw_sha256: &'a str,
+    pub raw_content: &'a [u8],
+    pub content_type: &'a str,
+    pub detected_format: &'a str,
+    pub marketplace_id: &'a str,
+    pub report_type: &'a str,
+    pub date_granularity: &'a str,
+    pub source_timezone: &'a str,
+    pub currency_code: Option<&'a str>,
+    pub parsed: &'a ParsedSnapshot,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct ManualImportStoreOutcome {
+    pub run_id: Uuid,
+    pub analysis_job_id: Uuid,
+    pub comparison_generated: bool,
+    pub imported: bool,
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum ManualImportStoreError {
+    #[error("manual import input is invalid: {0}")]
+    InvalidInput(String),
+    #[error("the same raw bytes were already archived with different confirmed metadata")]
+    MetadataConflict,
+    #[error("a different raw report already represents this exact comparison period")]
+    DuplicatePeriod,
+    #[error(transparent)]
+    Database(#[from] sqlx::Error),
+}
+
 #[derive(Debug, Clone, Serialize, sqlx::FromRow)]
 pub struct AnalysisJob {
     pub id: Uuid,
@@ -1170,6 +1205,330 @@ pub async fn store_snapshot(
     Ok(snapshot)
 }
 
+/// Stores a fully validated manual report in one transaction. Parsing happens
+/// before this boundary, so a schema error cannot leave a run, raw archive, or
+/// partial metric set behind. A transaction-scoped advisory lock serializes
+/// concurrent uploads of the same bytes and makes retries idempotent.
+pub async fn store_manual_import(
+    pool: &PgPool,
+    input: &ManualImportStoreInput<'_>,
+) -> Result<ManualImportStoreOutcome, ManualImportStoreError> {
+    if input.report_type != SALES_AND_TRAFFIC
+        || !matches!(input.detected_format, "json" | "csv" | "tsv")
+        || !matches!(input.date_granularity, "DAY" | "WEEK" | "MONTH" | "PERIOD")
+        || input.marketplace_id.len() < 2
+        || input.marketplace_id.len() > 64
+        || !input
+            .marketplace_id
+            .bytes()
+            .all(|byte| byte.is_ascii_uppercase() || byte.is_ascii_digit() || byte == b'-')
+        || !input
+            .marketplace_id
+            .bytes()
+            .next()
+            .is_some_and(|byte| byte.is_ascii_uppercase() || byte.is_ascii_digit())
+        || input.raw_sha256 != sha256(input.raw_content)
+        || input.currency_code.is_none()
+        || input.parsed.period_start.is_none()
+        || input.parsed.period_end.is_none()
+        || input.parsed.comparability_key.trim().is_empty()
+    {
+        return Err(ManualImportStoreError::InvalidInput(
+            "metadata did not pass the storage boundary".to_owned(),
+        ));
+    }
+    let period_start = input.parsed.period_start.expect("checked above");
+    let period_end = input.parsed.period_end.expect("checked above");
+    if period_start > period_end {
+        return Err(ManualImportStoreError::InvalidInput(
+            "report period is inverted".to_owned(),
+        ));
+    }
+
+    let mut tx = pool.begin().await?;
+    sqlx::query("SELECT pg_advisory_xact_lock(hashtextextended($1, 0))")
+        .bind(input.raw_sha256)
+        .execute(&mut *tx)
+        .await?;
+    if let Some(existing) = sqlx::query_as::<
+        _,
+        (
+            Uuid,
+            Uuid,
+            String,
+            String,
+            DateTime<Utc>,
+            DateTime<Utc>,
+            String,
+            String,
+            Option<String>,
+            String,
+            String,
+            String,
+        ),
+    >(
+        "SELECT imported.run_id, imported.analysis_job_id, imported.report_type,
+                imported.marketplace_id, imported.period_start, imported.period_end,
+                imported.granularity, imported.source_timezone, imported.currency_code,
+                imported.parser_version, imported.comparability_key, job.analysis_type
+         FROM amazon_manual_report_imports imported
+         JOIN amazon_analysis_jobs job ON job.id = imported.analysis_job_id
+         WHERE imported.raw_sha256 = $1",
+    )
+    .bind(input.raw_sha256)
+    .fetch_optional(&mut *tx)
+    .await?
+    {
+        let metadata_matches = existing.2 == input.report_type
+            && existing.3 == input.marketplace_id
+            && existing.4 == period_start
+            && existing.5 == period_end
+            && existing.6 == input.date_granularity
+            && existing.7 == input.source_timezone
+            && existing.8.as_deref() == input.currency_code
+            && existing.9 == input.parsed.parser_version
+            && existing.10 == input.parsed.comparability_key;
+        if !metadata_matches {
+            return Err(ManualImportStoreError::MetadataConflict);
+        }
+        tx.commit().await?;
+        return Ok(ManualImportStoreOutcome {
+            run_id: existing.0,
+            analysis_job_id: existing.1,
+            comparison_generated: existing.11 == "manual_comparison",
+            imported: false,
+        });
+    }
+
+    let semantic_key = format!(
+        "{}:{}:{}:{}:{}:{}",
+        input.marketplace_id,
+        input.report_type,
+        period_start,
+        period_end,
+        input.parsed.comparability_key,
+        input.parsed.parser_version,
+    );
+    sqlx::query("SELECT pg_advisory_xact_lock(hashtextextended($1, 1))")
+        .bind(&semantic_key)
+        .execute(&mut *tx)
+        .await?;
+    let duplicate_period = sqlx::query_scalar::<_, bool>(
+        "SELECT EXISTS(
+           SELECT 1 FROM amazon_manual_report_imports
+           WHERE marketplace_id = $1 AND report_type = $2
+             AND period_start = $3 AND period_end = $4
+             AND comparability_key = $5 AND parser_version = $6
+         )",
+    )
+    .bind(input.marketplace_id)
+    .bind(input.report_type)
+    .bind(period_start)
+    .bind(period_end)
+    .bind(&input.parsed.comparability_key)
+    .bind(&input.parsed.parser_version)
+    .fetch_one(&mut *tx)
+    .await?;
+    if duplicate_period {
+        return Err(ManualImportStoreError::DuplicatePeriod);
+    }
+
+    let connection_id = sqlx::query_scalar::<_, Uuid>(
+        "SELECT id FROM amazon_connections
+         WHERE seller_id = 'manual-report-import' AND region = 'eu'
+           AND secret_ref = 'fixture:manual-report-import' AND mode = 'fixture'",
+    )
+    .fetch_one(&mut *tx)
+    .await?;
+    sqlx::query(
+        "INSERT INTO amazon_marketplaces (connection_id, marketplace_id)
+         VALUES ($1, $2)
+         ON CONFLICT (connection_id, marketplace_id) DO UPDATE SET enabled = true",
+    )
+    .bind(connection_id)
+    .bind(input.marketplace_id)
+    .execute(&mut *tx)
+    .await?;
+
+    let run_id = Uuid::new_v4();
+    let run_options = json!({
+        "source": "manual_upload",
+        "detectedFormat": input.detected_format,
+        "dateGranularity": input.date_granularity,
+        "sourceTimezone": input.source_timezone,
+        "parserVersion": input.parsed.parser_version,
+    });
+    sqlx::query(
+        "INSERT INTO amazon_report_runs
+             (id, connection_id, marketplace_id, report_type, data_start_time, data_end_time,
+              report_options, trigger_source, idempotency_key, status,
+              amazon_report_document_id, requested_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, 'manual', $8, 'analysing', $9, now())",
+    )
+    .bind(run_id)
+    .bind(connection_id)
+    .bind(input.marketplace_id)
+    .bind(input.report_type)
+    .bind(period_start)
+    .bind(period_end)
+    .bind(&run_options)
+    .bind(format!("amazon-manual-report:{}", input.raw_sha256))
+    .bind(format!("manual-upload:{}", &input.raw_sha256[..16]))
+    .execute(&mut *tx)
+    .await?;
+
+    sqlx::query(
+        "INSERT INTO amazon_report_documents
+             (run_id, amazon_report_document_id, sha256, content_type, compression_algorithm,
+              raw_content, decoded_content, decoded_sha256, parser_version, import_status)
+         VALUES ($1, $2, $3, $4, 'NONE', $5, $5, $3, $6, 'parsed')",
+    )
+    .bind(run_id)
+    .bind(format!("manual-upload:{}", &input.raw_sha256[..16]))
+    .bind(input.raw_sha256)
+    .bind(input.content_type)
+    .bind(input.raw_content)
+    .bind(&input.parsed.parser_version)
+    .execute(&mut *tx)
+    .await?;
+
+    let snapshot_id = Uuid::new_v4();
+    sqlx::query(
+        "INSERT INTO amazon_metric_snapshots
+             (id, run_id, connection_id, marketplace_id, report_type, parser_version,
+              period_start, period_end, granularity, comparability_key, summary)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)",
+    )
+    .bind(snapshot_id)
+    .bind(run_id)
+    .bind(connection_id)
+    .bind(input.marketplace_id)
+    .bind(input.report_type)
+    .bind(&input.parsed.parser_version)
+    .bind(period_start)
+    .bind(period_end)
+    .bind(input.date_granularity)
+    .bind(&input.parsed.comparability_key)
+    .bind(&input.parsed.summary)
+    .execute(&mut *tx)
+    .await?;
+    for metric in &input.parsed.metrics {
+        sqlx::query(
+            "INSERT INTO amazon_normalized_metrics
+                 (snapshot_id, metric_name, dimension_type, dimension_key, value_numeric,
+                  unit, currency_code, evidence)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8)",
+        )
+        .bind(snapshot_id)
+        .bind(&metric.metric_name)
+        .bind(&metric.dimension_type)
+        .bind(&metric.dimension_key)
+        .bind(metric.value_numeric)
+        .bind(&metric.unit)
+        .bind(&metric.currency_code)
+        .bind(&metric.evidence)
+        .execute(&mut *tx)
+        .await?;
+    }
+
+    let comparison = sqlx::query_as::<_, (Uuid, DateTime<Utc>, DateTime<Utc>)>(
+        "SELECT run_id, period_start, period_end
+         FROM amazon_metric_snapshots
+         WHERE connection_id = $1 AND marketplace_id = $2 AND report_type = $3
+           AND comparability_key = $4 AND parser_version = $5 AND id <> $6
+           AND (period_end < $7 OR period_start > $8)
+         ORDER BY CASE WHEN period_end < $7 THEN $7 - period_end
+                       ELSE period_start - $8 END,
+                  created_at DESC
+         LIMIT 1",
+    )
+    .bind(connection_id)
+    .bind(input.marketplace_id)
+    .bind(input.report_type)
+    .bind(&input.parsed.comparability_key)
+    .bind(&input.parsed.parser_version)
+    .bind(snapshot_id)
+    .bind(period_start)
+    .bind(period_end)
+    .fetch_optional(&mut *tx)
+    .await?;
+    let analysis_job_id = Uuid::new_v4();
+    let (analysis_type, analysis_start, analysis_end) = comparison
+        .map(|(_, other_start, other_end)| {
+            (
+                "manual_comparison",
+                period_start.min(other_start),
+                period_end.max(other_end),
+            )
+        })
+        .unwrap_or(("delta", period_start, period_end));
+    sqlx::query(
+        "INSERT INTO amazon_analysis_jobs
+             (id, run_id, connection_id, marketplace_id, report_type, analysis_type,
+              period_start, period_end)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)",
+    )
+    .bind(analysis_job_id)
+    .bind(run_id)
+    .bind(connection_id)
+    .bind(input.marketplace_id)
+    .bind(input.report_type)
+    .bind(analysis_type)
+    .bind(analysis_start)
+    .bind(analysis_end)
+    .execute(&mut *tx)
+    .await?;
+    sqlx::query(
+        "INSERT INTO amazon_manual_report_imports
+             (run_id, analysis_job_id, raw_sha256, detected_format, report_type, marketplace_id,
+              period_start, period_end, granularity, source_timezone, currency_code,
+              parser_version, comparability_key, uploaded_by, metadata)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)",
+    )
+    .bind(run_id)
+    .bind(analysis_job_id)
+    .bind(input.raw_sha256)
+    .bind(input.detected_format)
+    .bind(input.report_type)
+    .bind(input.marketplace_id)
+    .bind(period_start)
+    .bind(period_end)
+    .bind(input.date_granularity)
+    .bind(input.source_timezone)
+    .bind(input.currency_code)
+    .bind(&input.parsed.parser_version)
+    .bind(&input.parsed.comparability_key)
+    .bind(input.uploaded_by)
+    .bind(json!({
+        "archive": "postgresql_immutable",
+        "raw_bytes": input.raw_content.len(),
+        "partial_imports": "transactionally_prevented",
+    }))
+    .execute(&mut *tx)
+    .await?;
+    append_run_event(
+        &mut tx,
+        run_id,
+        "archived",
+        Some("Manual raw report archived with SHA-256 checksum"),
+    )
+    .await?;
+    append_run_event(
+        &mut tx,
+        run_id,
+        "analysing",
+        Some("Manual report validated and normalized atomically"),
+    )
+    .await?;
+    tx.commit().await?;
+    Ok(ManualImportStoreOutcome {
+        run_id,
+        analysis_job_id,
+        comparison_generated: analysis_type == "manual_comparison",
+        imported: true,
+    })
+}
+
 async fn mark_document_import_tx(
     tx: &mut Transaction<'_, Postgres>,
     run_id: Uuid,
@@ -1509,6 +1868,20 @@ pub async fn complete_analysis(
     tx.commit().await
 }
 
+pub async fn analysis_result_for_job(
+    pool: &PgPool,
+    job_id: Uuid,
+) -> Result<Option<AnalysisResult>, sqlx::Error> {
+    sqlx::query_as::<_, AnalysisResult>(
+        "SELECT id, job_id, strategy, model_name, prompt_version, payload_sha256,
+                result, created_at
+         FROM amazon_analysis_results WHERE job_id = $1",
+    )
+    .bind(job_id)
+    .fetch_optional(pool)
+    .await
+}
+
 pub async fn fail_analysis(pool: &PgPool, job_id: Uuid, message: &str) -> Result<(), sqlx::Error> {
     sqlx::query(
         "UPDATE amazon_analysis_jobs
@@ -1628,7 +2001,9 @@ pub async fn analysis_result(
 pub async fn overview(pool: &PgPool) -> Result<MarketplaceOverview, sqlx::Error> {
     let connections = sqlx::query_as::<_, AmazonConnection>(
         "SELECT id, seller_id, region, secret_ref, granted_roles, mode, enabled, created_at, updated_at
-         FROM amazon_connections ORDER BY created_at DESC",
+         FROM amazon_connections
+         WHERE seller_id <> 'manual-report-import'
+         ORDER BY created_at DESC",
     )
     .fetch_all(pool)
     .await?;
@@ -1867,5 +2242,182 @@ mod tests {
                 .await
                 .is_err()
         );
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn manual_import_is_atomic_immutable_and_idempotent(pool: PgPool) {
+        let uploaded_by: Uuid = sqlx::query_scalar(
+            "INSERT INTO users (username, password_hash, role)
+             VALUES ('synthetic-manual-import-admin', 'synthetic-not-a-secret', 'administrator')
+             RETURNING id",
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        let raw = b"SYNTHETIC TEST DATA - valid bytes are parsed before this boundary";
+        let raw_sha256 = sha256(raw);
+        let start = "2026-07-01T00:00:00Z".parse().unwrap();
+        let end = "2026-07-07T23:59:59Z".parse().unwrap();
+        let parsed = ParsedSnapshot {
+            parser_version: "manual-sales-traffic-v1".to_owned(),
+            period_start: Some(start),
+            period_end: Some(end),
+            granularity: "day_child".to_owned(),
+            comparability_key: "sales-traffic:DAY:EUR:Europe/Berlin:7d".to_owned(),
+            summary: json!({
+                "data_freshness": "2026-07-07",
+                "missing_fields": [],
+                "timezone": "Europe/Berlin",
+                "currency_code": "EUR",
+            }),
+            metrics: vec![ParsedMetric {
+                metric_name: "ordered_product_sales".to_owned(),
+                dimension_type: "catalog".to_owned(),
+                dimension_key: String::new(),
+                value_numeric: Decimal::from(123),
+                unit: "currency".to_owned(),
+                currency_code: Some("EUR".to_owned()),
+                evidence: json!({ "source": "synthetic_test" }),
+            }],
+        };
+        let input = ManualImportStoreInput {
+            uploaded_by,
+            raw_sha256: &raw_sha256,
+            raw_content: raw,
+            content_type: "application/json",
+            detected_format: "json",
+            marketplace_id: "SYNTHETIC-MARKETPLACE",
+            report_type: SALES_AND_TRAFFIC,
+            date_granularity: "DAY",
+            source_timezone: "Europe/Berlin",
+            currency_code: Some("EUR"),
+            parsed: &parsed,
+        };
+
+        let first = store_manual_import(&pool, &input).await.unwrap();
+        let second = store_manual_import(&pool, &input).await.unwrap();
+        assert!(first.imported);
+        assert!(!second.imported);
+        assert_eq!(first.run_id, second.run_id);
+        let mut conflicting = input.clone();
+        conflicting.source_timezone = "UTC";
+        assert!(matches!(
+            store_manual_import(&pool, &conflicting).await,
+            Err(ManualImportStoreError::MetadataConflict)
+        ));
+        let different_raw = b"SYNTHETIC TEST DATA - same semantic period, different bytes";
+        let mut duplicate_period = input.clone();
+        let different_hash = sha256(different_raw);
+        duplicate_period.raw_content = different_raw;
+        duplicate_period.raw_sha256 = &different_hash;
+        assert!(matches!(
+            store_manual_import(&pool, &duplicate_period).await,
+            Err(ManualImportStoreError::DuplicatePeriod)
+        ));
+        assert_eq!(
+            sqlx::query_scalar::<_, i64>(
+                "SELECT count(*) FROM amazon_manual_report_imports WHERE raw_sha256 = $1",
+            )
+            .bind(&raw_sha256)
+            .fetch_one(&pool)
+            .await
+            .unwrap(),
+            1
+        );
+        let archived = raw_document(&pool, first.run_id).await.unwrap().unwrap();
+        assert_eq!(archived.content, raw);
+        assert!(
+            sqlx::query("DELETE FROM amazon_manual_report_imports WHERE run_id = $1")
+                .bind(first.run_id)
+                .execute(&pool)
+                .await
+                .is_err()
+        );
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn manual_import_compares_periods_independent_of_upload_order(pool: PgPool) {
+        let uploaded_by: Uuid = sqlx::query_scalar(
+            "INSERT INTO users (username, password_hash, role)
+             VALUES ('synthetic-order-admin', 'synthetic-not-a-secret', 'administrator')
+             RETURNING id",
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        let make_snapshot = |start: &str, end: &str, revenue: i64| ParsedSnapshot {
+            parser_version: "manual-sales-traffic-v1".to_owned(),
+            period_start: Some(start.parse().unwrap()),
+            period_end: Some(end.parse().unwrap()),
+            granularity: "day_child".to_owned(),
+            comparability_key: "sales-traffic:DAY:EUR:Europe/Berlin:7d".to_owned(),
+            summary: json!({
+                "data_freshness": end,
+                "missing_fields": [],
+                "timezone": "Europe/Berlin",
+                "currency_code": "EUR",
+            }),
+            metrics: vec![ParsedMetric {
+                metric_name: "ordered_product_sales".to_owned(),
+                dimension_type: "catalog".to_owned(),
+                dimension_key: String::new(),
+                value_numeric: Decimal::from(revenue),
+                unit: "currency".to_owned(),
+                currency_code: Some("EUR".to_owned()),
+                evidence: json!({ "source": "synthetic_test" }),
+            }],
+        };
+        let newer_raw = b"SYNTHETIC NEWER REPORT";
+        let newer_hash = sha256(newer_raw);
+        let newer = make_snapshot("2026-08-08T00:00:00Z", "2026-08-14T23:59:59Z", 140);
+        let newer_input = ManualImportStoreInput {
+            uploaded_by,
+            raw_sha256: &newer_hash,
+            raw_content: newer_raw,
+            content_type: "application/json",
+            detected_format: "json",
+            marketplace_id: "SYNTHETIC-MARKETPLACE",
+            report_type: SALES_AND_TRAFFIC,
+            date_granularity: "DAY",
+            source_timezone: "Europe/Berlin",
+            currency_code: Some("EUR"),
+            parsed: &newer,
+        };
+        let newer_outcome = store_manual_import(&pool, &newer_input).await.unwrap();
+
+        let older_raw = b"SYNTHETIC OLDER REPORT";
+        let older_hash = sha256(older_raw);
+        let older = make_snapshot("2026-08-01T00:00:00Z", "2026-08-07T23:59:59Z", 100);
+        let older_input = ManualImportStoreInput {
+            uploaded_by,
+            raw_sha256: &older_hash,
+            raw_content: older_raw,
+            content_type: "application/json",
+            detected_format: "json",
+            marketplace_id: "SYNTHETIC-MARKETPLACE",
+            report_type: SALES_AND_TRAFFIC,
+            date_granularity: "DAY",
+            source_timezone: "Europe/Berlin",
+            currency_code: Some("EUR"),
+            parsed: &older,
+        };
+        let older_outcome = store_manual_import(&pool, &older_input).await.unwrap();
+        let duplicate = store_manual_import(&pool, &older_input).await.unwrap();
+
+        assert_ne!(newer_outcome.run_id, older_outcome.run_id);
+        assert_eq!(duplicate.analysis_job_id, older_outcome.analysis_job_id);
+        assert!(!duplicate.imported);
+        let comparison: (String, Uuid, DateTime<Utc>, DateTime<Utc>) = sqlx::query_as(
+            "SELECT analysis_type, run_id, period_start, period_end
+             FROM amazon_analysis_jobs WHERE id = $1",
+        )
+        .bind(older_outcome.analysis_job_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(comparison.0, "manual_comparison");
+        assert_eq!(comparison.1, older_outcome.run_id);
+        assert_eq!(comparison.2, older.period_start.unwrap());
+        assert_eq!(comparison.3, newer.period_end.unwrap());
     }
 }

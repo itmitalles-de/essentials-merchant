@@ -1244,6 +1244,7 @@ impl MarketplaceWorker {
     async fn process_analysis(&self, pool: &sqlx::PgPool, job: ClaimedAnalysisJob) {
         let result = match job.analysis_type.as_str() {
             "delta" => deterministic_delta(pool, &job).await,
+            "manual_comparison" => deterministic_manual_comparison(pool, &job).await,
             "total" => deterministic_total(pool, &job).await,
             _ => Err("Unknown analysis type".to_owned()),
         };
@@ -1967,6 +1968,27 @@ fn evidence_ref(snapshot: &MetricSnapshot, metric: &NormalizedMetric) -> String 
     format!("snapshot:{}:metric:{}", snapshot.id, metric.id)
 }
 
+fn analysis_context(snapshot: &MetricSnapshot) -> Value {
+    json!({
+        "period_start": snapshot.period_start,
+        "period_end": snapshot.period_end,
+        "marketplace": snapshot.marketplace_id,
+        "report_type": snapshot.report_type,
+        "granularity": snapshot.granularity,
+        "parser_version": snapshot.parser_version,
+        "data_freshness": snapshot.summary.get("data_freshness").cloned()
+            .or_else(|| snapshot.period_end.map(|value| json!(value)))
+            .unwrap_or(Value::Null),
+        "missing_fields": snapshot.summary.get("missing_fields").cloned().unwrap_or_else(|| json!([])),
+        "source_timezone": snapshot.summary.get("timezone").cloned()
+            .or_else(|| snapshot.summary.get("reporting_timezone").cloned())
+            .unwrap_or(Value::Null),
+        "currency": snapshot.summary.get("currency_code").cloned()
+            .or_else(|| snapshot.summary.get("currency").cloned())
+            .unwrap_or(Value::Null),
+    })
+}
+
 async fn deterministic_delta(
     pool: &sqlx::PgPool,
     job: &ClaimedAnalysisJob,
@@ -1978,6 +2000,68 @@ async fn deterministic_delta(
         .await
         .map_err(|error| error.to_string())?
         .ok_or_else(|| "Delta analysis lacks a normalized snapshot".to_owned())?;
+    let previous = marketplace::previous_compatible_snapshot(pool, &current)
+        .await
+        .map_err(|error| error.to_string())?;
+    deterministic_delta_for_snapshots(pool, &current, previous).await
+}
+
+async fn deterministic_manual_comparison(
+    pool: &sqlx::PgPool,
+    job: &ClaimedAnalysisJob,
+) -> Result<Value, String> {
+    let uploaded_run_id = job
+        .run_id
+        .ok_or_else(|| "Manual comparison requires an uploaded report run".to_owned())?;
+    let anchor = marketplace::snapshot_for_run(pool, uploaded_run_id)
+        .await
+        .map_err(|error| error.to_string())?
+        .ok_or_else(|| "Manual comparison lacks its uploaded snapshot".to_owned())?;
+    let snapshots = marketplace::snapshots_for_window(pool, job)
+        .await
+        .map_err(|error| error.to_string())?;
+    let expected_start = job
+        .period_start
+        .ok_or_else(|| "Manual comparison lacks a period start".to_owned())?;
+    let expected_end = job
+        .period_end
+        .ok_or_else(|| "Manual comparison lacks a period end".to_owned())?;
+    let previous = snapshots
+        .iter()
+        .find(|snapshot| {
+            snapshot.comparability_key == anchor.comparability_key
+                && snapshot.parser_version == anchor.parser_version
+                && snapshot.period_start == Some(expected_start)
+        })
+        .cloned()
+        .ok_or_else(|| "Manual comparison lacks its earlier compatible snapshot".to_owned())?;
+    let current = snapshots
+        .iter()
+        .rev()
+        .find(|snapshot| {
+            snapshot.comparability_key == anchor.comparability_key
+                && snapshot.parser_version == anchor.parser_version
+                && snapshot.period_end == Some(expected_end)
+        })
+        .cloned()
+        .ok_or_else(|| "Manual comparison lacks its later compatible snapshot".to_owned())?;
+    let previous_end = previous
+        .period_end
+        .ok_or_else(|| "Manual comparison earlier period is incomplete".to_owned())?;
+    let current_start = current
+        .period_start
+        .ok_or_else(|| "Manual comparison later period is incomplete".to_owned())?;
+    if previous.id == current.id || previous_end >= current_start {
+        return Err("Manual comparison periods overlap or are identical".to_owned());
+    }
+    deterministic_delta_for_snapshots(pool, &current, Some(previous)).await
+}
+
+async fn deterministic_delta_for_snapshots(
+    pool: &sqlx::PgPool,
+    current: &MetricSnapshot,
+    previous: Option<MetricSnapshot>,
+) -> Result<Value, String> {
     let current_metrics = marketplace::metrics_for_snapshot(pool, current.id)
         .await
         .map_err(|error| error.to_string())?;
@@ -1990,16 +2074,18 @@ async fn deterministic_delta(
                 "value": metric.value_numeric.to_string(),
                 "unit": metric.unit,
                 "currency": metric.currency_code,
-                "evidence_ref": evidence_ref(&current, metric),
+                "evidence_ref": evidence_ref(current, metric),
             })
         })
         .collect::<Vec<_>>();
-    let Some(previous) = marketplace::previous_compatible_snapshot(pool, &current)
-        .await
-        .map_err(|error| error.to_string())?
-    else {
+    let context = analysis_context(current);
+    let Some(previous) = previous else {
         return Ok(json!({
+            "context": context,
             "facts": facts,
+            "derived_observations": [
+                "The current report was normalized successfully; no compatible earlier period is available for a deterministic delta."
+            ],
             "changes_since_last_run": [],
             "overall_trend": "No comparable earlier snapshot is available.",
             "anomalies": [],
@@ -2007,6 +2093,8 @@ async fn deterministic_delta(
             "options": generic_options(),
             "uncertainty": "high",
             "missing_data": ["A previous successful snapshot with matching report type, granularity and period length is required for a delta analysis."],
+            "missing_evidence": ["A second non-overlapping period with identical marketplace, report type, granularity, parser version, currency and period length."],
+            "open_questions": ["Which earlier period should be imported for comparison?"],
             "recommendation_notice": "Recommendations only; Essentials+ Merchant does not make Amazon changes.",
         }));
     };
@@ -2037,14 +2125,24 @@ async fn deterministic_delta(
         } else {
             Some((difference / previous_metric.value_numeric * Decimal::from(100)).round_dp(2))
         };
+        let trend = match percentage {
+            Some(value) if value > Decimal::ONE => "up",
+            Some(value) if value < -Decimal::ONE => "down",
+            Some(_) => "stable",
+            None if difference.is_zero() => "stable",
+            None if difference.is_sign_positive() => "up_from_zero",
+            None => "down_to_zero",
+        };
         let change = json!({
             "metric": metric.metric_name,
             "current": metric.value_numeric.to_string(),
             "previous": previous_metric.value_numeric.to_string(),
             "difference": difference.to_string(),
             "percent_change": percentage.map(|value| value.to_string()),
+            "trend": trend,
             "unit": metric.unit,
-            "evidence_refs": [evidence_ref(&current, metric), evidence_ref(&previous, previous_metric)],
+            "currency": metric.currency_code,
+            "evidence_refs": [evidence_ref(current, metric), evidence_ref(&previous, previous_metric)],
         });
         if percentage.is_some_and(|value| value.abs() >= Decimal::from(20)) {
             anomalies.push(json!({
@@ -2062,15 +2160,39 @@ async fn deterministic_delta(
         "Comparable metrics were calculated against the immediately preceding compatible snapshot."
             .to_owned()
     };
+    let derived_observations = changes
+        .iter()
+        .map(|change| {
+            json!({
+                "kind": "deterministic_period_delta",
+                "metric": change.get("metric"),
+                "delta": change.get("difference"),
+                "percent_change": change.get("percent_change"),
+                "trend": change.get("trend"),
+                "evidence_refs": change.get("evidence_refs"),
+            })
+        })
+        .collect::<Vec<_>>();
+    let hypotheses = hypotheses_for_changes(&changes);
     Ok(json!({
+        "context": context,
         "facts": facts,
+        "derived_observations": derived_observations,
         "changes_since_last_run": changes,
         "overall_trend": trend,
         "anomalies": anomalies,
-        "hypotheses": hypotheses_for_metrics(&current_metrics),
+        "hypotheses": hypotheses,
         "options": options,
         "uncertainty": if anomalies.is_empty() { "medium" } else { "medium; material changes need operational validation" },
         "missing_data": missing_data_for_metrics(&current_metrics),
+        "missing_evidence": [
+            "Price, promotion, advertising, listing, availability and competitor changes are not contained in Sales and Traffic reports.",
+            "The report supports correlation and deterministic deltas, not causal attribution."
+        ],
+        "open_questions": [
+            "Were price, promotions, advertising, availability or listing content changed between the periods?",
+            "Was Seller Central report coverage complete and final for both periods?"
+        ],
         "recommendation_notice": "Recommendations only; Essentials+ Merchant does not make Amazon changes.",
     }))
 }
@@ -2147,7 +2269,7 @@ fn generic_options() -> Vec<Value> {
             "uncertainty": "medium",
         }),
         json!({
-            "action": "Run the same compatible report period again on schedule",
+            "action": "Import another completed, compatible comparison period",
             "expected_effect": "Builds a comparable baseline for later delta analysis.",
             "effort": "low",
             "risks": ["Amazon report availability and processing time vary."],
@@ -2172,7 +2294,10 @@ fn options_for_metrics(metrics: &[NormalizedMetric]) -> Vec<Value> {
         }));
     }
     if let Some(conversion) = metrics.iter().find(|metric| {
-        metric.metric_name == "conversion_rate" && metric.dimension_type == "catalog"
+        matches!(
+            metric.metric_name.as_str(),
+            "conversion_rate" | "unit_session_percentage"
+        ) && metric.dimension_type == "catalog"
     }) {
         options.push(json!({
             "action": "Review detail-page content and offer competitiveness",
@@ -2183,23 +2308,70 @@ fn options_for_metrics(metrics: &[NormalizedMetric]) -> Vec<Value> {
             "uncertainty": "high",
         }));
     }
+    if let Some(traffic) = metrics
+        .iter()
+        .find(|metric| metric.metric_name == "sessions" && metric.dimension_type == "catalog")
+    {
+        options.push(json!({
+            "action": "Review traffic-source and discoverability evidence for the same periods",
+            "expected_effect": "Helps distinguish a traffic shift from a conversion or reporting-coverage shift.",
+            "effort": "low",
+            "risks": ["Traffic correlation alone does not establish the cause."],
+            "evidence_refs": [format!("snapshot:{}:metric:{}", traffic.snapshot_id, traffic.id)],
+            "uncertainty": "medium",
+        }));
+    }
+    if let Some(buy_box) = metrics.iter().find(|metric| {
+        metric.metric_name == "buy_box_percentage" && metric.dimension_type == "catalog"
+    }) {
+        options.push(json!({
+            "action": "Review offer, fulfilment and availability history for the comparison periods",
+            "expected_effect": "May explain a Buy Box or conversion movement without changing Amazon automatically.",
+            "effort": "medium",
+            "risks": ["The Sales and Traffic report does not contain all offer-level causes."],
+            "evidence_refs": [format!("snapshot:{}:metric:{}", buy_box.snapshot_id, buy_box.id)],
+            "uncertainty": "high",
+        }));
+    }
     options.truncate(5);
     options
 }
 
-fn hypotheses_for_metrics(metrics: &[NormalizedMetric]) -> Vec<Value> {
-    metrics
+fn hypotheses_for_changes(changes: &[Value]) -> Vec<Value> {
+    changes
         .iter()
-        .filter(|metric| {
-            metric.metric_name == "stock_cover_days" && metric.value_numeric < Decimal::from(14)
+        .filter_map(|change| {
+            let metric = change.get("metric")?.as_str()?;
+            let hypothesis = match metric {
+                "ordered_product_sales" => {
+                    "Revenue may have moved with traffic, conversion, Buy Box, assortment, availability or report coverage."
+                }
+                "sessions" | "page_views" => {
+                    "Traffic acquisition, organic discoverability, seasonality or report coverage may have changed."
+                }
+                "conversion_rate" | "unit_session_percentage" => {
+                    "Offer competitiveness, listing quality, availability or traffic mix may have changed conversion."
+                }
+                "buy_box_percentage" => {
+                    "Offer competitiveness, fulfilment eligibility or availability may have affected Buy Box share."
+                }
+                "b2b_share"
+                | "b2b_revenue_share"
+                | "b2b_units_share"
+                | "b2b_ordered_product_sales"
+                | "b2b_units_ordered" => {
+                    "The mix of business-customer demand may have changed between periods."
+                }
+                _ => return None,
+            };
+            Some(json!({
+                "hypothesis": hypothesis,
+                "metric": metric,
+                "evidence_refs": change.get("evidence_refs").cloned().unwrap_or_else(|| json!([])),
+                "uncertainty": "high; Sales and Traffic reports do not establish causality.",
+            }))
         })
-        .map(|metric| {
-            json!({
-                "hypothesis": "Low reported stock cover could constrain future sales.",
-                "evidence_refs": [format!("snapshot:{}:metric:{}", metric.snapshot_id, metric.id)],
-                "uncertainty": "medium; inbound and non-Amazon stock are not included.",
-            })
-        })
+        .take(5)
         .collect()
 }
 
@@ -2215,6 +2387,17 @@ fn missing_data_for_metrics(metrics: &[NormalizedMetric]) -> Vec<&'static str> {
     if !names.contains(&"available_inventory") {
         missing.push("Inventory coverage is not present in this report type.");
     }
+    if !names.contains(&"buy_box_percentage") {
+        missing.push("Buy Box percentage is not present in the imported report.");
+    }
+    if !names.contains(&"b2b_share")
+        && !names.contains(&"b2b_revenue_share")
+        && !names.contains(&"b2b_units_share")
+        && !names.contains(&"b2b_ordered_product_sales")
+        && !names.contains(&"b2b_units_ordered")
+    {
+        missing.push("B2B sales or unit share is not present in the imported report.");
+    }
     missing
 }
 
@@ -2228,6 +2411,13 @@ pub fn pii_safe_analysis_export(result: &Value) -> Value {
         "sessions",
         "page_views",
         "conversion_rate",
+        "unit_session_percentage",
+        "buy_box_percentage",
+        "b2b_share",
+        "b2b_revenue_share",
+        "b2b_units_share",
+        "b2b_ordered_product_sales",
+        "b2b_units_ordered",
         "available_inventory",
         "units_shipped_t30",
         "stock_cover_days",
@@ -2245,8 +2435,33 @@ pub fn pii_safe_analysis_export(result: &Value) -> Value {
         .map(strip_pii)
         .collect::<Vec<_>>();
     let mut export = serde_json::Map::new();
+    if let Some(context) = result.get("context").and_then(Value::as_object) {
+        let allowed_context = [
+            "period_start",
+            "period_end",
+            "marketplace",
+            "report_type",
+            "granularity",
+            "parser_version",
+            "data_freshness",
+            "missing_fields",
+            "source_timezone",
+            "currency",
+        ];
+        export.insert(
+            "context".to_owned(),
+            Value::Object(
+                context
+                    .iter()
+                    .filter(|(key, _)| allowed_context.contains(&key.as_str()))
+                    .map(|(key, value)| (key.clone(), strip_pii(value)))
+                    .collect(),
+            ),
+        );
+    }
     export.insert("facts".to_owned(), Value::Array(facts));
     for field in [
+        "derived_observations",
         "changes_since_last_run",
         "overall_trend",
         "seasonality",
@@ -2255,6 +2470,8 @@ pub fn pii_safe_analysis_export(result: &Value) -> Value {
         "options",
         "uncertainty",
         "missing_data",
+        "missing_evidence",
+        "open_questions",
         "recommendation_notice",
         "analysis_engine",
     ] {

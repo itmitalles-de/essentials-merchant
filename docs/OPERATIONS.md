@@ -169,6 +169,103 @@ archive attestation, exact seller/region/marketplace approval, and a manual `--e
 automatic scheduler is used. Until those external facts are provided, the gate is `BLOCKED` and no
 fixture or local run may be described as Amazon staging.
 
+## Mantle Amazon live deployment
+
+The Mantle service uses Compose project `essentials-merchant-amazon` and
+`compose.mantle-amazon.yml`. Its service allowlist is exactly `db`, `backend`,
+and `frontend`. Backend and frontend image tags must equal the full deployed Git
+SHA; the PostgreSQL image is pinned by digest. The frontend binds only to
+`127.0.0.1:18090` by default and must be published through an existing Caddy
+route restricted to private/LAN/VPN source ranges.
+
+Before every deployment, capture without rendering environment values:
+
+- `docker compose ls`;
+- all container IDs, image IDs, creation times, status, and restart counts;
+- mounts belonging to the target project;
+- `df -h` and `docker system df`;
+- current images for the three target services;
+- the active Caddy route and its container/process ID;
+- other running build, pull, update, or deployment processes.
+
+Do not continue while another deployment is changing the target project. Never
+use `docker compose down -v`, `docker system prune`, a restart of all containers,
+or a blanket Caddy restart. Only `essentials-merchant-amazon` resources may be
+changed. Validate Caddy configuration first, then use its graceful reload
+mechanism; compare all non-target container IDs and restart counts afterwards.
+
+The private `.env.mantle-amazon` must have mode `0600` and a
+`MERCHANT_GIT_SHA` equal to the checked-out commit. It deliberately has no
+placeholder Amazon credential. Configuration validation is the default:
+
+```bash
+scripts/start-mantle-amazon.sh --check --env-file .env.mantle-amazon
+```
+
+An explicitly authorized deployment uses:
+
+```bash
+scripts/start-mantle-amazon.sh --start --env-file .env.mantle-amazon
+```
+
+The script builds only the allowlisted images, waits for health, checks the
+persisted module allowlist, and verifies that automatic Amazon schedules equal
+zero. It stops only the target application services if the profile fails closed.
+
+### Live backup
+
+Create a new host-restricted directory and run the pilot backup against the live
+Compose file:
+
+```bash
+COMPOSE_PROJECT_NAME=essentials-merchant-amazon \
+COMPOSE_ENV_FILE=.env.mantle-amazon \
+PILOT_COMPOSE_FILE=compose.mantle-amazon.yml \
+ops/backup-amazon-pilot.sh /secure/new/path/mantle-amazon-backup-YYYYMMDD
+```
+
+The backup briefly stops only this project's backend and frontend; PostgreSQL
+stays up. The trap restarts those two services even if backup validation fails.
+
+### Empty-target restore acceptance
+
+Use a never-before-used project name and an unused loopback port. The restore
+script refuses existing containers or volumes and never overwrites production:
+
+```bash
+COMPOSE_PROJECT_NAME=essentials-merchant-amazon-restore-YYYYMMDD \
+COMPOSE_ENV_FILE=.env.mantle-amazon \
+PILOT_COMPOSE_FILE=compose.mantle-amazon.yml \
+RESTORE_FRONTEND_PORT=18091 \
+ops/restore-amazon-pilot.sh /secure/path/mantle-amazon-backup-YYYYMMDD
+```
+
+Acceptance compares raw SHA-256, run/snapshot/metric/analysis counts, parser
+versions, module state, zero schedules, and HTTP readiness. Retain or remove the
+isolated restore project only under a separate, explicit data-destruction
+decision; the restore procedure itself does not delete volumes.
+
+### Synthetic live acceptance
+
+The first live data path uses two in-memory JSON comparison reports plus one
+CSV and one TSV probe, all marked as synthetic. It must verify the first import
+is idempotent, produce a comparison, and generate JSON, Markdown, and CSV
+exports without writing raw report bytes to disk. Record only hashes, run IDs,
+aggregate test values, export hashes, and the deployed Git/image IDs.
+
+Run `scripts/verify-manual-amazon-import.mjs` with the internal base URL and
+administrator credentials supplied only through its documented environment
+variables. The script imports the newer JSON period first, verifies an
+idempotent retry, creates the comparison after the older period, imports the
+CSV/TSV probes, hashes all three summary formats, and confirms that raw download
+and business mutations are blocked. It never writes report bytes or credentials
+to disk or stdout.
+
+An authorized real report may be imported once after this acceptance. Do not
+record its local path, raw bytes, ASIN/SKU values, or business metrics in Git or
+deployment logs. If authorization cannot be proven, stop after the synthetic
+run.
+
 ## External validation gates
 
 - Amazon: no approved seller credentials, roles, or marketplace participation were supplied; no

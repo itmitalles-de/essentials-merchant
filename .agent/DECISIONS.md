@@ -153,3 +153,19 @@ engineering.
 
 **Consequences:** Security documents distinguish installed, reachable-in-pilot, compensated, and
 remediated states. CI fails on new/critical audit drift and never runs automatic force-fixes.
+
+## 2026-08-20 — Reuse one Merchant analysis boundary for manual and SP-API acquisition
+
+**Decision:** Official manual Sales and Traffic JSON/CSV/TSV is the default acquisition path. It
+feeds the same immutable archive, normalized snapshot, deterministic comparison, and aggregate
+export boundary as optional SP-API acquisition. The Mantle wiki runtime/cache/report generator is
+not copied. Identical raw bytes are idempotent; different bytes for the same semantic period are a
+visible conflict rather than a second competing snapshot.
+
+**Reason:** Mantle needs useful analysis before external credentials exist, while duplicate
+implementations and ambiguous period revisions would weaken evidence and operations.
+
+**Consequences:** Operators explicitly confirm missing timezone/flat-file metadata, parser errors
+cannot leave partial data, and comparisons require equal marketplace, report, granularity, parser,
+period length, currency, and timezone. ZIP remains unsupported. SP-API is optional and retains the
+same exact read-only operation gate with no scheduler on first use.

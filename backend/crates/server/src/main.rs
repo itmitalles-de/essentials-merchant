@@ -3,6 +3,7 @@ mod bootstrap;
 mod config;
 mod datev;
 mod integration_auth;
+mod manual_import;
 mod marketplace;
 mod pdf_gen;
 mod pilot;

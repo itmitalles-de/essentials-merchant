@@ -66,7 +66,11 @@ fn pilot_request_allowed(method: &Method, path: &str) -> bool {
     }
     if matches!(
         path,
-        "/api/auth/login" | "/api/marketplace/connections" | "/api/marketplace/demo"
+        "/api/auth/login"
+            | "/api/marketplace/connections"
+            | "/api/marketplace/demo"
+            | "/api/marketplace/imports"
+            | "/api/marketplace/imports/preview"
     ) {
         return true;
     }
@@ -133,6 +137,8 @@ mod tests {
             "/api/marketplace/demo",
             "/api/marketplace/connections/id/runs",
             "/api/marketplace/connections/id/analyses",
+            "/api/marketplace/imports/preview",
+            "/api/marketplace/imports",
         ] {
             let response = app
                 .clone()

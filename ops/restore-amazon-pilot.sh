@@ -1,12 +1,18 @@
 #!/bin/sh
 set -eu
+umask 077
 
 repository_dir=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)
 project=${COMPOSE_PROJECT_NAME:?COMPOSE_PROJECT_NAME must identify a new isolated pilot stack}
 compose_env_file=${COMPOSE_ENV_FILE:-.env.amazon-pilot}
 backup_dir=${1:?usage: COMPOSE_PROJECT_NAME=new-name ops/restore-amazon-pilot.sh BACKUP_DIRECTORY}
 backup_dir=$(CDPATH='' cd -- "$backup_dir" && pwd)
-compose_file="$repository_dir/compose.amazon-pilot.yml"
+compose_file=${PILOT_COMPOSE_FILE:-$repository_dir/compose.amazon-pilot.yml}
+case "$compose_file" in /*) ;; *) compose_file="$repository_dir/$compose_file" ;; esac
+if [ -n "${RESTORE_FRONTEND_PORT:-}" ]; then
+  export PILOT_FRONTEND_PORT="$RESTORE_FRONTEND_PORT"
+  export MANTLE_AMAZON_FRONTEND_PORT="$RESTORE_FRONTEND_PORT"
+fi
 
 case "$project" in *[!A-Za-z0-9_-]*|'') echo "invalid COMPOSE_PROJECT_NAME" >&2; exit 2 ;; esac
 compose() {

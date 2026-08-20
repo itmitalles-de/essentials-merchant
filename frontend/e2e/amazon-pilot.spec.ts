@@ -1,6 +1,35 @@
 import AxeBuilder from "@axe-core/playwright";
 import { expect, test } from "@playwright/test";
 
+const uiMarketplace = "SYNTHETIC-UI-MARKETPLACE";
+
+function syntheticManualReport(date: string, revenue: number, units: number, sessions: number) {
+  return Buffer.from(JSON.stringify({
+    syntheticTestData: true,
+    reportSpecification: {
+      reportType: "GET_SALES_AND_TRAFFIC_REPORT",
+      reportOptions: { dateGranularity: "DAY", asinGranularity: "CHILD" },
+      dataStartTime: date,
+      dataEndTime: date,
+      marketplaceIds: [uiMarketplace],
+    },
+    salesAndTrafficByDate: [{
+      date,
+      salesByDate: {
+        orderedProductSales: { amount: revenue.toFixed(2), currencyCode: "EUR" },
+        unitsOrdered: units,
+      },
+      trafficByDate: {
+        sessions,
+        pageViews: sessions * 2,
+        unitSessionPercentage: (units / sessions) * 100,
+        buyBoxPercentage: 90,
+      },
+    }],
+    salesAndTrafficByAsin: [],
+  }));
+}
+
 test("administrator completes the synthetic read-only Amazon pilot flow", async ({ page }) => {
   await page.goto("/login");
   await page.getByLabel("Language").selectOption("de");
@@ -38,6 +67,48 @@ test("administrator completes the synthetic read-only Amazon pilot flow", async 
   const download = page.waitForEvent("download");
   await page.getByRole("button", { name: "PII-minimierten Analyseexport laden" }).first().click();
   expect((await download).suggestedFilename()).toMatch(/^marketplace-analysis-.*\.json$/);
+
+  const upload = async (name: string, bytes: Buffer) => {
+    await page.getByLabel("Offizieller Amazon-Report").setInputFiles({
+      name,
+      mimeType: "application/json",
+      buffer: bytes,
+    });
+    await page.getByLabel("Report-Zeitzone").fill("Europe/Berlin");
+    await page.getByRole("button", { name: "Importvorschau erstellen" }).click();
+    await expect(page.getByRole("heading", { name: "Geprüfte Importvorschau" })).toBeVisible();
+    await expect(page.getByText(uiMarketplace, { exact: true }).first()).toBeVisible();
+    await page.getByLabel(/Hash, Reporttyp, Marketplace/).check();
+    await page.getByRole("button", { name: "Bestätigten Import ausführen" }).click();
+    await expect(page.locator(".marketplace-callout.success")).toBeVisible();
+  };
+
+  // Newer first proves that the complete operator flow compares report periods,
+  // not upload order. The synthetic bytes are supplied from memory only.
+  await upload(
+    "SYNTHETIC-ui-newer.json",
+    syntheticManualReport("2026-05-08", 20, 2, 20),
+  );
+  await page.getByRole("button", { name: "Zweiten Zeitraum hinzufügen" }).click();
+  await upload(
+    "SYNTHETIC-ui-older.json",
+    syntheticManualReport("2026-05-01", 10, 1, 20),
+  );
+  await expect(page.locator(".marketplace-callout.success")).toContainText("Vergleichsanalyse");
+
+  const manualAnalysis = page.locator(".analysis-card").filter({ hasText: uiMarketplace }).first();
+  for (const heading of ["Fakten", "Belastbare Ableitungen", "Hypothesen", "Offene Fragen"]) {
+    await expect(manualAnalysis.getByRole("heading", { name: heading })).toBeVisible();
+  }
+  for (const [label, extension] of [
+    ["PII-minimierten Analyseexport laden", "json"],
+    ["Markdown exportieren", "md"],
+    ["CSV exportieren", "csv"],
+  ] as const) {
+    const exportDownload = page.waitForEvent("download");
+    await manualAnalysis.getByRole("button", { name: label }).click();
+    expect((await exportDownload).suggestedFilename()).toMatch(new RegExp(`\\.${extension}$`));
+  }
 
   const statuses = await page.evaluate(async () => {
     const requests: Array<[string, string]> = [

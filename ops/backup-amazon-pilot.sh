@@ -1,11 +1,13 @@
 #!/bin/sh
 set -eu
+umask 077
 
 repository_dir=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)
 project=${COMPOSE_PROJECT_NAME:?COMPOSE_PROJECT_NAME must identify the exact running pilot stack}
 compose_env_file=${COMPOSE_ENV_FILE:-.env.amazon-pilot}
 output_dir=${1:?usage: COMPOSE_PROJECT_NAME=name ops/backup-amazon-pilot.sh OUTPUT_DIRECTORY}
-compose_file="$repository_dir/compose.amazon-pilot.yml"
+compose_file=${PILOT_COMPOSE_FILE:-$repository_dir/compose.amazon-pilot.yml}
+case "$compose_file" in /*) ;; *) compose_file="$repository_dir/$compose_file" ;; esac
 
 case "$project" in *[!A-Za-z0-9_-]*|'') echo "invalid COMPOSE_PROJECT_NAME" >&2; exit 2 ;; esac
 if [ -e "$output_dir" ]; then echo "backup target already exists: $output_dir" >&2; exit 2; fi
@@ -56,7 +58,7 @@ schema_version=$(compose exec -T db psql -U erplite -d erplite -X -qAt -v ON_ERR
   -c 'SELECT COALESCE(max(version), 0) FROM _sqlx_migrations')
 compose exec -T db psql -U erplite -d erplite -X -qAt -v ON_ERROR_STOP=1 -c \
   "SELECT jsonb_pretty(jsonb_build_object(
-     'declared', ARRAY['sales-traffic-json-v2', 'inventory-planning-tsv-v1'],
+     'declared', ARRAY['sales-traffic-json-v2', 'manual-sales-traffic-v1', 'inventory-planning-tsv-v1'],
      'stored', COALESCE((SELECT jsonb_agg(version ORDER BY version)
                          FROM (SELECT DISTINCT parser_version AS version
                                FROM amazon_report_documents WHERE parser_version IS NOT NULL) versions), '[]'::jsonb)
@@ -66,7 +68,7 @@ docker run --rm \
   -v "${project}_erplite_invoices:/source:ro" \
   -v "$output_dir/data:/backup" \
   postgres:16-alpine@sha256:cf78e76683b9ca8c5733cbbdce6c9262b45b6767934dd0a95e671f9a0fc20685 \
-  sh -c 'if [ -d /source/amazon-pilot ]; then tar -C /source -czf /backup/pilot-documents.tar.gz amazon-pilot; else tar -C /tmp -czf /backup/pilot-documents.tar.gz --files-from /dev/null; fi'
+  sh -c 'if [ -d /source/amazon-pilot ]; then tar -C /source -czf /backup/pilot-documents.tar.gz amazon-pilot; else mkdir -p /tmp/empty && tar -C /tmp/empty -czf /backup/pilot-documents.tar.gz .; fi'
 
 compose config --format json | node "$repository_dir/ops/redact-compose.mjs" \
   >"$output_dir/data/compose-metadata.json"

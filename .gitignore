@@ -1,6 +1,7 @@
 # env / secrets
 .env
 .env.amazon-pilot
+.env.mantle-amazon
 .amazon-staging-gate.json
 .amazon-staging-result.json
 

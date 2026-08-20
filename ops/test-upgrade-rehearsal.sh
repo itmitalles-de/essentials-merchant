@@ -106,7 +106,7 @@ BEGIN
             WHERE raw_content = decoded_content AND sha256 = decoded_sha256) <> 1 THEN
         RAISE EXCEPTION 'marketplace raw archive was not migrated losslessly';
     END IF;
-    IF (SELECT max(version) FROM _sqlx_migrations) <> 15 THEN
+    IF (SELECT max(version) FROM _sqlx_migrations) <> 16 THEN
         RAISE EXCEPTION 'unexpected final migration version';
     END IF;
 END $$;

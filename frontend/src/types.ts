@@ -390,11 +390,60 @@ export interface AmazonReportRun {
   updated_at: string;
 }
 
+export interface MarketplaceImportMetric {
+  metric_name: string;
+  dimension_type: string;
+  dimension_key: string;
+  value_numeric: string | number;
+  unit: string;
+  currency_code: string | null;
+}
+
+export interface MarketplaceImportPreview {
+  sha256: string;
+  raw_bytes: number;
+  detected_format: string;
+  report_type: string;
+  parser_version: string;
+  marketplace_id: string;
+  period_start: string;
+  period_end: string;
+  granularity: string;
+  timezone: string;
+  currency_code: string;
+  data_freshness: string | null;
+  confirmation_required: boolean;
+  operator_confirmed: string[];
+  metadata_provenance: Record<string, "report" | "operator_confirmed" | "missing">;
+  missing_fields: string[];
+  warnings: string[];
+  metrics: MarketplaceImportMetric[];
+}
+
+export interface MarketplaceImportResult {
+  outcome: "imported" | "already_imported";
+  run_id: string;
+  analysis_id: string | null;
+  comparison_generated: boolean;
+  preview: MarketplaceImportPreview;
+}
+
+export interface MarketplaceAnalysisSummary {
+  id: string;
+  job_id: string;
+  strategy: string;
+  model_name: string | null;
+  prompt_version: string;
+  payload_sha256: string;
+  result: Record<string, unknown>;
+  created_at: string;
+}
+
 export interface MarketplaceOverview {
   connections: AmazonConnectionSummary[];
   schedules: AmazonReportSchedule[];
   recent_runs: AmazonReportRun[];
-  analyses: Array<{ id: string; job_id: string; strategy: string; model_name: string | null; prompt_version: string; payload_sha256: string; result: Record<string, unknown>; created_at: string }>;
+  analyses: MarketplaceAnalysisSummary[];
   report_types: AmazonReportDefinition[];
 }
 

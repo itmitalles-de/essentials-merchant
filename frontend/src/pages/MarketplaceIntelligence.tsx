@@ -1,49 +1,135 @@
 import { useEffect, useMemo, useState } from "react";
-import { api, downloadMarketplaceAnalysis, downloadMarketplaceRawReport } from "../api";
+import type { FormEvent } from "react";
+import {
+  api,
+  downloadMarketplaceAnalysis,
+  downloadMarketplaceRawReport,
+} from "../api";
 import { useAuth } from "../contexts/AuthContext";
+import { usePilotStatus } from "../hooks/usePilotStatus";
 import type {
   AmazonConnectionSummary,
   AmazonReportRun,
+  MarketplaceImportPreview,
+  MarketplaceImportResult,
   MarketplaceOverview,
   MarketplaceRunDetail,
 } from "../types";
-import { usePilotStatus } from "../hooks/usePilotStatus";
 
 const salesReport = "GET_SALES_AND_TRAFFIC_REPORT";
-const inventoryReport = "GET_FBA_INVENTORY_PLANNING_DATA";
+const terminalRunStatuses = ["succeeded", "archived", "cancelled", "fatal", "failed"];
 
-const formatDate = (value: string | null) => (value ? new Intl.DateTimeFormat("de-DE", { dateStyle: "medium", timeStyle: "short" }).format(new Date(value)) : "–");
+interface ImportConfirmation {
+  marketplaceId: string;
+  currencyCode: string;
+  periodStart: string;
+  periodEnd: string;
+  granularity: string;
+  reportType: string;
+}
+
+const browserTimezone = () => {
+  try {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+  } catch {
+    return "UTC";
+  }
+};
+
+const formatDate = (value: string | null) => {
+  if (!value) return "–";
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime())
+    ? value
+    : new Intl.DateTimeFormat("de-DE", {
+      dateStyle: "medium",
+      timeStyle: "short",
+    }).format(parsed);
+};
+
+const dateInputValue = (value: string) => value.slice(0, 10);
+
+function importPath(
+  endpoint: "/marketplace/imports/preview" | "/marketplace/imports",
+  file: File,
+  timezone: string,
+  confirmation?: ImportConfirmation & { hash: string },
+) {
+  const parameters = new URLSearchParams({ filename: file.name, timezone });
+  if (confirmation) {
+    parameters.set("confirm_hash", confirmation.hash);
+    parameters.set("confirm_marketplace_id", confirmation.marketplaceId);
+    parameters.set("confirm_currency_code", confirmation.currencyCode);
+    parameters.set("confirm_period_start", confirmation.periodStart);
+    parameters.set("confirm_period_end", confirmation.periodEnd);
+    parameters.set("confirm_granularity", confirmation.granularity);
+    parameters.set("confirm_report_type", confirmation.reportType);
+  }
+  return `${endpoint}?${parameters.toString()}`;
+}
 
 export function MarketplaceIntelligence() {
   const { role } = useAuth();
+  const pilot = usePilotStatus();
   const [overview, setOverview] = useState<MarketplaceOverview | null>(null);
   const [selected, setSelected] = useState<MarketplaceRunDetail | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-  const pilot = usePilotStatus();
+  const [previewing, setPreviewing] = useState(false);
+  const [importing, setImporting] = useState(false);
+  const [file, setFile] = useState<File | null>(null);
+  const [fileInputKey, setFileInputKey] = useState(0);
+  const [timezone, setTimezone] = useState(browserTimezone);
+  const [preview, setPreview] = useState<MarketplaceImportPreview | null>(null);
+  const [confirmation, setConfirmation] = useState<ImportConfirmation | null>(null);
+  const [confirmed, setConfirmed] = useState(false);
+  const [importResult, setImportResult] = useState<MarketplaceImportResult | null>(null);
+  const [sessionImports, setSessionImports] = useState<MarketplaceImportResult[]>([]);
 
   const reload = async () => {
     try {
       setOverview(await api.get<MarketplaceOverview>("/marketplace"));
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Marketplace-Daten konnten nicht geladen werden.");
+      setMessage(
+        error instanceof Error
+          ? error.message
+          : "Marketplace-Daten konnten nicht geladen werden.",
+      );
     }
   };
-  useEffect(() => { void reload(); }, []);
+
   useEffect(() => {
-    if (!selected || ["succeeded", "archived", "cancelled", "fatal", "failed"].includes(selected.run.status)) return;
+    void reload();
+  }, []);
+
+  useEffect(() => {
+    if (!selected || terminalRunStatuses.includes(selected.run.status)) return;
     const timer = window.setInterval(() => {
-      api.get<MarketplaceRunDetail>(`/marketplace/runs/${selected.run.id}`).then(setSelected).catch(() => undefined);
+      api
+        .get<MarketplaceRunDetail>(`/marketplace/runs/${selected.run.id}`)
+        .then(setSelected)
+        .catch(() => undefined);
     }, 1000);
     return () => window.clearInterval(timer);
   }, [selected]);
 
   const connection = overview?.connections[0] ?? null;
-  const marketplaceId = connection?.marketplace_ids[0] ?? "A1PA6795UKMFR9";
+  const marketplaceId = connection?.marketplace_ids[0] ?? null;
   const reports = useMemo(
-    () => (overview?.report_types ?? []).filter((report) => !pilot?.enabled || report.report_type === salesReport),
-    [overview, pilot?.enabled],
+    () => (overview?.report_types ?? []).filter((report) => report.report_type === salesReport),
+    [overview],
   );
+  const analyses = useMemo(
+    () => [...(overview?.analyses ?? [])].sort((left, right) =>
+      right.created_at.localeCompare(left.created_at)),
+    [overview],
+  );
+  const immutableJsonMetadata = preview?.detected_format.toLowerCase().includes("json") ?? false;
+  const latestSuccessful = overview?.recent_runs.find((run) => run.status === "succeeded");
+  const realSpApiReady = Boolean(
+    connection?.mode === "live" && connection.credential_configured && marketplaceId,
+  );
+  const syntheticSpApiTestReady = Boolean(connection?.mode === "fixture" && marketplaceId);
 
   const setupDemo = async () => {
     setLoading(true);
@@ -59,8 +145,80 @@ export function MarketplaceIntelligence() {
     }
   };
 
-  const requestReport = async (reportType: string) => {
-    if (!connection) return;
+  const previewReport = async (event: FormEvent) => {
+    event.preventDefault();
+    if (!file) return;
+    setPreviewing(true);
+    setMessage(null);
+    setImportResult(null);
+    try {
+      const result = await api.postRaw<MarketplaceImportPreview>(
+        importPath("/marketplace/imports/preview", file, timezone),
+        file,
+      );
+      setPreview(result);
+      setConfirmation({
+        marketplaceId: result.marketplace_id,
+        currencyCode: result.currency_code,
+        periodStart: dateInputValue(result.period_start),
+        periodEnd: dateInputValue(result.period_end),
+        granularity: result.granularity,
+        reportType: result.report_type,
+      });
+      setConfirmed(false);
+      setMessage("Vorschau erstellt. Die Rohdatei wurde noch nicht importiert.");
+    } catch (error) {
+      setPreview(null);
+      setConfirmation(null);
+      setMessage(error instanceof Error ? error.message : "Reportvorschau konnte nicht erstellt werden.");
+    } finally {
+      setPreviewing(false);
+    }
+  };
+
+  const executeImport = async (event: FormEvent) => {
+    event.preventDefault();
+    if (!file || !preview || !confirmation || !confirmed) return;
+    setImporting(true);
+    setMessage(null);
+    try {
+      const result = await api.postRaw<MarketplaceImportResult>(
+        importPath("/marketplace/imports", file, timezone, {
+          ...confirmation,
+          hash: preview.sha256,
+        }),
+        file,
+      );
+      setImportResult(result);
+      setSessionImports((current) =>
+        current.some((item) => item.run_id === result.run_id) ? current : [...current, result]);
+      setMessage(
+        result.outcome === "already_imported"
+          ? "Dieser unveränderte Report war bereits importiert. Es wurden keine Daten dupliziert."
+          : result.comparison_generated
+            ? "Import abgeschlossen und kompatibler Periodenvergleich erzeugt."
+            : "Import abgeschlossen. Für einen Vergleich fehlt noch ein kompatibler zweiter Zeitraum.",
+      );
+      await reload();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Report konnte nicht importiert werden.");
+    } finally {
+      setImporting(false);
+    }
+  };
+
+  const beginNextPeriod = () => {
+    setFile(null);
+    setPreview(null);
+    setConfirmation(null);
+    setConfirmed(false);
+    setImportResult(null);
+    setFileInputKey((value) => value + 1);
+    setMessage("Nächsten kompatiblen Zeitraum auswählen.");
+  };
+
+  const requestReport = async () => {
+    if (!connection || !marketplaceId) return;
     setLoading(true);
     setMessage(null);
     try {
@@ -70,14 +228,21 @@ export function MarketplaceIntelligence() {
       start.setUTCHours(0, 0, 0, 0);
       const end = new Date(start);
       end.setUTCHours(23, 59, 59, 0);
-      const run = await api.post<AmazonReportRun>(`/marketplace/connections/${connection.id}/runs`, {
-        marketplace_id: marketplaceId,
-        report_type: reportType,
-        data_start_time: start.toISOString(),
-        data_end_time: end.toISOString(),
-        report_options: reportType === salesReport ? { dateGranularity: "DAY", asinGranularity: "CHILD" } : {},
-      });
-      setMessage(`Abruf ${run.status === "polling" ? "bei Amazon angefordert" : "eingeplant"}.`);
+      const run = await api.post<AmazonReportRun>(
+        `/marketplace/connections/${connection.id}/runs`,
+        {
+          marketplace_id: marketplaceId,
+          report_type: salesReport,
+          data_start_time: start.toISOString(),
+          data_end_time: end.toISOString(),
+          report_options: { dateGranularity: "DAY", asinGranularity: "CHILD" },
+        },
+      );
+      setMessage(
+        connection.mode === "fixture"
+          ? "Synthetischer read-only Techniktest gestartet."
+          : `Abruf ${run.status === "polling" ? "bei Amazon angefordert" : "eingeplant"}.`,
+      );
       await openRun(run.id);
       await reload();
     } catch (error) {
@@ -87,161 +252,673 @@ export function MarketplaceIntelligence() {
     }
   };
 
-  const configureSchedule = async () => {
-    if (!connection) return;
-    setLoading(true);
-    try {
-      await api.put(`/marketplace/connections/${connection.id}/schedules`, {
-        marketplace_id: marketplaceId,
-        report_type: salesReport,
-        report_options: { dateGranularity: "DAY", asinGranularity: "CHILD" },
-        interval_seconds: 86400,
-        enabled: true,
-      });
-      setMessage("Täglicher Sales-&-Traffic-Abruf aktiviert.");
-      await reload();
-    } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Zeitplan konnte nicht gespeichert werden.");
-    } finally {
-      setLoading(false);
-    }
-  };
-
   const openRun = async (runId: string) => {
     setSelected(await api.get<MarketplaceRunDetail>(`/marketplace/runs/${runId}`));
   };
 
-  const runTotalAnalysis = async () => {
-    if (!connection) return;
-    setLoading(true);
-    try {
-      const end = new Date();
-      const start = new Date(end);
-      start.setDate(start.getDate() - 30);
-      await api.post(`/marketplace/connections/${connection.id}/analyses`, {
-        marketplace_id: marketplaceId,
-        report_type: salesReport,
-        period_start: start.toISOString(),
-        period_end: end.toISOString(),
-      });
-      setMessage("Gesamtanalyse wurde eingeplant.");
-      await reload();
-    } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Gesamtanalyse konnte nicht erstellt werden.");
-    } finally {
-      setLoading(false);
-    }
+  const updateConfirmation = (field: keyof ImportConfirmation, value: string) => {
+    setConfirmation((current) => current ? { ...current, [field]: value } : current);
+    setConfirmed(false);
   };
 
-  const latestSuccessful = overview?.recent_runs.find((run) => run.status === "succeeded");
   return (
-    <div style={{ display: "grid", gap: "1rem", maxWidth: 1200 }}>
+    <div className="marketplace-flow">
       <section className="card">
         <h1>Amazon Intelligence</h1>
-        <p>Read-only Amazon-SP-API-Reports, nachvollziehbare Kennzahlen und Empfehlungen. KI-Ausgaben sind Hinweise, keine automatischen Änderungen an Amazon.</p>
-        {message && <p style={{ color: "var(--fg-muted)" }}>{message}</p>}
-        {!connection && role === "administrator" && (
-          <button onClick={setupDemo} disabled={loading}>Synthetische Demo einrichten</button>
-        )}
-        {!connection && role !== "administrator" && <p>Für dieses optionale Modul ist noch keine berechtigte Verbindung aktiv.</p>}
-        {connection && <ConnectionCard connection={connection} marketplaceId={marketplaceId} />}
+        <p>
+          Internes read-only Analysewerkzeug für offizielle Amazon-Reports. Uploads erzeugen
+          nachvollziehbare Kennzahlen und Empfehlungen, aber keine Preis-, Ads-, Listing-,
+          Bestands- oder Bestelländerung.
+        </p>
+        {message && <p className="marketplace-status" role="status">{message}</p>}
       </section>
 
-      {connection && (
-        <section className="card">
-          <h2>Manueller Read-only-Abruf</h2>
-          <div style={{ display: "flex", flexWrap: "wrap", gap: "0.75rem", alignItems: "center" }}>
-            <button onClick={() => requestReport(salesReport)} disabled={loading}>Sales &amp; Traffic jetzt abrufen</button>
-            {!pilot?.enabled && <button className="secondary" onClick={() => requestReport(inventoryReport)} disabled={loading}>FBA Inventory Planning abrufen</button>}
-            {!pilot?.enabled && role === "administrator" && <button className="secondary" onClick={configureSchedule} disabled={loading}>Täglichen Sales-Zeitplan aktivieren</button>}
-            <button className="secondary" onClick={runTotalAnalysis} disabled={loading}>30-Tage-Gesamtanalyse</button>
+      <section className="card" aria-labelledby="manual-import-heading">
+        <h2 id="manual-import-heading">Manueller Sales-&amp;-Traffic-Import</h2>
+        <ol className="marketplace-steps" aria-label="Importablauf">
+          <li>Datei hochladen</li>
+          <li>Metadaten bestätigen</li>
+          <li>Import ausführen</li>
+          <li>Analyse vergleichen</li>
+        </ol>
+
+        <form onSubmit={previewReport} className="marketplace-form-grid">
+          <label htmlFor="amazon-report-file">
+            Offizieller Amazon-Report
+            <input
+              key={fileInputKey}
+              id="amazon-report-file"
+              type="file"
+              required
+              accept=".json,.csv,.tsv,application/json,text/csv,text/tab-separated-values"
+              onChange={(event) => {
+                setFile(event.target.files?.[0] ?? null);
+                setPreview(null);
+                setConfirmation(null);
+                setConfirmed(false);
+                setImportResult(null);
+              }}
+            />
+          </label>
+          <label htmlFor="amazon-report-timezone">
+            Report-Zeitzone
+            <input
+              id="amazon-report-timezone"
+              required
+              value={timezone}
+              disabled={Boolean(preview)}
+              onChange={(event) => setTimezone(event.target.value)}
+              placeholder="Europe/Berlin"
+            />
+          </label>
+          <div className="marketplace-form-action">
+            <button type="submit" disabled={!file || !timezone || previewing || importing}>
+              {previewing ? "Report wird geprüft …" : "Importvorschau erstellen"}
+            </button>
           </div>
-          <p style={{ color: "var(--fg-muted)", marginBottom: 0 }}>
-            Datenfrische: letzter erfolgreicher Report {formatDate(latestSuccessful?.completed_at ?? null)}.
-            {overview?.schedules.some((schedule) => schedule.enabled) ? " Ein Zeitplan ist aktiv." : " Kein Zeitplan aktiv."} {pilot?.enabled ? "Der Pilot erlaubt ausschließlich manuelle Abrufe." : ""}
-          </p>
-          <details style={{ marginTop: "0.75rem" }}>
-            <summary>Report-Registry und Berechtigungen</summary>
+        </form>
+        <p className="marketplace-muted">
+          Die Vorschau prüft Dateityp, Größe und Schema serverseitig. Rohdaten werden hier nicht
+          angezeigt und nicht in Zusammenfassungsexporte übernommen.
+        </p>
+
+        {preview && confirmation && (
+          <>
+            <div className="marketplace-preview-header">
+              <h3>Geprüfte Importvorschau</h3>
+              <span className="badge">{preview.detected_format}</span>
+            </div>
+            <dl className="marketplace-meta-grid">
+              <div><dt>SHA-256</dt><dd><code className="marketplace-hash">{preview.sha256}</code></dd></div>
+              <div><dt>Reporttyp</dt><dd><code>{preview.report_type}</code></dd></div>
+              <div><dt>Parser-Version</dt><dd>{preview.parser_version}</dd></div>
+              <div><dt>Marketplace</dt><dd>{preview.marketplace_id || "zu bestätigen"}</dd></div>
+              <div><dt>Zeitraum</dt><dd>{preview.period_start || "–"} – {preview.period_end || "–"}</dd></div>
+              <div><dt>Granularität</dt><dd>{preview.granularity || "–"}</dd></div>
+              <div><dt>Währung</dt><dd>{preview.currency_code || "–"}</dd></div>
+              <div><dt>Zeitzone</dt><dd>{preview.timezone}</dd></div>
+              <div><dt>Datenfrische</dt><dd>{preview.data_freshness || "nicht bestimmbar"}</dd></div>
+            </dl>
+
+            {preview.warnings.length > 0 && (
+              <div className="marketplace-callout warning">
+                <strong>Parserwarnungen</strong>
+                <ul>{preview.warnings.map((warning) => <li key={warning}>{warning}</li>)}</ul>
+              </div>
+            )}
+            {preview.missing_fields.length > 0 && (
+              <div className="marketplace-callout">
+                <strong>Fehlende Felder</strong>
+                <ul>{preview.missing_fields.map((field) => <li key={field}>{field}</li>)}</ul>
+              </div>
+            )}
+
+            <form onSubmit={executeImport} className="marketplace-confirmation">
+              <fieldset disabled={importing || Boolean(importResult)}>
+                <legend>Zeitraum und Dimensionen bestätigen</legend>
+                <div className="marketplace-form-grid">
+                  <label htmlFor="confirm-marketplace">
+                    Marketplace
+                    <input
+                      id="confirm-marketplace"
+                      required
+                      readOnly={immutableJsonMetadata && Boolean(preview.marketplace_id)}
+                      value={confirmation.marketplaceId}
+                      onChange={(event) => updateConfirmation("marketplaceId", event.target.value)}
+                    />
+                  </label>
+                  <label htmlFor="confirm-currency">
+                    Währung
+                    <input
+                      id="confirm-currency"
+                      required
+                      readOnly={immutableJsonMetadata && Boolean(preview.currency_code)}
+                      value={confirmation.currencyCode}
+                      onChange={(event) => updateConfirmation("currencyCode", event.target.value.toUpperCase())}
+                      autoComplete="off"
+                    />
+                  </label>
+                  <label htmlFor="confirm-granularity">
+                    Granularität
+                    <input
+                      id="confirm-granularity"
+                      required
+                      readOnly
+                      value={confirmation.granularity}
+                      onChange={(event) => updateConfirmation("granularity", event.target.value)}
+                    />
+                  </label>
+                  <label htmlFor="confirm-period-start">
+                    Zeitraum von
+                    <input
+                      id="confirm-period-start"
+                      type="date"
+                      required
+                      readOnly={immutableJsonMetadata}
+                      value={confirmation.periodStart}
+                      onChange={(event) => updateConfirmation("periodStart", event.target.value)}
+                    />
+                  </label>
+                  <label htmlFor="confirm-period-end">
+                    Zeitraum bis
+                    <input
+                      id="confirm-period-end"
+                      type="date"
+                      required
+                      readOnly={immutableJsonMetadata}
+                      min={confirmation.periodStart}
+                      value={confirmation.periodEnd}
+                      onChange={(event) => updateConfirmation("periodEnd", event.target.value)}
+                    />
+                  </label>
+                  <label htmlFor="confirm-report-type">
+                    Bestätigter Reporttyp
+                    <input id="confirm-report-type" readOnly value={confirmation.reportType} />
+                  </label>
+                </div>
+                {immutableJsonMetadata && (
+                  <p className="marketplace-muted">
+                    Im JSON enthaltene Marketplace- und Währungsmetadaten werden unverändert
+                    bestätigt. Fehlende CSV-/TSV-Metadaten können hier ergänzt werden.
+                  </p>
+                )}
+                <label className="marketplace-checkbox" htmlFor="confirm-import">
+                  <input
+                    id="confirm-import"
+                    type="checkbox"
+                    checked={confirmed}
+                    onChange={(event) => setConfirmed(event.target.checked)}
+                  />
+                  Hash, Reporttyp, Marketplace, Währung, Zeitraum und Granularität sind geprüft.
+                </label>
+                <div className="marketplace-actions">
+                  <button type="submit" disabled={!confirmed || importing}>
+                    {importing ? "Import läuft …" : "Bestätigten Import ausführen"}
+                  </button>
+                </div>
+              </fieldset>
+            </form>
+
+            <div className="table-scroll">
+              <table>
+                <caption>Normalisierte Kennzahlen der Vorschau</caption>
+                <thead>
+                  <tr><th>Kennzahl</th><th>Dimension</th><th>Wert</th></tr>
+                </thead>
+                <tbody>
+                  {preview.metrics.map((metric, index) => (
+                    <tr key={`${metric.metric_name}-${metric.dimension_type}-${metric.dimension_key}-${index}`}>
+                      <td>{metric.metric_name}</td>
+                      <td>{metric.dimension_type} {metric.dimension_key}</td>
+                      <td>{metric.value_numeric} {metric.unit} {metric.currency_code ?? ""}</td>
+                    </tr>
+                  ))}
+                  {preview.metrics.length === 0 && (
+                    <tr><td colSpan={3}>Keine normalisierten Kennzahlen in der Vorschau.</td></tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+
+            {importResult && (
+              <div className="marketplace-callout success" role="status">
+                <strong>
+                  {importResult.outcome === "imported" ? "Import abgeschlossen" : "Bereits importiert"}
+                </strong>
+                <p>
+                  Lauf <code>{importResult.run_id}</code>. {importResult.comparison_generated && importResult.analysis_id
+                    ? <>Vergleichsanalyse <code>{importResult.analysis_id}</code> wurde erzeugt.</>
+                    : "Dieser Zeitraum bildet die Vergleichsbasis."}
+                </p>
+                <button type="button" className="secondary" onClick={beginNextPeriod}>
+                  Zweiten Zeitraum hinzufügen
+                </button>
+              </div>
+            )}
+          </>
+        )}
+
+        {sessionImports.length > 0 && (
+          <details className="marketplace-session-imports">
+            <summary>Importe in dieser Sitzung ({sessionImports.length})</summary>
             <ul>
-              {reports.map((report) => <li key={report.report_type}><code>{report.report_type}</code> · {report.format} · Rollen: {report.required_roles.join(", ")} · {report.analysis_capable ? "analysierbar" : "nur Roharchiv"}</li>)}
+              {sessionImports.map((item) => (
+                <li key={item.run_id}>
+                  {item.preview.period_start} – {item.preview.period_end} · {item.preview.marketplace_id}
+                  {" · "}{item.outcome === "imported" ? "importiert" : "bereits vorhanden"}
+                </li>
+              ))}
             </ul>
           </details>
-        </section>
-      )}
+        )}
+      </section>
+
+      <section aria-labelledby="analysis-heading">
+        <div className="marketplace-section-heading">
+          <div>
+            <h2 id="analysis-heading">Analyse und Periodenvergleich</h2>
+            <p className="marketplace-muted">
+              Vergleiche entstehen nur aus kompatiblen importierten Zeiträumen.
+            </p>
+          </div>
+          <button type="button" className="secondary" onClick={() => void reload()}>
+            Analysen aktualisieren
+          </button>
+        </div>
+        {analyses.length === 0 && (
+          <div className="card">Noch keine Vergleichsanalyse. Importiere zwei kompatible Zeiträume.</div>
+        )}
+        {analyses.map((analysis) => (
+          <AnalysisCard
+            key={analysis.id}
+            id={analysis.id}
+            result={analysis.result}
+            title={`Periodenvergleich · ${formatDate(analysis.created_at)}`}
+          />
+        ))}
+      </section>
+
+      <section className="card" aria-labelledby="sp-api-heading">
+        <h2 id="sp-api-heading">Optionaler SP-API-Abruf</h2>
+        {!realSpApiReady && (
+          <div className="marketplace-callout warning">
+            <strong>Externes Amazon-Gate</strong>
+            <p>
+              Keine ausdrücklich freigegebenen Live-Credentials sind verifiziert. Der manuelle
+              Upload oben bleibt vollständig nutzbar; es werden keine Ersatz-Credentials erzeugt.
+            </p>
+          </div>
+        )}
+        {!connection && role === "administrator" && (
+          <button type="button" className="secondary" onClick={setupDemo} disabled={loading}>
+            Synthetische Demo einrichten
+          </button>
+        )}
+        {!connection && role !== "administrator" && (
+          <p>Für dieses optionale Modul ist noch keine berechtigte Verbindung aktiv.</p>
+        )}
+        {connection && <ConnectionCard connection={connection} marketplaceId={marketplaceId} />}
+        {(realSpApiReady || syntheticSpApiTestReady) && (
+          <div className="marketplace-actions">
+            <button type="button" onClick={requestReport} disabled={loading}>
+              Sales &amp; Traffic jetzt abrufen
+            </button>
+          </div>
+        )}
+        <p className="marketplace-muted">
+          Ausschließlich ein einmaliger Sales-&amp;-Traffic-Abruf. Kein Scheduler, keine Buyer-/Order-PII
+          und keine Amazon-Mutation. Letzter erfolgreicher Lauf: {formatDate(latestSuccessful?.completed_at ?? null)}.
+        </p>
+        {reports.length > 0 && (
+          <details>
+            <summary>Report-Registry und Berechtigungen</summary>
+            <ul>
+              {reports.map((report) => (
+                <li key={report.report_type}>
+                  <code>{report.report_type}</code> · {report.format} · Rollen: {report.required_roles.join(", ")}
+                </li>
+              ))}
+            </ul>
+          </details>
+        )}
+      </section>
 
       <section className="card">
         <h2>Reportverlauf</h2>
-        <table>
-          <thead><tr><th>Typ</th><th>Auslöser</th><th>Status</th><th>Zeitraum</th><th>Datenstand</th><th /></tr></thead>
-          <tbody>
-            {(overview?.recent_runs ?? []).map((run) => (
-              <tr key={run.id}>
-                <td><code>{run.report_type}</code></td><td>{run.trigger_source}</td><td><span className="badge">{run.status}</span></td>
-                <td>{formatDate(run.data_start_time)} – {formatDate(run.data_end_time)}</td>
-                <td>{formatDate(run.completed_at)}</td>
-                <td><button className="secondary" onClick={() => openRun(run.id)}>Details</button></td>
-              </tr>
-            ))}
-            {!overview?.recent_runs.length && <tr><td colSpan={6}>Noch keine Reportläufe.</td></tr>}
-          </tbody>
-        </table>
+        <div className="table-scroll">
+          <table>
+            <thead>
+              <tr><th>Typ</th><th>Auslöser</th><th>Status</th><th>Zeitraum</th><th>Datenstand</th><th /></tr>
+            </thead>
+            <tbody>
+              {(overview?.recent_runs ?? []).map((run) => (
+                <tr key={run.id}>
+                  <td><code>{run.report_type}</code></td>
+                  <td>{run.trigger_source}</td>
+                  <td><span className="badge">{run.status}</span></td>
+                  <td>{formatDate(run.data_start_time)} – {formatDate(run.data_end_time)}</td>
+                  <td>{formatDate(run.completed_at)}</td>
+                  <td>
+                    <button type="button" className="secondary" onClick={() => void openRun(run.id)}>
+                      Details
+                    </button>
+                  </td>
+                </tr>
+              ))}
+              {!overview?.recent_runs.length && (
+                <tr><td colSpan={6}>Noch keine Reportläufe.</td></tr>
+              )}
+            </tbody>
+          </table>
+        </div>
       </section>
 
-      {selected && <RunDetail detail={selected} allowRawDownload={!pilot?.enabled && role === "administrator"} />}
-      {(overview?.analyses ?? []).map((analysis) => <AnalysisCard key={analysis.id} id={analysis.id} result={analysis.result} title={`Analyse · ${formatDate(analysis.created_at)}`} />)}
+      {selected && (
+        <RunDetail
+          detail={selected}
+          allowRawDownload={!pilot?.enabled && role === "administrator"}
+        />
+      )}
     </div>
   );
 }
 
-function ConnectionCard({ connection, marketplaceId }: { connection: AmazonConnectionSummary; marketplaceId: string }) {
+function ConnectionCard({
+  connection,
+  marketplaceId,
+}: {
+  connection: AmazonConnectionSummary;
+  marketplaceId: string | null;
+}) {
   const connectionStatus = connection.mode === "fixture"
     ? "synthetisch – kein Amazonzugang"
     : connection.credential_configured
       ? "formal konfiguriert – nicht live verifiziert"
       : "extern blockiert";
-  return <div style={{ display: "grid", gap: "0.25rem" }}>
-    <strong>Verbindung: {connection.mode === "fixture" ? "Synthetische Demo" : "Amazon SP-API"}</strong>
-    <span>Seller: {connection.seller_id_redacted} · Region: {connection.region.toUpperCase()} · Marketplace: {marketplaceId}</span>
-    <span>Verbindungsstatus: {connectionStatus}</span>
-    <span>
-      Rollenstatus (deklariert): {connection.granted_roles.join(", ")} · Secret-Shape:{" "}
-      {connection.mode === "fixture"
-        ? "nicht erforderlich (Fixture)"
-        : connection.credential_configured
-          ? "gültig"
-          : "fehlt"}
-    </span>
-  </div>;
+  return (
+    <div className="marketplace-connection">
+      <strong>
+        Verbindung: {connection.mode === "fixture" ? "Synthetische Demo" : "Amazon SP-API"}
+      </strong>
+      <span>
+        Seller: {connection.seller_id_redacted} · Region: {connection.region.toUpperCase()} ·
+        Marketplace: {marketplaceId ?? "nicht bestätigt"}
+      </span>
+      <span>Verbindungsstatus: {connectionStatus}</span>
+      <span>
+        Rollenstatus (deklariert): {connection.granted_roles.join(", ")} · Secret-Shape:{" "}
+        {connection.mode === "fixture"
+          ? "nicht erforderlich (Fixture)"
+          : connection.credential_configured
+            ? "gültig"
+            : "fehlt"}
+      </span>
+    </div>
+  );
 }
 
-function RunDetail({ detail, allowRawDownload }: { detail: MarketplaceRunDetail; allowRawDownload: boolean }) {
-  return <section className="card">
-    <h2>Reportlauf · {detail.run.report_type}</h2>
-    <p>Job: {detail.run.status} · Pollingversuche: {detail.run.poll_attempts} · letzter Abruf: {formatDate(detail.run.completed_at ?? detail.run.updated_at)}</p>
-    {detail.document && <p>Roharchiv: unveränderlich · Transport {detail.document.transport_bytes} Bytes · Decoded {detail.document.decoded_bytes} Bytes · SHA-256 <code>{detail.document.sha256}</code> · Decoded-Hash <code>{detail.document.decoded_sha256}</code> · Import: {detail.document.import_status} · Parser: {detail.document.parser_version ?? "–"}</p>}
-    {detail.run.failure_message && <p style={{ color: "var(--danger)" }}>{detail.run.failure_message}</p>}
-    {allowRawDownload && detail.document && <button className="secondary" onClick={() => void downloadMarketplaceRawReport(detail.run.id)}>Rohbericht herunterladen</button>}
-    {detail.snapshot && <p>Snapshot: {detail.snapshot.granularity} · vergleichbar als <code>{detail.snapshot.comparability_key}</code></p>}
-    {!detail.snapshot && <p style={{ color: "var(--fg-muted)" }}>Snapshot-Kompatibilität: noch keine normalisierten Daten.</p>}
-    {detail.transport.length > 0 && <details><summary>Redigierte Transportdiagnose</summary><ul>{detail.transport.map((entry) => <li key={entry.id}>{entry.operation} · Request-ID {entry.request_id_redacted ?? "fehlt"} · Rate-Limit {entry.rate_limit_limit ?? "nicht gemeldet"} · Retry {entry.retry_after_seconds ?? 0}s</li>)}</ul></details>}
-    <details><summary>Zustandsverlauf</summary><ul>{detail.events.map((event) => <li key={event.id}>{formatDate(event.created_at)} · <strong>{event.status}</strong> · {event.message}</li>)}</ul></details>
-    {detail.metrics.length > 0 && <details><summary>Normalisierte Kennzahlen</summary><table><thead><tr><th>Kennzahl</th><th>Dimension</th><th>Wert</th></tr></thead><tbody>{detail.metrics.map((metric) => <tr key={metric.id}><td>{metric.metric_name}</td><td>{metric.dimension_type} {metric.dimension_key}</td><td>{metric.value_numeric} {metric.unit} {metric.currency_code}</td></tr>)}</tbody></table></details>}
-    {detail.analyses.map((analysis) => <AnalysisCard key={analysis.id} id={analysis.id} title="Delta-Analyse" result={analysis.result} />)}
-  </section>;
+function RunDetail({
+  detail,
+  allowRawDownload,
+}: {
+  detail: MarketplaceRunDetail;
+  allowRawDownload: boolean;
+}) {
+  return (
+    <section className="card">
+      <h2>Reportlauf · {detail.run.report_type}</h2>
+      <p>
+        Job: {detail.run.status} · Pollingversuche: {detail.run.poll_attempts} · letzter Abruf:{" "}
+        {formatDate(detail.run.completed_at ?? detail.run.updated_at)}
+      </p>
+      {detail.document && (
+        <p>
+          Roharchiv: unveränderlich · Transport {detail.document.transport_bytes} Bytes · Decoded{" "}
+          {detail.document.decoded_bytes} Bytes · SHA-256 <code className="marketplace-hash">{detail.document.sha256}</code>{" "}
+          · Decoded-Hash <code className="marketplace-hash">{detail.document.decoded_sha256}</code>{" "}
+          · Import: {detail.document.import_status} · Parser: {detail.document.parser_version ?? "–"}
+        </p>
+      )}
+      {detail.run.failure_message && <p style={{ color: "var(--danger)" }}>{detail.run.failure_message}</p>}
+      {allowRawDownload && detail.document && (
+        <button
+          type="button"
+          className="secondary"
+          onClick={() => void downloadMarketplaceRawReport(detail.run.id)}
+        >
+          Rohbericht herunterladen
+        </button>
+      )}
+      {detail.snapshot && (
+        <p>
+          Snapshot: {detail.snapshot.granularity} · vergleichbar als{" "}
+          <code>{detail.snapshot.comparability_key}</code>
+        </p>
+      )}
+      {!detail.snapshot && (
+        <p className="marketplace-muted">Snapshot-Kompatibilität: noch keine normalisierten Daten.</p>
+      )}
+      {detail.transport.length > 0 && (
+        <details>
+          <summary>Redigierte Transportdiagnose</summary>
+          <ul>
+            {detail.transport.map((entry) => (
+              <li key={entry.id}>
+                {entry.operation} · Request-ID {entry.request_id_redacted ?? "fehlt"} · Rate-Limit{" "}
+                {entry.rate_limit_limit ?? "nicht gemeldet"} · Retry {entry.retry_after_seconds ?? 0}s
+              </li>
+            ))}
+          </ul>
+        </details>
+      )}
+      <details>
+        <summary>Zustandsverlauf</summary>
+        <ul>
+          {detail.events.map((event) => (
+            <li key={event.id}>
+              {formatDate(event.created_at)} · <strong>{event.status}</strong> · {event.message}
+            </li>
+          ))}
+        </ul>
+      </details>
+      {detail.metrics.length > 0 && (
+        <details>
+          <summary>Normalisierte Kennzahlen</summary>
+          <div className="table-scroll">
+            <table>
+              <thead><tr><th>Kennzahl</th><th>Dimension</th><th>Wert</th></tr></thead>
+              <tbody>
+                {detail.metrics.map((metric) => (
+                  <tr key={metric.id}>
+                    <td>{metric.metric_name}</td>
+                    <td>{metric.dimension_type} {metric.dimension_key}</td>
+                    <td>{metric.value_numeric} {metric.unit} {metric.currency_code}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </details>
+      )}
+      {detail.analyses.map((analysis) => (
+        <AnalysisCard key={analysis.id} id={analysis.id} title="Delta-Analyse" result={analysis.result} />
+      ))}
+    </section>
+  );
 }
 
-function AnalysisCard({ id, result, title }: { id: string; result: Record<string, unknown>; title: string }) {
-  const options = Array.isArray(result.options) ? result.options as Array<Record<string, unknown>> : [];
-  return <section className="card">
-    <h2>{title}</h2>
-    <p>{String(result.overall_trend ?? "Noch keine Trendbewertung.")}</p>
-    {options.length > 0 && <><h3>Mögliche Handlungsoptionen</h3><ul>{options.map((option, index) => <li key={index}>
-      <strong>{String(option.action)}</strong> · Wirkung: {String(option.expected_effect)} · Aufwand: {String(option.effort)} · Unsicherheit: {String(option.uncertainty)}
-      {Array.isArray(option.risks) && <div>Risiken: {(option.risks as unknown[]).join(" ")}</div>}
-      {Array.isArray(option.evidence_refs) && <div style={{ color: "var(--fg-muted)" }}>Evidenz: {(option.evidence_refs as unknown[]).join(", ")}</div>}
-    </li>)}</ul></>}
-    {Array.isArray(result.missing_data) && <p style={{ color: "var(--fg-muted)" }}>Fehlende Daten: {(result.missing_data as unknown[]).join(" ")}</p>}
-    <button className="secondary" onClick={() => void downloadMarketplaceAnalysis(id)}>PII-minimierten Analyseexport laden</button>
-    <p style={{ color: "var(--warning)" }}>Regelanalysen sind Empfehlungen. Essentials+ Merchant nimmt keine Preis-, Werbe-, Listing-, Bestands- oder Bestelländerungen vor.</p>
-  </section>;
+function asArray(value: unknown): unknown[] {
+  return Array.isArray(value) ? value : [];
+}
+
+function describeAnalysisItem(value: unknown): string {
+  if (value === null || value === undefined) return "–";
+  if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
+    return String(value);
+  }
+  if (Array.isArray(value)) return value.map(describeAnalysisItem).join(" · ");
+
+  const item = value as Record<string, unknown>;
+  if (item.label !== undefined && item.value !== undefined) {
+    return `${describeAnalysisItem(item.label)}: ${describeAnalysisItem(item.value)}`;
+  }
+  if (item.hypothesis !== undefined) return describeAnalysisItem(item.hypothesis);
+  if (item.metric !== undefined && item.current !== undefined) {
+    const percent = item.percent_change === null || item.percent_change === undefined
+      ? "Prozentänderung nicht bestimmbar"
+      : `${describeAnalysisItem(item.percent_change)} %`;
+    return `${describeAnalysisItem(item.metric)}: ${describeAnalysisItem(item.previous)} → ${describeAnalysisItem(item.current)}; Delta ${describeAnalysisItem(item.difference)} (${percent})`;
+  }
+  if (item.metric !== undefined && item.value !== undefined) {
+    return `${describeAnalysisItem(item.metric)}: ${describeAnalysisItem(item.value)} ${describeAnalysisItem(item.unit)} ${describeAnalysisItem(item.currency)}`.trim();
+  }
+  if (item.snapshot_id !== undefined && Array.isArray(item.catalog_metrics)) {
+    const period = [item.period_start, item.period_end].filter(Boolean).join(" – ");
+    return `${period || "Snapshot"}: ${describeAnalysisItem(item.catalog_metrics)}`;
+  }
+  if (item.kind !== undefined && item.detail !== undefined) {
+    return `${describeAnalysisItem(item.kind)}: ${describeAnalysisItem(item.detail)}`;
+  }
+  return Object.entries(item)
+    .filter(([key]) => !["evidence_ref", "evidence_refs", "uncertainty"].includes(key))
+    .map(([key, entry]) => `${key}: ${describeAnalysisItem(entry)}`)
+    .join(" · ");
+}
+
+function AnalysisItems({ items, emptyText }: { items: unknown[]; emptyText: string }) {
+  if (items.length === 0) return <p className="marketplace-muted">{emptyText}</p>;
+  return (
+    <ul>
+      {items.map((item, index) => {
+        const record = typeof item === "object" && item !== null
+          ? item as Record<string, unknown>
+          : null;
+        const evidence = record
+          ? [record.evidence_ref, ...asArray(record.evidence_refs)].filter(Boolean)
+          : [];
+        return (
+          <li key={`${describeAnalysisItem(item)}-${index}`}>
+            {describeAnalysisItem(item)}
+            {record?.uncertainty !== undefined && (
+              <div className="marketplace-muted">Unsicherheit: {describeAnalysisItem(record.uncertainty)}</div>
+            )}
+            {evidence.length > 0 && (
+              <div className="marketplace-muted">Evidenz: {evidence.map(String).join(", ")}</div>
+            )}
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
+
+function AnalysisCard({
+  id,
+  result,
+  title,
+}: {
+  id: string;
+  result: Record<string, unknown>;
+  title: string;
+}) {
+  const context = typeof result.context === "object" && result.context !== null
+    ? result.context as Record<string, unknown>
+    : {};
+  const facts = asArray(result.facts);
+  const derivations = [
+    result.overall_trend === undefined ? null : { label: "Trend", value: result.overall_trend },
+    result.seasonality === undefined ? null : { label: "Saisonalität", value: result.seasonality },
+    ...asArray(result.derived_observations),
+    ...asArray(result.changes_since_last_run),
+    ...asArray(result.anomalies),
+  ].filter((item) => item !== null);
+  const hypotheses = asArray(result.hypotheses);
+  const openQuestions = [
+    ...asArray(result.open_questions),
+    ...asArray(result.missing_evidence).map((value) => ({
+      label: "Fehlende Evidenz",
+      value,
+    })),
+    ...asArray(result.missing_data).map((value) => ({
+      label: "Fehlende Daten",
+      value,
+    })),
+  ];
+  const options = asArray(result.options);
+  const missingFields = asArray(context.missing_fields);
+
+  return (
+    <section className="card analysis-card">
+      <h2>{title}</h2>
+      <dl className="marketplace-meta-grid">
+        <div>
+          <dt>Zeitraum</dt>
+          <dd>{describeAnalysisItem(context.period_start)} – {describeAnalysisItem(context.period_end)}</dd>
+        </div>
+        <div><dt>Marketplace</dt><dd>{describeAnalysisItem(context.marketplace)}</dd></div>
+        <div><dt>Reporttyp</dt><dd>{describeAnalysisItem(context.report_type)}</dd></div>
+        <div><dt>Granularität</dt><dd>{describeAnalysisItem(context.granularity)}</dd></div>
+        <div><dt>Parser-Version</dt><dd>{describeAnalysisItem(context.parser_version)}</dd></div>
+        <div><dt>Datenfrische</dt><dd>{describeAnalysisItem(context.data_freshness)}</dd></div>
+        <div><dt>Zeitzone</dt><dd>{describeAnalysisItem(context.source_timezone)}</dd></div>
+        <div><dt>Währung</dt><dd>{describeAnalysisItem(context.currency)}</dd></div>
+        <div>
+          <dt>Fehlende Felder</dt>
+          <dd>{missingFields.length > 0 ? missingFields.map(describeAnalysisItem).join(", ") : "keine"}</dd>
+        </div>
+      </dl>
+      <div className="analysis-separation">
+        <section className="analysis-block">
+          <h3>Fakten</h3>
+          <AnalysisItems items={facts} emptyText="Noch keine belastbaren Fakten verfügbar." />
+        </section>
+        <section className="analysis-block">
+          <h3>Belastbare Ableitungen</h3>
+          <AnalysisItems
+            items={derivations}
+            emptyText="Noch keine belastbare Ableitung aus kompatiblen Zeiträumen."
+          />
+        </section>
+        <section className="analysis-block">
+          <h3>Hypothesen</h3>
+          <AnalysisItems items={hypotheses} emptyText="Keine Hypothese aus den vorhandenen Daten." />
+        </section>
+        <section className="analysis-block">
+          <h3>Offene Fragen</h3>
+          <AnalysisItems items={openQuestions} emptyText="Keine offene Evidenzfrage ausgewiesen." />
+        </section>
+      </div>
+
+      <p><strong>Gesamtunsicherheit:</strong> {String(result.uncertainty ?? "nicht bewertet")}</p>
+      {options.length > 0 && (
+        <>
+          <h3>Mögliche Maßnahmen</h3>
+          <ul>
+            {options.map((option, index) => {
+              const item = option as Record<string, unknown>;
+              return (
+                <li key={`${String(item.action)}-${index}`}>
+                  <strong>{String(item.action)}</strong> · Wirkung: {String(item.expected_effect)} ·
+                  Aufwand: {String(item.effort)} · Unsicherheit: {String(item.uncertainty)}
+                  {Array.isArray(item.risks) && <div>Risiken: {item.risks.join(" ")}</div>}
+                  {Array.isArray(item.evidence_refs) && (
+                    <div className="marketplace-muted">
+                      Evidenz: {item.evidence_refs.join(", ") || "keine direkte Evidenzreferenz"}
+                    </div>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
+        </>
+      )}
+      <div className="marketplace-actions" aria-label="Zusammenfassung exportieren">
+        <button
+          type="button"
+          className="secondary"
+          onClick={() => void downloadMarketplaceAnalysis(id, "json")}
+        >
+          PII-minimierten Analyseexport laden
+        </button>
+        <button
+          type="button"
+          className="secondary"
+          onClick={() => void downloadMarketplaceAnalysis(id, "markdown")}
+        >
+          Markdown exportieren
+        </button>
+        <button
+          type="button"
+          className="secondary"
+          onClick={() => void downloadMarketplaceAnalysis(id, "csv")}
+        >
+          CSV exportieren
+        </button>
+      </div>
+      <p style={{ color: "var(--warning)" }}>
+        Regelanalysen sind Entscheidungshilfen. Essentials+ Merchant nimmt keine Preis-, Werbe-,
+        Listing-, Bestands- oder Bestelländerungen vor.
+      </p>
+    </section>
+  );
 }

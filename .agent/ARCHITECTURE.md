@@ -16,10 +16,12 @@ Core PostgreSQL             +-- LWA / Amazon Reports API v2021-06-30
 immutable pilot archive
 ```
 
-`compose.amazon-pilot.yml` defines exactly `db`, `backend`, and `frontend` under the fixed project
-`essentials-merchant-amazon-pilot`. It does not define Vendure, Storefront, payment, shipping,
-carrier, or DATEV services. Startup atomically applies `amazon-read-only` and verifies the exact
-active set:
+`compose.amazon-pilot.yml` defines the review/test project and `compose.mantle-amazon.yml` defines
+the Mantle live project `essentials-merchant-amazon`. Both contain exactly `db`, `backend`, and
+`frontend`; neither defines Vendure, Storefront, payment, shipping, carrier, DATEV, or external-AI
+services. The live frontend binds to loopback for a private Caddy route and backend/frontend images
+are tagged with the exact deployed Git SHA. Startup atomically applies `amazon-read-only` and
+verifies the exact active set:
 
 - `core.operations`, `core.catalog`, `core.inventory`, `core.orders`;
 - `marketplace.amazon_intelligence`, `intelligence.rules`;
@@ -32,6 +34,14 @@ connector-health GETs are blocked as well. Module guards remain defense in depth
 global policy.
 
 ## Amazon acquisition and data boundary
+
+The default acquisition path is a manual official Sales and Traffic upload. A side-effect-free
+JSON/CSV/TSV parser validates at most 10 MiB, computes the raw hash, rejects PII-like schemas, and
+returns confirmable provenance. Only a confirmation-complete preview crosses one PostgreSQL
+transaction containing raw archive, immutable receipt, normalized snapshot/metrics, and analysis
+job. Raw-hash and semantic-period advisory locks make retries idempotent and reject ambiguous
+duplicate periods. The existing deterministic analysis/export pipeline is reused; there is no
+separate Mantle analysis service.
 
 Connections persist the seller context needed for Amazon requests, region, marketplace IDs, roles,
 mode, and only a logical environment secret reference. API summaries redact the seller ID before
@@ -53,7 +63,8 @@ version and is blocked until a first real success exists.
 Transport bytes and decoded bytes have separate hashes and immutable storage. Versioned parsers
 produce normalized decimals and explicit missing fields. Deterministic analysis persists facts,
 delta, trend, anomalies, hypotheses, possible actions, uncertainty, missing data, and evidence.
-Aggregate exports recursively deny buyer/customer/address/email/order/comment/phone fields.
+Aggregate JSON, Markdown, and CSV exports recursively deny
+buyer/customer/address/email/order/comment/phone fields.
 Actions are never executed and no external LLM receives data.
 
 ## Retained full-stack topology
