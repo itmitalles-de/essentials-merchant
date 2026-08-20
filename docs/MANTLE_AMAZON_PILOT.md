@@ -59,6 +59,22 @@ not only by the button. Public web research is a separate, public-only request;
 its bounded citations are then combined with aggregate Amazon history and the
 last validated handover in a tool-free synthesis.
 
+Before any paid run, a one-time curated business baseline is built from
+approved Mantle Wiki and Notes sources. Only typed business statements, source
+paths/titles, statuses, and file hashes are imported; raw Markdown, personal
+notes, PII, and secrets stay outside the service. The database row is immutable
+and an identical retry is idempotent. Every weekly synthesis receives this
+baseline plus the latest validated handover, allowing continuity to improve
+without silently rewriting the source material.
+
+Below the action, a terminal-style activity view reports only observable,
+sanitized phases such as Amazon acquisition, archive/parser validation,
+aggregate preparation, business-context loading, public research, synthesis,
+source validation, token counts, and result persistence. It does not expose
+credentials, raw reports, signed URLs, provider request bodies, or hidden model
+reasoning. The visible `KI-Begründungszusammenfassung` is the validated
+user-facing rationale from the structured response.
+
 The analysis route itself contains no credential forms. A gear beside the
 light/dark switch opens `/ai-marketing/settings`, which owns provider setup and
 the read-only system boundary. The analysis action appears before the pipeline;
@@ -191,7 +207,8 @@ The Marketplace Intelligence page implements the following workflow:
     successful Europe/Berlin calendar-week run. It first researches public
     competitor, category/market, and global trend/crisis evidence without
     internal metrics, then synthesizes that bounded research with the aggregate
-    history in a separate tool-free request.
+    history, immutable Mantle/Sphagnum baseline, and last validated handover in
+    a separate tool-free request.
 
 Raw report downloads are blocked by the Amazon read-only pilot middleware, even
 for administrators. The raw bytes are available only to the database backup and

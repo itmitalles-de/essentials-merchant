@@ -56,6 +56,12 @@ pub fn router() -> Router<AppState> {
         .route("/runs/{run_id}/raw", get(raw_document))
         .route("/strategy/status", get(strategy_status))
         .route(
+            "/strategy/knowledge",
+            get(business_knowledge_status)
+                .post(import_business_knowledge)
+                .layer(DefaultBodyLimit::max(64 * 1024)),
+        )
+        .route(
             "/strategy/weekly",
             get(weekly_strategy_preview)
                 .post(create_weekly_strategy_assessment)
@@ -852,6 +858,10 @@ struct WeeklyStrategyView {
     week_start: NaiveDate,
     next_available_at: DateTime<Utc>,
     source_analysis_count: usize,
+    business_knowledge_imported: bool,
+    business_knowledge_source_count: usize,
+    business_knowledge_entry_count: usize,
+    business_knowledge_sha256: Option<String>,
     previous_run_context: bool,
     cached: bool,
     assessment: Option<Value>,
@@ -869,6 +879,28 @@ struct WeeklyStrategyView {
 struct StrategyAssessmentRequest {
     confirmed_payload_sha256: String,
     confirmed_aggregate_only: bool,
+}
+
+#[derive(Debug, Serialize)]
+struct BusinessKnowledgeView {
+    imported: bool,
+    cached: bool,
+    version: &'static str,
+    source_manifest_sha256: Option<String>,
+    content_sha256: Option<String>,
+    source_count: usize,
+    entry_count: usize,
+    created_at: Option<DateTime<Utc>>,
+    raw_documents_stored: bool,
+    mutable: bool,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct BusinessKnowledgeImportRequest {
+    knowledge: crate::strategy_ai::BusinessKnowledge,
+    confirmed_business_only: bool,
+    confirmed_no_secrets_or_pii: bool,
 }
 
 struct StrategyRouteError {
@@ -942,11 +974,91 @@ async fn strategy_status(
     ))
 }
 
+fn business_knowledge_view(
+    record: Option<&db::marketplace::MantleBusinessKnowledge>,
+    cached: bool,
+) -> BusinessKnowledgeView {
+    BusinessKnowledgeView {
+        imported: record.is_some(),
+        cached,
+        version: crate::strategy_ai::BUSINESS_KNOWLEDGE_VERSION,
+        source_manifest_sha256: record.map(|value| value.source_manifest_sha256.clone()),
+        content_sha256: record.map(|value| value.content_sha256.clone()),
+        source_count: record.map_or(0, |value| value.source_count.max(0) as usize),
+        entry_count: record.map_or(0, |value| value.entry_count.max(0) as usize),
+        created_at: record.map(|value| value.created_at),
+        raw_documents_stored: false,
+        mutable: false,
+    }
+}
+
+async fn business_knowledge_status(
+    State(state): State<AppState>,
+    AuthUser(user): AuthUser,
+) -> Result<Json<BusinessKnowledgeView>, StrategyRouteError> {
+    require_strategy_admin(&state, &user).await?;
+    let record = db::marketplace::mantle_business_knowledge(&state.pool)
+        .await
+        .map_err(|_| {
+            StrategyRouteError::new(StatusCode::INTERNAL_SERVER_ERROR, "database_error")
+        })?;
+    Ok(Json(business_knowledge_view(record.as_ref(), false)))
+}
+
+async fn import_business_knowledge(
+    State(state): State<AppState>,
+    AuthUser(user): AuthUser,
+    Json(request): Json<BusinessKnowledgeImportRequest>,
+) -> Result<Json<BusinessKnowledgeView>, StrategyRouteError> {
+    require_strategy_admin(&state, &user).await?;
+    if !request.confirmed_business_only || !request.confirmed_no_secrets_or_pii {
+        return Err(StrategyRouteError::new(
+            StatusCode::PRECONDITION_FAILED,
+            "business_knowledge_confirmation_required",
+        ));
+    }
+    let prepared =
+        crate::strategy_ai::prepare_business_knowledge(request.knowledge).map_err(|error| {
+            match error {
+                crate::strategy_ai::StrategyAiError::PayloadTooLarge => StrategyRouteError::new(
+                    StatusCode::PAYLOAD_TOO_LARGE,
+                    "business_knowledge_too_large",
+                ),
+                _ => StrategyRouteError::new(
+                    StatusCode::UNPROCESSABLE_ENTITY,
+                    "business_knowledge_invalid",
+                ),
+            }
+        })?;
+    let input = db::marketplace::StoreMantleBusinessKnowledge {
+        source_manifest_sha256: &prepared.source_manifest_sha256,
+        content_sha256: &prepared.content_sha256,
+        source_count: prepared.source_count as i32,
+        entry_count: prepared.entry_count as i32,
+        knowledge: &prepared.value,
+        created_by: user.id,
+    };
+    let (stored, was_inserted) =
+        db::marketplace::store_mantle_business_knowledge(&state.pool, &input)
+            .await
+            .map_err(|_| {
+                StrategyRouteError::new(StatusCode::INTERNAL_SERVER_ERROR, "database_error")
+            })?;
+    if stored.content_sha256 != prepared.content_sha256 {
+        return Err(StrategyRouteError::new(
+            StatusCode::CONFLICT,
+            "business_knowledge_already_imported",
+        ));
+    }
+    Ok(Json(business_knowledge_view(Some(&stored), !was_inserted)))
+}
+
 struct WeeklyStrategyContext {
     week_start: NaiveDate,
     next_available_at: DateTime<Utc>,
     anchor_analysis_id: Option<Uuid>,
     prepared: Option<crate::strategy_ai::PreparedStrategyInput>,
+    business_knowledge: Option<db::marketplace::MantleBusinessKnowledge>,
     previous: Option<db::marketplace::AiStrategyAssessment>,
     current: Option<db::marketplace::AiStrategyAssessment>,
 }
@@ -976,13 +1088,19 @@ async fn load_weekly_strategy_context(
         .map_err(|_| {
             StrategyRouteError::new(StatusCode::INTERNAL_SERVER_ERROR, "database_error")
         })?;
+    let business_knowledge = db::marketplace::mantle_business_knowledge(&state.pool)
+        .await
+        .map_err(|_| {
+            StrategyRouteError::new(StatusCode::INTERNAL_SERVER_ERROR, "database_error")
+        })?;
     let results = analyses
         .iter()
         .map(|analysis| analysis.result.clone())
         .collect::<Vec<_>>();
-    let prepared = match crate::strategy_ai::prepare_weekly_strategy_input(
+    let prepared = match crate::strategy_ai::prepare_weekly_strategy_input_with_business_knowledge(
         &results,
         previous.as_ref().map(|record| &record.result),
+        business_knowledge.as_ref().map(|record| &record.knowledge),
     ) {
         Ok(prepared) => Some(prepared),
         Err(crate::strategy_ai::StrategyAiError::InvalidResponse) => None,
@@ -1004,6 +1122,7 @@ async fn load_weekly_strategy_context(
         next_available_at,
         anchor_analysis_id: analyses.first().map(|analysis| analysis.id),
         prepared,
+        business_knowledge,
         previous,
         current,
     })
@@ -1023,6 +1142,8 @@ fn weekly_strategy_view(
         .map_or(0, Vec::len);
     let block_reason = if context.current.is_some() {
         Some("weekly_limit_reached")
+    } else if context.business_knowledge.is_none() {
+        Some("business_knowledge_missing")
     } else if context.prepared.is_none() {
         Some("no_analysis_data")
     } else {
@@ -1040,6 +1161,19 @@ fn weekly_strategy_view(
         week_start: context.week_start,
         next_available_at: context.next_available_at,
         source_analysis_count,
+        business_knowledge_imported: context.business_knowledge.is_some(),
+        business_knowledge_source_count: context
+            .business_knowledge
+            .as_ref()
+            .map_or(0, |value| value.source_count.max(0) as usize),
+        business_knowledge_entry_count: context
+            .business_knowledge
+            .as_ref()
+            .map_or(0, |value| value.entry_count.max(0) as usize),
+        business_knowledge_sha256: context
+            .business_knowledge
+            .as_ref()
+            .map(|value| value.content_sha256.clone()),
         previous_run_context: context
             .prepared
             .as_ref()
@@ -1106,6 +1240,12 @@ async fn create_weekly_strategy_assessment(
         .status_with_provider_key(provider_api_key.is_some());
     if context.current.is_some() {
         return Ok(Json(weekly_strategy_view(&context, true, status)));
+    }
+    if context.business_knowledge.is_none() {
+        return Err(StrategyRouteError::new(
+            StatusCode::PRECONDITION_FAILED,
+            "business_knowledge_missing",
+        ));
     }
     let prepared = context.prepared.as_ref().ok_or_else(|| {
         StrategyRouteError::new(
@@ -1193,6 +1333,13 @@ fn strategy_provider_error(error: crate::strategy_ai::StrategyAiError) -> Strate
         StrategyAiError::InvalidResponse => {
             StrategyRouteError::new(StatusCode::BAD_GATEWAY, "openai_invalid_response")
         }
+        StrategyAiError::InvalidResearchResponse => {
+            StrategyRouteError::new(StatusCode::BAD_GATEWAY, "openai_research_invalid_response")
+        }
+        StrategyAiError::InvalidAssessmentResponse => StrategyRouteError::new(
+            StatusCode::BAD_GATEWAY,
+            "openai_assessment_invalid_response",
+        ),
         StrategyAiError::ProviderUnavailable => {
             StrategyRouteError::new(StatusCode::BAD_GATEWAY, "openai_unavailable")
         }

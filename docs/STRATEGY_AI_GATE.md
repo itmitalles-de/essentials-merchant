@@ -191,6 +191,10 @@ other mutation.
 - `GET /api/marketplace/strategy/weekly` returns the current aggregate hash,
   weekly availability, next eligible time, input count, previous-run context
   flag, and latest validated assessment.
+- `GET /api/marketplace/strategy/knowledge` returns only import state, hashes,
+  counts, version, and immutability flags. `POST` accepts one confirmed,
+  business-only Wiki/Notes curation; identical retries are idempotent and a
+  different second baseline is rejected.
 - `POST /api/marketplace/strategy/weekly` requires the scoped pilot identity or
   an administrator, the
   current hash, and aggregate-only confirmation. Once a successful weekly row

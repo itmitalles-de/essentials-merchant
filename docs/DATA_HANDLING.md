@@ -6,6 +6,7 @@
 | --- | --- | --- |
 | Raw confidential report | Exact uploaded Sales and Traffic or Ads JSON/CSV/TSV bytes, potentially including campaign identifiers | Immutable PostgreSQL archive; backup-only access in the pilot profile; never Git, public research, or OpenAI. |
 | Aggregate business metric | Revenue, units, sessions, page views, Ads impressions/clicks/spend/attributed outcomes, percentages and ratios | Decimal normalized records; internal UI and allowlisted summary export. |
+| Curated business context | Reviewed Mantle/Sphagnum statements plus source repository, path, title, and SHA-256 provenance | Imported once into an immutable internal row; raw Wiki/Notes documents, personal notes, PII, and secrets do not cross the boundary. |
 | Operational metadata | SHA-256, format, report type, marketplace, period, parser version, freshness | Immutable provenance and internal diagnostics. |
 | Provider secret | LWA refresh token, LWA client ID/secret, OpenAI API key | Accepted only by write-only UI endpoints, encrypted with AES-256-GCM before persistence, never returned, and excluded even as ciphertext from pilot backup data. |
 | Host secret | Provider master key, JWT/admin/database secrets | Host environment only; never database, logs, exports, backup manifest, or Git. |
@@ -37,11 +38,31 @@ The UI shows aggregate data. Ads campaign names and IDs are discarded before
 normalization. Evidence references point to internal snapshot and metric IDs
 rather than raw rows or product/customer/campaign identifiers.
 
+## Mantle/Sphagnum business context
+
+The initial business baseline is curated once from approved files in the
+Mantle Wiki and the operator's Notes repository. The import contract requires
+both repositories, allowlisted relative path prefixes, a SHA-256 for every
+source, typed statements with explicit evidence references, and a status of
+`verified`, `historical`, `working_assumption`, or `open_question`. It rejects
+e-mail addresses, control characters, secret-shaped text, unapproved paths,
+more than 32 sources or 80 statements, and payloads above 48 KiB.
+
+Only the reviewed statements and source manifest enter
+`mantle_business_knowledge`; raw Markdown and source file contents are not
+stored. The singleton row is immutable at the database boundary. Re-importing
+the identical content is idempotent, while different content is rejected. The
+weekly strategy input combines this fixed baseline with the latest validated
+AI handover, so continuity can improve on later runs without silently rewriting
+the source baseline. A source-document change requires a separately reviewed
+replacement migration, not an automatic scrape.
+
 ## Backup and restore
 
 Pilot backups contain the schema, module state, users, Amazon tables (including
 raw archives and manual-import provenance), parser versions, redacted Compose
-metadata, image IDs, and integrity manifests. Backup directories are
+metadata, image IDs, the immutable curated business context, and integrity
+manifests. Backup directories are
 confidential operational data and must use host-restricted permissions.
 The backup script enforces umask `077` before creating any dump or manifest.
 The `pilot_provider_secrets` table definition is restored, but its rows are

@@ -212,7 +212,10 @@ button.theme-switch[aria-checked="true"] .theme-switch-thumb {
 .pilot-settings-back {
   display: inline-flex;
   align-items: center;
+  color: var(--fg);
   font-weight: 650;
+  text-decoration: underline;
+  text-underline-offset: 0.15em;
 }
 
 a.btn {
@@ -806,6 +809,76 @@ table caption {
   font-weight: 650;
 }
 
+.strategy-activity {
+  margin: 0.9rem 0;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--accent) 32%, var(--border));
+  border-radius: 10px;
+  background: #0b1118;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 5%);
+}
+
+.strategy-activity-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.65rem 0.85rem;
+  border-bottom: 1px solid #263241;
+  color: #dbeafe;
+  font-size: 0.82rem;
+}
+
+.strategy-activity-head span {
+  color: #6ee7b7;
+  font-size: 0.74rem;
+  font-weight: 750;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.strategy-terminal {
+  display: grid;
+  gap: 0.35rem;
+  max-height: 18rem;
+  padding: 0.85rem;
+  overflow: auto;
+  color: #d1d5db;
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  font-size: 0.76rem;
+  line-height: 1.45;
+}
+
+.strategy-terminal-line {
+  display: grid;
+  grid-template-columns: 4.8rem 6.4rem minmax(0, 1fr);
+  gap: 0.55rem;
+}
+
+.strategy-terminal-line time {
+  color: #94a3b8;
+}
+
+.strategy-terminal-line b {
+  color: #7dd3fc;
+  font-size: inherit;
+}
+
+.strategy-terminal-line.is-success b { color: #6ee7b7; }
+.strategy-terminal-line.is-warning b { color: #fcd34d; }
+.strategy-terminal-line.is-error b { color: #fca5a5; }
+
+.strategy-terminal-cursor {
+  color: #6ee7b7;
+  animation: strategy-terminal-blink 0.9s steps(1) infinite;
+}
+
+.strategy-terminal-boundary {
+  margin: 0;
+  padding: 0 0.85rem 0.8rem;
+  color: #94a3b8;
+  font-size: 0.7rem;
+}
+
 @keyframes strategy-scan {
   from { transform: translateX(-75%); }
   to { transform: translateX(75%); }
@@ -819,6 +892,10 @@ table caption {
 @keyframes strategy-pulse {
   0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 35%, transparent); }
   50% { box-shadow: 0 0 0 0.42rem transparent; }
+}
+
+@keyframes strategy-terminal-blink {
+  50% { opacity: 0; }
 }
 
 .strategy-panel > :first-child {
@@ -1004,12 +1081,22 @@ form label.provider-checkbox {
   .strategy-pipeline-stage p {
     min-height: 0;
   }
+
+  .strategy-terminal-line {
+    grid-template-columns: 4.4rem minmax(0, 1fr);
+  }
+
+  .strategy-terminal-line span {
+    grid-column: 1 / -1;
+    padding-left: 0.25rem;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
   .strategy-pipeline::before,
   .strategy-live-indicator i,
   .strategy-stage-node,
+  .strategy-terminal-cursor,
   .theme-switch-thumb {
     animation: none !important;
     transition: none !important;

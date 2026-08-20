@@ -456,7 +456,7 @@ export interface MarketplaceStrategyStatus {
   model: string;
   prompt_version: string;
   response_storage: "store_false";
-  input_boundary: "separate_public_research_then_aggregate_history_and_handover";
+  input_boundary: "separate_public_research_then_curated_business_context_aggregate_history_and_handover";
   cadence: "manual_weekly";
   calendar_timezone: "Europe/Berlin";
   automatic_execution: false;
@@ -533,10 +533,14 @@ export interface MarketplaceStrategyView {
   assessment_payload_sha256: string | null;
   status: MarketplaceStrategyStatus;
   can_run: boolean;
-  block_reason: "weekly_limit_reached" | "no_analysis_data" | "feature_disabled" | "api_key_missing" | null;
+  block_reason: "weekly_limit_reached" | "business_knowledge_missing" | "no_analysis_data" | "feature_disabled" | "api_key_missing" | null;
   week_start: string;
   next_available_at: string;
   source_analysis_count: number;
+  business_knowledge_imported: boolean;
+  business_knowledge_source_count: number;
+  business_knowledge_entry_count: number;
+  business_knowledge_sha256: string | null;
   previous_run_context: boolean;
   cached: boolean;
   assessment: MarketplaceStrategyAssessment | null;

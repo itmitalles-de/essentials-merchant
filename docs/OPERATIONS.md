@@ -192,6 +192,24 @@ sets the Europe/Berlin Monday `week_start`; the database unique index and UI
 then disable another successful run until the next Monday 00:00 local time.
 Provider failures create no row and leave retry possible.
 
+Before the first paid run, import the reviewed Mantle/Sphagnum business bundle
+exactly once through `POST /api/marketplace/strategy/knowledge`. The JSON body
+must contain `confirmed_business_only: true`,
+`confirmed_no_secrets_or_pii: true`, and the bounded typed `knowledge` object
+described in `DATA_HANDLING.md`. Keep the generated bundle outside Git and send
+it directly to the internal HTTPS endpoint; do not print its contents or the
+pilot bearer token. Confirm with `GET /api/marketplace/strategy/knowledge` that
+`imported` is true, `raw_documents_stored` and `mutable` are false, and the
+expected source/entry counts and hash are present. An identical second POST
+must return `cached: true`; a different baseline must return conflict.
+
+The dashboard's terminal-style activity view contains only fixed, sanitized
+phase events, aggregate counts/hash prefixes, provider token counts, and the
+validated result state. It never renders report rows, secrets, signed URLs,
+provider request bodies, or hidden model reasoning. Provider-response failures
+distinguish public-research validation from final-assessment validation, and
+neither failure consumes the weekly success window.
+
 Set `OPENAI_STRATEGY_ENABLED=true`, keep the 32-byte provider master key only in
 the mode-0600 host environment, then enter the project-scoped pay-per-use key
 through the write-only GUI. Before the first provider call, verify that a stack
@@ -200,7 +218,7 @@ containing only `SYNTHETIC-` acceptance marketplaces reports
 Then use one explicitly authorized real aggregate analysis to verify the status
 endpoint, the disabled same-week button, idempotent repeat response, fixed
 KPI/strategy/public-context/source/handover structure, redacted logs, and the
-immutable weekly row. One weekly click can incur two Responses requests plus up
+immutable business baseline plus weekly row. One weekly click can incur two Responses requests plus up
 to three web-search tool calls, so set the OpenAI project budget accordingly.
 Never print the environment or key. Without Amazon SP-API credentials, new
 Seller Central data still enters through manual import.

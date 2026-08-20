@@ -162,9 +162,9 @@ test("scoped Mantle session completes the synthetic read-only Amazon pilot flow"
         reason: null,
         provider: "openai",
         model: "gpt-5.6",
-        prompt_version: "mantle-amazon-weekly-strategy-v3",
+        prompt_version: "mantle-amazon-weekly-strategy-v4",
         response_storage: "store_false",
-        input_boundary: "separate_public_research_then_aggregate_history_and_handover",
+        input_boundary: "separate_public_research_then_curated_business_context_aggregate_history_and_handover",
         cadence: "manual_weekly",
         calendar_timezone: "Europe/Berlin",
         automatic_execution: false,
@@ -177,6 +177,10 @@ test("scoped Mantle session completes the synthetic read-only Amazon pilot flow"
       week_start: "2026-08-17",
       next_available_at: "2026-08-23T22:00:00Z",
       source_analysis_count: 2,
+      business_knowledge_imported: true,
+      business_knowledge_source_count: 6,
+      business_knowledge_entry_count: 18,
+      business_knowledge_sha256: "c".repeat(64),
       previous_run_context: true,
       provider_request_id_redacted: null,
       input_tokens: null,
@@ -216,7 +220,7 @@ test("scoped Mantle session completes the synthetic read-only Amazon pilot flow"
         output_tokens: 60,
         assessment_week_start: "2026-08-17",
         assessment_model: "gpt-5.6",
-        assessment_prompt_version: "mantle-amazon-weekly-strategy-v3",
+        assessment_prompt_version: "mantle-amazon-weekly-strategy-v4",
         created_at: "2026-08-20T12:00:00Z",
         assessment: {
           executive_summary: "Synthetische KI-Zusammenfassung ohne Geschäftsdaten.",
@@ -472,9 +476,9 @@ test("Mantle shell hides acceptance data and renders truthful live pipeline stat
       reason: null,
       provider: "openai",
       model: "gpt-5.6",
-      prompt_version: "mantle-amazon-weekly-strategy-v3",
+      prompt_version: "mantle-amazon-weekly-strategy-v4",
       response_storage: "store_false",
-      input_boundary: "separate_public_research_then_aggregate_history_and_handover",
+      input_boundary: "separate_public_research_then_curated_business_context_aggregate_history_and_handover",
       cadence: "manual_weekly",
       calendar_timezone: "Europe/Berlin",
       automatic_execution: false,
@@ -487,6 +491,10 @@ test("Mantle shell hides acceptance data and renders truthful live pipeline stat
     week_start: "2026-08-17",
     next_available_at: "2026-08-23T22:00:00Z",
     source_analysis_count: 1,
+    business_knowledge_imported: true,
+    business_knowledge_source_count: 6,
+    business_knowledge_entry_count: 18,
+    business_knowledge_sha256: "c".repeat(64),
     previous_run_context: false,
     cached: false,
     assessment: null,
@@ -532,9 +540,15 @@ test("Mantle shell hides acceptance data and renders truthful live pipeline stat
   const button = page.getByRole("button", { name: "Analyse", exact: true });
   await button.click();
   await expect(pipeline).toHaveAttribute("aria-busy", "true");
+  const activity = page.getByRole("region", { name: "Bereinigtes Live-Protokoll" });
+  await expect(activity).toBeVisible();
+  await expect(activity).toContainText("Markt-, Wettbewerbs- und Krisensignale");
+  await expect(activity).toContainText("store=false");
+  await expect(activity).not.toContainText(/client_secret|refresh_token|access_token/i);
   await expect(pipeline.locator(".strategy-pipeline-stage.is-active")).toHaveCount(3);
   await expect(pipeline).toContainText("Globale Krisen");
   await expect(button).toBeDisabled();
   await expect(pipeline).toHaveAttribute("aria-busy", "false");
   await expect(pipeline.locator(".strategy-pipeline-stage.is-complete")).toHaveCount(5);
+  await expect(activity).toContainText("Antwortschema, Evidenzreferenzen und Handover");
 });

@@ -41,12 +41,17 @@ function isSyntheticMarketplace(value: unknown): boolean {
   return typeof value === "string" && value.toUpperCase().startsWith("SYNTHETIC-");
 }
 
-function isSyntheticAnalysis(analysis: MarketplaceAnalysisSummary): boolean {
+function isSyntheticAnalysis(
+  analysis: MarketplaceAnalysisSummary,
+  fixtureMarketplaces: ReadonlySet<string>,
+): boolean {
   const context = typeof analysis.result.context === "object" && analysis.result.context !== null
     ? analysis.result.context as Record<string, unknown>
     : {};
   return isSyntheticMarketplace(context.marketplace)
-    || isSyntheticMarketplace(context.marketplace_id);
+    || isSyntheticMarketplace(context.marketplace_id)
+    || (typeof context.marketplace === "string" && fixtureMarketplaces.has(context.marketplace))
+    || (typeof context.marketplace_id === "string" && fixtureMarketplaces.has(context.marketplace_id));
 }
 
 interface ImportConfirmation {
@@ -169,15 +174,23 @@ export function MarketplaceIntelligence({ aiFirst = false }: { aiFirst?: boolean
 
   const connection = overview?.connections[0] ?? null;
   const marketplaceId = connection?.marketplace_ids[0] ?? null;
+  const fixtureMarketplaces = useMemo(
+    () => new Set(
+      (overview?.connections ?? [])
+        .filter((candidate) => candidate.mode === "fixture")
+        .flatMap((candidate) => candidate.marketplace_ids),
+    ),
+    [overview],
+  );
   const reports = useMemo(
     () => (overview?.report_types ?? []).filter((report) => report.report_type === salesReport),
     [overview],
   );
   const analyses = useMemo(
     () => [...(overview?.analyses ?? [])]
-      .filter((analysis) => !aiFirst || !isSyntheticAnalysis(analysis))
+      .filter((analysis) => !aiFirst || !isSyntheticAnalysis(analysis, fixtureMarketplaces))
       .sort((left, right) => right.created_at.localeCompare(left.created_at)),
-    [aiFirst, overview],
+    [aiFirst, fixtureMarketplaces, overview],
   );
   const recentRuns = useMemo(
     () => (overview?.recent_runs ?? [])
@@ -569,8 +582,10 @@ export function MarketplaceIntelligence({ aiFirst = false }: { aiFirst?: boolean
                   {importResult.outcome === "imported" ? "Import abgeschlossen" : "Bereits importiert"}
                 </strong>
                 <p>
-                  Lauf <code>{importResult.run_id}</code>. {importResult.comparison_generated && importResult.analysis_id
-                    ? <>Vergleichsanalyse <code>{importResult.analysis_id}</code> wurde erzeugt.</>
+                  Lauf <code>{importResult.run_id}</code>. {importResult.comparison_generated
+                    ? importResult.analysis_id
+                      ? <>Vergleichsanalyse <code>{importResult.analysis_id}</code> wurde erzeugt.</>
+                      : "Vergleichsanalyse wurde eingeplant und wird im Hintergrund abgeschlossen."
                     : "Dieser Zeitraum bildet die Vergleichsbasis."}
                 </p>
                 <button type="button" className="secondary" onClick={beginNextPeriod}>
@@ -1365,8 +1380,11 @@ function StrategyResult({ view }: { view: MarketplaceStrategyView }) {
       </div>
       <p className="strategy-summary">{assessment.executive_summary}</p>
       <section className="strategy-section">
-        <h4>Bewertung</h4>
+        <h4>KI-Begründungszusammenfassung</h4>
         <p>{assessment.assessment}</p>
+        <p className="marketplace-muted">
+          Freigegebene, strukturierte Begründung – kein verborgener interner Gedankengang.
+        </p>
       </section>
       {publicContext && (
         <>
@@ -1503,9 +1521,14 @@ function strategyErrorMessage(error: unknown): string {
     openai_rate_limited: "Das OpenAI-Limit ist erreicht. Bitte später erneut versuchen.",
     openai_refused: "Das Modell hat diese Einschätzung abgelehnt.",
     openai_invalid_response: "OpenAI lieferte keine gültige strukturierte Einschätzung.",
+    openai_research_invalid_response:
+      "Die öffentliche Markt- und Krisenrecherche war nicht gültig strukturiert. Der Wochenlauf wurde nicht verbraucht.",
+    openai_assessment_invalid_response:
+      "Die abschließende KI-Bewertung war nicht gültig strukturiert. Der Wochenlauf wurde nicht verbraucht.",
     openai_unavailable: "OpenAI ist vorübergehend nicht erreichbar.",
     strategy_assessment_busy: "Eine Strategieeinschätzung läuft bereits.",
     weekly_limit_reached: "Der Wochenlauf wurde bereits erstellt.",
+    business_knowledge_missing: "Die einmalige Mantle-/Sphagnum-Wissensbasis fehlt noch.",
     no_analysis_data: "Es sind noch keine freigegebenen Amazon-Aggregatdaten vorhanden.",
     aggregate_confirmation_mismatch: "Die Aggregatdaten haben sich geändert. Bitte den neuen Hash prüfen.",
     aggregate_payload_invalid: "Diese Analyse enthält keine freigegebenen Aggregatdaten für die KI-Strategie.",
@@ -1527,6 +1550,9 @@ function weeklyBlockMessage(view: MarketplaceStrategyView): string | null {
   if (view.block_reason === "no_analysis_data") {
     return "Importiere zuerst mindestens einen offiziellen Amazon-Report. Der Button verwendet danach alle freigegebenen Aggregatanalysen.";
   }
+  if (view.block_reason === "business_knowledge_missing") {
+    return "Die kuratierte Mantle-/Sphagnum-Wissensbasis wird einmalig durch den Operator importiert.";
+  }
   if (view.block_reason === "api_key_missing") {
     return "Der serverseitige Pay-per-use-API-Key fehlt. Import, Kennzahlen und Diagramme bleiben nutzbar.";
   }
@@ -1537,6 +1563,81 @@ function weeklyBlockMessage(view: MarketplaceStrategyView): string | null {
 }
 
 const wait = (milliseconds: number) => new Promise((resolve) => window.setTimeout(resolve, milliseconds));
+
+type StrategyActivityTone = "info" | "success" | "warning" | "error";
+
+interface StrategyActivityEntry {
+  id: string;
+  time: string;
+  channel: string;
+  message: string;
+  tone: StrategyActivityTone;
+}
+
+function strategyActivityEntry(
+  channel: string,
+  message: string,
+  tone: StrategyActivityTone = "info",
+): StrategyActivityEntry {
+  return {
+    id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
+    time: new Intl.DateTimeFormat("de-DE", {
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+      hour12: false,
+    }).format(new Date()),
+    channel,
+    message,
+    tone,
+  };
+}
+
+const amazonRunActivity: Record<string, string> = {
+  queued: "Amazon-Report ist in der internen Warteschlange.",
+  requesting: "Read-only Reports-API wird aufgerufen.",
+  polling: "Amazon erzeugt den Bericht; Status wird mit Backoff geprüft.",
+  downloading: "Bericht ist bereit und wird über die signierte Einmal-URL geladen.",
+  parsing: "Rohdatei ist archiviert; Hash und Schema werden geprüft.",
+  analysing: "Erlaubte Kennzahlen werden normalisiert und deterministisch verglichen.",
+  succeeded: "Amazon-Report und deterministische Analyse sind vollständig.",
+  archived: "Bericht wurde archiviert, aber nicht als Analyse freigegeben.",
+  cancelled: "Amazon hat den Bericht abgebrochen oder ohne Daten beendet.",
+  fatal: "Amazon konnte den Bericht nicht erzeugen.",
+  failed: "Der interne Reportlauf ist fehlgeschlagen.",
+};
+
+function StrategyActivityLog({
+  entries,
+  running,
+}: {
+  entries: StrategyActivityEntry[];
+  running: boolean;
+}) {
+  if (entries.length === 0) return null;
+  return (
+    <section className="strategy-activity" aria-label="Bereinigtes Live-Protokoll">
+      <div className="strategy-activity-head">
+        <strong>{running ? "Live-Protokoll" : "Protokoll des letzten Versuchs"}</strong>
+        <span>{running ? "● aktiv" : "● beendet"}</span>
+      </div>
+      <div className="strategy-terminal" role="log" aria-live="polite" aria-relevant="additions">
+        {entries.map((entry) => (
+          <div className={`strategy-terminal-line is-${entry.tone}`} key={entry.id}>
+            <time>{entry.time}</time>
+            <b>[{entry.channel}]</b>
+            <span>{entry.message}</span>
+          </div>
+        ))}
+        {running && <div className="strategy-terminal-cursor" aria-hidden="true">▋</div>}
+      </div>
+      <p className="marketplace-muted strategy-terminal-boundary">
+        Sichtbare Prozessereignisse sind bereinigt: keine Secrets, Rohreports, signierten URLs oder
+        verborgenen Modellgedanken. Die freigegebene KI-Begründung steht im Ergebnis.
+      </p>
+    </section>
+  );
+}
 
 function weeklyAmazonPeriod() {
   const end = new Date();
@@ -1668,6 +1769,21 @@ function WeeklyStrategyPanel({
   const [error, setError] = useState<string | null>(null);
   const [progressPhase, setProgressPhase] = useState<StrategyProgressPhase | null>(null);
   const [failedPhase, setFailedPhase] = useState<StrategyProgressPhase | null>(null);
+  const [activity, setActivity] = useState<StrategyActivityEntry[]>([]);
+
+  const appendActivity = (
+    channel: string,
+    message: string,
+    tone: StrategyActivityTone = "info",
+  ) => {
+    setActivity((entries) => {
+      const previous = entries.at(-1);
+      if (previous?.channel === channel && previous.message === message && previous.tone === tone) {
+        return entries;
+      }
+      return [...entries, strategyActivityEntry(channel, message, tone)].slice(-40);
+    });
+  };
 
   useEffect(() => {
     if (role !== "administrator") return;
@@ -1676,7 +1792,28 @@ function WeeklyStrategyPanel({
     setError(null);
     api.get<MarketplaceStrategyView>("/marketplace/strategy/weekly")
       .then((result) => {
-        if (active) setView(result);
+        if (active) {
+          setView(result);
+          setActivity((entries) => entries.length > 0 ? entries : [
+            strategyActivityEntry(
+              "SYSTEM",
+              `OpenAI ${result.status.model} ist ${result.status.available ? "bereit" : "nicht verfügbar"}.`,
+              result.status.available ? "success" : "warning",
+            ),
+            strategyActivityEntry(
+              "WISSEN",
+              result.business_knowledge_imported
+                ? `${result.business_knowledge_entry_count} kuratierte Einträge aus ${result.business_knowledge_source_count} Wiki-/Notes-Quellen sind eingebunden.`
+                : "Die einmalige Mantle-/Sphagnum-Wissensbasis fehlt.",
+              result.business_knowledge_imported ? "success" : "warning",
+            ),
+            strategyActivityEntry(
+              "DATEN",
+              `${result.source_analysis_count} freigegebene Amazon-Aggregatanalyse(n) gefunden.`,
+              result.source_analysis_count > 0 ? "success" : "warning",
+            ),
+          ]);
+        }
       })
       .catch((reason) => {
         if (active) setError(strategyErrorMessage(reason));
@@ -1693,10 +1830,18 @@ function WeeklyStrategyPanel({
 
   const refreshAmazonEvidence = async (
     advance: (phase: StrategyProgressPhase) => void,
+    log: (channel: string, message: string, tone?: StrategyActivityTone) => void,
   ): Promise<void> => {
-    if (!liveConnection || !marketplaceId) return;
+    if (!liveConnection || !marketplaceId) {
+      log("AMAZON", "Kein Live-Abruf nötig; vorhandene freigegebene Aggregate werden verwendet.");
+      return;
+    }
     advance("amazon");
     const { start, end } = weeklyAmazonPeriod();
+    log(
+      "AMAZON",
+      `Sales-&-Traffic-Zeitraum ${start.toISOString().slice(0, 10)} bis ${end.toISOString().slice(0, 10)} wird geprüft.`,
+    );
     const matchingRun = recentRuns.find((run) =>
       run.connection_id === liveConnection.id
         && run.marketplace_id === marketplaceId
@@ -1704,33 +1849,56 @@ function WeeklyStrategyPanel({
         && run.data_start_time?.slice(0, 10) === start.toISOString().slice(0, 10)
         && run.data_end_time?.slice(0, 10) === end.toISOString().slice(0, 10)
         && !["cancelled", "fatal", "failed", "archived"].includes(run.status));
-    let run = matchingRun ?? await api.post<AmazonReportRun>(
-      `/marketplace/connections/${liveConnection.id}/runs`,
-      {
-        marketplace_id: marketplaceId,
-        report_type: salesReport,
-        data_start_time: start.toISOString(),
-        data_end_time: end.toISOString(),
-        report_options: { dateGranularity: "DAY", asinGranularity: "CHILD" },
-      },
-    );
+    let run: AmazonReportRun;
+    if (matchingRun) {
+      run = matchingRun;
+      log("AMAZON", "Passender vorhandener Reportlauf wird idempotent weiterverwendet.");
+    } else {
+      run = await api.post<AmazonReportRun>(
+        `/marketplace/connections/${liveConnection.id}/runs`,
+        {
+          marketplace_id: marketplaceId,
+          report_type: salesReport,
+          data_start_time: start.toISOString(),
+          data_end_time: end.toISOString(),
+          report_options: { dateGranularity: "DAY", asinGranularity: "CHILD" },
+        },
+      );
+      log("AMAZON", "Neuer read-only Reportlauf wurde angelegt.");
+    }
+    let loggedStatus: string | null = null;
+    const logRunStatus = (current: AmazonReportRun) => {
+      if (current.status === loggedStatus) return;
+      loggedStatus = current.status;
+      const tone: StrategyActivityTone = current.status === "succeeded"
+        ? "success"
+        : terminalRunStatuses.includes(current.status) ? "error" : "info";
+      log("REPORT", amazonRunActivity[current.status] ?? `Reportstatus: ${current.status}.`, tone);
+    };
+    logRunStatus(run);
     for (let attempt = 0; attempt < 120 && run.status !== "succeeded"; attempt += 1) {
       if (["cancelled", "fatal", "failed", "archived"].includes(run.status)) {
         throw new Error(`amazon_report_${run.status}`);
       }
       await wait(5_000);
       run = (await api.get<MarketplaceRunDetail>(`/marketplace/runs/${run.id}`)).run;
+      logRunStatus(run);
     }
     if (run.status !== "succeeded") {
       throw new Error("amazon_report_still_processing");
     }
     advance("aggregate");
+    log("PARSER", "Vollständiger Import bestätigt; Oberfläche lädt die neuen Aggregate.", "success");
     await onDataUpdated();
   };
 
   const createAssessment = async () => {
     if (!view || view.block_reason === "weekly_limit_reached") return;
+    if (view.block_reason === "business_knowledge_missing") return;
     if (!view.status.available || (!liveConnection && !view.can_run)) return;
+    setActivity([
+      strategyActivityEntry("START", "Wöchentliche Analyse wurde manuell ausgelöst.", "success"),
+    ]);
     setSubmitting(true);
     setError(null);
     setFailedPhase(null);
@@ -1741,15 +1909,30 @@ function WeeklyStrategyPanel({
     };
     advance(attemptedPhase);
     try {
-      await refreshAmazonEvidence(advance);
+      await refreshAmazonEvidence(advance, appendActivity);
       advance("aggregate");
+      appendActivity("AGGREGAT", "Freigegebene Kennzahlen und Vergleichshistorie werden neu vorbereitet.");
       const prepared = await api.get<MarketplaceStrategyView>("/marketplace/strategy/weekly");
       setView(prepared);
-      if (prepared.block_reason === "weekly_limit_reached") return;
+      if (prepared.block_reason === "weekly_limit_reached") {
+        appendActivity("CACHE", "Der bereits abgeschlossene Wochenlauf wurde geladen.", "success");
+        return;
+      }
       if (!prepared.can_run || !prepared.current_payload_sha256) {
         throw new Error(prepared.block_reason ?? "no_analysis_data");
       }
+      appendActivity(
+        "WISSEN",
+        `${prepared.business_knowledge_entry_count} Wissenseinträge und ${prepared.source_analysis_count} Amazon-Analyse(n) sind im bestätigten Kontext.`,
+        "success",
+      );
+      appendActivity(
+        "HASH",
+        `Kontext ${prepared.current_payload_sha256.slice(0, 12)}… wurde serverseitig bestätigt.`,
+      );
       advance("intelligence");
+      appendActivity("RECHERCHE", "Aktuelle öffentliche Markt-, Wettbewerbs- und Krisensignale werden gesucht.");
+      appendActivity("OPENAI", "Strukturierte Strategie und Wochen-Handover werden erzeugt; store=false.");
       const result = await api.post<MarketplaceStrategyView>(
         "/marketplace/strategy/weekly",
         {
@@ -1758,9 +1941,27 @@ function WeeklyStrategyPanel({
         },
       );
       setView(result);
+      appendActivity(
+        "QUELLEN",
+        `${result.assessment?.public_sources?.length ?? 0} öffentliche Quellen wurden validiert und verlinkt.`,
+        "success",
+      );
+      if (result.input_tokens !== null || result.output_tokens !== null) {
+        appendActivity(
+          "TOKEN",
+          `Verbrauch: ${result.input_tokens ?? 0} Input- und ${result.output_tokens ?? 0} Output-Tokens.`,
+        );
+      }
+      appendActivity(
+        "ERGEBNIS",
+        "Antwortschema, Evidenzreferenzen und Handover sind validiert und unveränderlich gespeichert.",
+        "success",
+      );
     } catch (reason) {
       setFailedPhase(attemptedPhase);
-      setError(strategyErrorMessage(reason));
+      const message = strategyErrorMessage(reason);
+      setError(message);
+      appendActivity("FEHLER", message, "error");
       try {
         const refreshed = await api.get<MarketplaceStrategyView>("/marketplace/strategy/weekly");
         setView(refreshed);
@@ -1804,6 +2005,7 @@ function WeeklyStrategyPanel({
             disabled={
               submitting
                 || view.block_reason === "weekly_limit_reached"
+                || view.block_reason === "business_knowledge_missing"
                 || !view.status.available
                 || (!liveConnection && !view.can_run)
             }
@@ -1828,6 +2030,7 @@ function WeeklyStrategyPanel({
           {strategyPhaseMessages[progressPhase]}
         </p>
       )}
+      <StrategyActivityLog entries={activity} running={submitting} />
       {view && (
         <>
           {view.assessment && view.current_payload_sha256 !== view.assessment_payload_sha256 && (
@@ -1854,6 +2057,10 @@ function WeeklyStrategyPanel({
                 </div>
               )}
               <div><dt>Eingelesene Analysen</dt><dd>{view.source_analysis_count}</dd></div>
+              <div>
+                <dt>Mantle-/Sphagnum-Wissen</dt>
+                <dd>{view.business_knowledge_entry_count} Einträge aus {view.business_knowledge_source_count} Quellen</dd>
+              </div>
               <div><dt>Letzter Lauf als Kontext</dt><dd>{view.previous_run_context ? "ja" : "noch nicht vorhanden"}</dd></div>
               <div><dt>Wochenfenster</dt><dd>ab {view.week_start} · Europe/Berlin</dd></div>
               <div><dt>Modell</dt><dd>{view.status.model}</dd></div>

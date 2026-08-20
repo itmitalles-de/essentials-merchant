@@ -57,6 +57,7 @@ compose exec -T db pg_dump -U erplite -d erplite --data-only --format=custom --n
   --table=user_module_permissions \
   --table=connector_module_health \
   --table=administrative_audit_log \
+  --table=mantle_business_knowledge \
   --table='amazon_*' \
   --table=pilot_backup_verifications \
   >"$output_dir/data/pilot-core-data.dump"

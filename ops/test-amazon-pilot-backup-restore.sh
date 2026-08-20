@@ -175,6 +175,22 @@ INSERT INTO amazon_transport_observations
   (run_id, operation, request_id_redacted, rate_limit_limit, retry_after_seconds)
 VALUES
   ('22222222-2222-4222-8222-222222222222', 'create_report', 'sha256:aaaaaaaaaaaa', 'synthetic', 0);
+INSERT INTO mantle_business_knowledge
+  (scope, source_manifest_sha256, content_sha256, source_count, entry_count, knowledge, created_by)
+SELECT
+  'mantle_sphagnum', repeat('d', 64), repeat('e', 64), 2, 1,
+  '{
+    "version":"mantle-sphagnum-business-context-v1",
+    "sources":[
+      {"evidence_ref":"business:1","repository":"mantle_wiki","path":"amazon/strategie-sphagnum.md","title":"Synthetic wiki source","sha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},
+      {"evidence_ref":"business:2","repository":"notes","path":"docs/itmitalles/clients/mantle-sphagnum/profile.md","title":"Synthetic Notes source","sha256":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"}
+    ],
+    "entries":[
+      {"category":"positioning","status":"verified","statement":"Synthetic reviewed business-only context.","source_refs":["business:1","business:2"]}
+    ]
+  }'::jsonb,
+  id
+FROM users WHERE username = 'synthetic-admin';
 INSERT INTO administrative_audit_log
   (actor_user_id, action, target_type, target_id, idempotency_key, details)
 SELECT id, 'pilot.synthetic_backup_fixture', 'pilot_profile', 'amazon-read-only',
@@ -201,6 +217,7 @@ source_fingerprint=$(compose "$source_project" exec -T db psql -U erplite -d erp
      (SELECT count(*) FROM amazon_metric_snapshots),
      (SELECT count(*) FROM amazon_analysis_results),
      (SELECT count(*) FROM amazon_ai_strategy_assessments),
+     (SELECT count(*) FROM mantle_business_knowledge),
      (SELECT count(*) FROM administrative_audit_log),
      (SELECT count(*) FROM essentials_modules WHERE enabled))")
 test "$(compose "$source_project" exec -T db psql -U erplite -d erplite -X -qAt -c \
@@ -246,6 +263,7 @@ restored_fingerprint=$(compose "$restore_project" exec -T db psql -U erplite -d 
      (SELECT count(*) FROM amazon_metric_snapshots),
      (SELECT count(*) FROM amazon_analysis_results),
      (SELECT count(*) FROM amazon_ai_strategy_assessments),
+     (SELECT count(*) FROM mantle_business_knowledge),
      (SELECT count(*) FROM administrative_audit_log),
      (SELECT count(*) FROM essentials_modules WHERE enabled))")
 test "$source_fingerprint" = "$restored_fingerprint"
@@ -255,6 +273,11 @@ test "$(compose "$restore_project" exec -T db psql -U erplite -d erplite -X -qAt
   "SELECT count(*) FROM amazon_report_schedules WHERE enabled")" = 0
 test "$(compose "$restore_project" exec -T db psql -U erplite -d erplite -X -qAt -v ON_ERROR_STOP=1 -c \
   "SELECT count(*) FROM pilot_provider_secrets")" = 0
+test "$(compose "$restore_project" exec -T db psql -U erplite -d erplite -X -qAt -v ON_ERROR_STOP=1 -c \
+  "SELECT count(*) FROM mantle_business_knowledge
+   WHERE content_sha256 = repeat('e', 64)
+     AND source_count = 2
+     AND entry_count = 1")" = 1
 test "$(compose "$restore_project" exec -T db psql -U erplite -d erplite -X -qAt -v ON_ERROR_STOP=1 -c \
   "SELECT count(*) FROM amazon_report_documents document
    JOIN amazon_report_runs run ON run.id = document.run_id
@@ -269,4 +292,4 @@ test "$(docker run --rm -v "${restore_project}_erplite_invoices:/source:ro" \
   postgres:16-alpine@sha256:cf78e76683b9ca8c5733cbbdce6c9262b45b6767934dd0a95e671f9a0fc20685 \
   cat /source/amazon-pilot/fixture.txt)" = 'synthetic pilot operations document'
 
-echo "Amazon pilot backup/restore passed: Sales and Traffic plus aggregate Ads raw archives, hashes, snapshots, parsers, deterministic/AI analyses, modules, audit, documents, credential exclusion, and fail-closed profile verified."
+echo "Amazon pilot backup/restore passed: Sales and Traffic plus aggregate Ads raw archives, hashes, snapshots, parsers, deterministic/AI analyses, immutable business context, modules, audit, documents, credential exclusion, and fail-closed profile verified."

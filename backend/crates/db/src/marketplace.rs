@@ -424,6 +424,28 @@ pub struct StoreAiStrategyAssessment<'a> {
 }
 
 #[derive(Debug, Clone, Serialize, sqlx::FromRow)]
+pub struct MantleBusinessKnowledge {
+    pub id: Uuid,
+    pub scope: String,
+    pub source_manifest_sha256: String,
+    pub content_sha256: String,
+    pub source_count: i32,
+    pub entry_count: i32,
+    pub knowledge: Value,
+    pub created_by: Uuid,
+    pub created_at: DateTime<Utc>,
+}
+
+pub struct StoreMantleBusinessKnowledge<'a> {
+    pub source_manifest_sha256: &'a str,
+    pub content_sha256: &'a str,
+    pub source_count: i32,
+    pub entry_count: i32,
+    pub knowledge: &'a Value,
+    pub created_by: Uuid,
+}
+
+#[derive(Debug, Clone, Serialize, sqlx::FromRow)]
 pub struct AmazonReportDocumentInfo {
     pub id: Uuid,
     pub run_id: Uuid,
@@ -2068,6 +2090,86 @@ pub async fn current_mantle_strategy_week(
     .await
 }
 
+pub async fn mantle_business_knowledge(
+    pool: &PgPool,
+) -> Result<Option<MantleBusinessKnowledge>, sqlx::Error> {
+    sqlx::query_as::<_, MantleBusinessKnowledge>(
+        "SELECT id, scope, source_manifest_sha256, content_sha256, source_count,
+                entry_count, knowledge, created_by, created_at
+         FROM mantle_business_knowledge
+         WHERE scope = 'mantle_sphagnum'",
+    )
+    .fetch_optional(pool)
+    .await
+}
+
+/// Store the reviewed business baseline once. A repeated request with the same
+/// content is idempotent; a different baseline remains visible as a conflict at
+/// the route boundary instead of silently replacing accumulated context.
+pub async fn store_mantle_business_knowledge(
+    pool: &PgPool,
+    input: &StoreMantleBusinessKnowledge<'_>,
+) -> Result<(MantleBusinessKnowledge, bool), sqlx::Error> {
+    let mut tx = pool.begin().await?;
+    let inserted = sqlx::query_as::<_, MantleBusinessKnowledge>(
+        "INSERT INTO mantle_business_knowledge
+             (scope, source_manifest_sha256, content_sha256, source_count,
+              entry_count, knowledge, created_by)
+         VALUES ('mantle_sphagnum', $1, $2, $3, $4, $5, $6)
+         ON CONFLICT DO NOTHING
+         RETURNING id, scope, source_manifest_sha256, content_sha256, source_count,
+                   entry_count, knowledge, created_by, created_at",
+    )
+    .bind(input.source_manifest_sha256)
+    .bind(input.content_sha256)
+    .bind(input.source_count)
+    .bind(input.entry_count)
+    .bind(input.knowledge)
+    .bind(input.created_by)
+    .fetch_optional(&mut *tx)
+    .await?;
+    let was_inserted = inserted.is_some();
+    let knowledge = match inserted {
+        Some(record) => record,
+        None => {
+            sqlx::query_as::<_, MantleBusinessKnowledge>(
+                "SELECT id, scope, source_manifest_sha256, content_sha256, source_count,
+                        entry_count, knowledge, created_by, created_at
+                 FROM mantle_business_knowledge
+                 WHERE scope = 'mantle_sphagnum'",
+            )
+            .fetch_one(&mut *tx)
+            .await?
+        }
+    };
+    if was_inserted {
+        sqlx::query(
+            "INSERT INTO administrative_audit_log
+                 (actor_user_id, action, target_type, target_id, idempotency_key, details)
+             VALUES ($1, 'mantle.business_knowledge_imported', 'business_knowledge', $2, $3, $4)
+             ON CONFLICT (action, idempotency_key) DO NOTHING",
+        )
+        .bind(input.created_by)
+        .bind(knowledge.id.to_string())
+        .bind(format!(
+            "mantle-business-knowledge:{}",
+            input.content_sha256
+        ))
+        .bind(json!({
+            "source_manifest_sha256": input.source_manifest_sha256,
+            "content_sha256": input.content_sha256,
+            "source_count": input.source_count,
+            "entry_count": input.entry_count,
+            "raw_documents_stored": false,
+            "secrets_or_pii_allowed": false,
+        }))
+        .execute(&mut *tx)
+        .await?;
+    }
+    tx.commit().await?;
+    Ok((knowledge, was_inserted))
+}
+
 pub async fn ai_strategy_assessment_for_week(
     pool: &PgPool,
     week_start: NaiveDate,
@@ -2720,6 +2822,63 @@ mod tests {
         assert_eq!(comparison.1, older_outcome.run_id);
         assert_eq!(comparison.2, older.period_start.unwrap());
         assert_eq!(comparison.3, newer.period_end.unwrap());
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn mantle_business_knowledge_is_one_time_idempotent_and_immutable(pool: PgPool) {
+        let created_by: Uuid = sqlx::query_scalar(
+            "INSERT INTO users (username, password_hash, role)
+             VALUES ('synthetic-knowledge-admin', 'synthetic-not-a-secret', 'administrator')
+             RETURNING id",
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        let knowledge = json!({
+            "version": "mantle-sphagnum-business-context-v1",
+            "sources": [{"ref": "business:1", "sha256": "source-only"}],
+            "entries": [{"statement": "Synthetic business context"}],
+        });
+        let content_sha256 = "d".repeat(64);
+        let manifest_sha256 = "e".repeat(64);
+        let input = StoreMantleBusinessKnowledge {
+            source_manifest_sha256: &manifest_sha256,
+            content_sha256: &content_sha256,
+            source_count: 2,
+            entry_count: 1,
+            knowledge: &knowledge,
+            created_by,
+        };
+        let (first, first_inserted) = store_mantle_business_knowledge(&pool, &input)
+            .await
+            .unwrap();
+        let (second, second_inserted) = store_mantle_business_knowledge(&pool, &input)
+            .await
+            .unwrap();
+        assert!(first_inserted);
+        assert!(!second_inserted);
+        assert_eq!(first.id, second.id);
+        assert_eq!(first.knowledge, knowledge);
+
+        let different_hash = "f".repeat(64);
+        let different = StoreMantleBusinessKnowledge {
+            content_sha256: &different_hash,
+            ..input
+        };
+        let (existing, inserted) = store_mantle_business_knowledge(&pool, &different)
+            .await
+            .unwrap();
+        assert!(!inserted);
+        assert_eq!(existing.id, first.id);
+        assert_ne!(existing.content_sha256, different_hash);
+
+        assert!(
+            sqlx::query("UPDATE mantle_business_knowledge SET entry_count = 2 WHERE id = $1")
+                .bind(first.id)
+                .execute(&pool)
+                .await
+                .is_err()
+        );
     }
 
     #[sqlx::test(migrations = "./migrations")]

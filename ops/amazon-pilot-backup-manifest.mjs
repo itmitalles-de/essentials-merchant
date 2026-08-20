@@ -47,6 +47,7 @@ const manifest = {
     "normalized-amazon-snapshots",
     "deterministic-analysis-results",
     "validated-ai-strategy-assessments",
+    "immutable-curated-business-context",
     "module-states",
     "administrative-audit",
     "pilot-documents",

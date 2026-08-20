@@ -22,6 +22,7 @@ const requiredStores = [
   "administrative-audit", "pilot-documents", "redacted-compose-metadata",
 ];
 if (manifest.schema_version >= 17) requiredStores.push("validated-ai-strategy-assessments");
+if (manifest.schema_version >= 21) requiredStores.push("immutable-curated-business-context");
 for (const store of requiredStores) {
   if (!manifest.stores.includes(store)) throw new Error(`pilot manifest lacks store: ${store}`);
 }
