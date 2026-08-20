@@ -77,13 +77,23 @@ citation excerpts in provider citation order, plus a closed
 aggregate-history DTO. Internal metrics never enter a web query. When the
 approved live connection exists, that same click first creates or reuses exactly one seven-day
 Sales and Traffic run and waits for the normal immutable parser/analysis pipeline. The DTO contains
-at most eight distinct newest-first analyses, one immutable curated
+at most thirteen distinct newest-first analyses, one immutable curated
 Mantle/Sphagnum business-context baseline, and the previous validated
 strategy/handover as untrusted context. The singleton baseline stores only
 typed reviewed statements plus source paths/titles, statuses, and file hashes;
 raw Wiki/Notes documents, PII, and secrets never cross the import boundary.
 Both calls use the fixed Responses API POST and have no Amazon transport
-authority, automatic execution, or raw/product/customer/campaign input.
+authority, automatic execution, or raw-report/product-identifier/customer/
+campaign input.
+
+Observed live Child ASINs may be assigned reviewed Mantle/Sphagnum product and
+pack-size labels through the gear-linked settings page. The database stores
+append-only mapping revisions, including optional internal SKU and provenance.
+The strategy query joins the latest enabled revision to at most thirteen
+weekly child-period snapshots, then drops Child ASIN, SKU, connection IDs, and
+marketplace identifiers before creating semantic `product:*` evidence. The
+provider receives only reviewed labels, aggregate revenue/units/sessions/page
+views, derived conversion, and bounded mapped/unmapped coverage counts.
 
 Validated strategy output is stored separately in immutable
 `amazon_ai_strategy_assessments`. New weekly rows carry a Europe/Berlin Monday key with a partial

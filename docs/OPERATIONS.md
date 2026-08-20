@@ -192,6 +192,21 @@ sets the Europe/Berlin Monday `week_start`; the database unique index and UI
 then disable another successful run until the next Monday 00:00 local time.
 Provider failures create no row and leave retry possible.
 
+The aggregate synthesis window is a maximum of thirteen newest-first weekly
+periods. A full-baseline run can therefore use the complete 91-day history
+held by the service; every later weekly run adds current evidence and the last
+validated handover, so the workflow remains incremental without a second
+button or scheduler.
+
+The settings page also lists Child ASINs observed in live Sales and Traffic
+snapshots. An administrator may assign a reviewed business area, product
+family, variant, optional pack size, optional internal SKU, evidence source,
+and enabled state. Saving requires the confirmation checkbox and creates an
+append-only revision. Verify the coverage count before a paid run. Child ASIN
+and SKU are for internal lookup only; the synthesis payload contains the
+reviewed labels and aggregate metrics, never either identifier. This is a
+local Merchant metadata write and does not call or mutate Amazon.
+
 Before the first paid run, import the reviewed Mantle/Sphagnum business bundle
 exactly once through `POST /api/marketplace/strategy/knowledge`. The JSON body
 must contain `confirmed_business_only: true`,

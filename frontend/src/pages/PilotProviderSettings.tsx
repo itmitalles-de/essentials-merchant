@@ -1,6 +1,7 @@
 import { Link } from "react-router-dom";
 
 import { ProviderSettingsPanel } from "../components/ProviderSettingsPanel";
+import { ProductMappingPanel } from "../components/ProductMappingPanel";
 import { usePilotStatus } from "../hooks/usePilotStatus";
 
 export function PilotProviderSettings() {
@@ -30,6 +31,7 @@ export function PilotProviderSettings() {
       )}
 
       <ProviderSettingsPanel onConfigured={async () => undefined} />
+      <ProductMappingPanel />
     </div>
   );
 }

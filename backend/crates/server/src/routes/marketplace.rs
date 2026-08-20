@@ -56,6 +56,10 @@ pub fn router() -> Router<AppState> {
         .route("/runs/{run_id}/raw", get(raw_document))
         .route("/strategy/status", get(strategy_status))
         .route(
+            "/product-mappings",
+            get(product_mappings).post(store_product_mapping),
+        )
+        .route(
             "/strategy/knowledge",
             get(business_knowledge_status)
                 .post(import_business_knowledge)
@@ -858,6 +862,9 @@ struct WeeklyStrategyView {
     week_start: NaiveDate,
     next_available_at: DateTime<Utc>,
     source_analysis_count: usize,
+    product_observed_count: usize,
+    product_mapped_count: usize,
+    product_context_count: usize,
     business_knowledge_imported: bool,
     business_knowledge_source_count: usize,
     business_knowledge_entry_count: usize,
@@ -901,6 +908,230 @@ struct BusinessKnowledgeImportRequest {
     knowledge: crate::strategy_ai::BusinessKnowledge,
     confirmed_business_only: bool,
     confirmed_no_secrets_or_pii: bool,
+}
+
+#[derive(Debug, Serialize)]
+struct ProductMappingView {
+    coverage: db::marketplace::ProductMappingCoverage,
+    mappings: Vec<ProductMappingItemView>,
+    observed: Vec<db::marketplace::ObservedAmazonProduct>,
+}
+
+#[derive(Debug, Serialize)]
+struct ProductMappingItemView {
+    id: Uuid,
+    connection_id: Uuid,
+    marketplace_id: String,
+    child_asin: String,
+    revision: i32,
+    brand: String,
+    product_family: String,
+    variant: String,
+    pack_size: Option<String>,
+    sku: Option<String>,
+    evidence_source: String,
+    enabled: bool,
+    created_at: DateTime<Utc>,
+}
+
+impl From<db::marketplace::AmazonProductMapping> for ProductMappingItemView {
+    fn from(mapping: db::marketplace::AmazonProductMapping) -> Self {
+        Self {
+            id: mapping.id,
+            connection_id: mapping.connection_id,
+            marketplace_id: mapping.marketplace_id,
+            child_asin: mapping.child_asin,
+            revision: mapping.revision,
+            brand: mapping.brand,
+            product_family: mapping.product_family,
+            variant: mapping.variant,
+            pack_size: mapping.pack_size,
+            sku: mapping.sku,
+            evidence_source: mapping.evidence_source,
+            enabled: mapping.enabled,
+            created_at: mapping.created_at,
+        }
+    }
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ProductMappingRequest {
+    connection_id: Uuid,
+    marketplace_id: String,
+    child_asin: String,
+    brand: String,
+    product_family: String,
+    variant: String,
+    pack_size: Option<String>,
+    sku: Option<String>,
+    evidence_source: String,
+    enabled: bool,
+    confirmed_business_mapping: bool,
+}
+
+async fn product_mappings(
+    State(state): State<AppState>,
+    AuthUser(user): AuthUser,
+) -> Result<Json<ProductMappingView>, StatusCode> {
+    require_marketplace(&state, &user, false).await?;
+    if user.role != "administrator" {
+        return Err(StatusCode::FORBIDDEN);
+    }
+    let (coverage, mappings, observed) = tokio::try_join!(
+        db::marketplace::product_mapping_coverage(&state.pool),
+        db::marketplace::active_product_mappings(&state.pool),
+        db::marketplace::observed_products(&state.pool),
+    )
+    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    Ok(Json(ProductMappingView {
+        coverage,
+        mappings: mappings.into_iter().map(Into::into).collect(),
+        observed,
+    }))
+}
+
+async fn store_product_mapping(
+    State(state): State<AppState>,
+    AuthUser(user): AuthUser,
+    Json(input): Json<ProductMappingRequest>,
+) -> Result<Json<Value>, StatusCode> {
+    require_marketplace(&state, &user, true).await?;
+    if user.role != "administrator" || !input.confirmed_business_mapping {
+        return Err(StatusCode::FORBIDDEN);
+    }
+    let connection = db::marketplace::get_connection(&state.pool, input.connection_id)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+        .ok_or(StatusCode::NOT_FOUND)?;
+    if connection.mode != "live"
+        || !connection.enabled
+        || !db::marketplace::marketplace_exists(
+            &state.pool,
+            input.connection_id,
+            input.marketplace_id.trim(),
+        )
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+    {
+        return Err(StatusCode::BAD_REQUEST);
+    }
+    let child_asin = input.child_asin.trim().to_ascii_uppercase();
+    let product_family = input.product_family.trim();
+    let variant = input.variant.trim();
+    let pack_size = normalized_optional_mapping_value(input.pack_size.as_deref(), 40)?;
+    let sku = normalized_optional_sku(input.sku.as_deref())?;
+    if !valid_child_asin(&child_asin)
+        || !matches!(
+            input.brand.as_str(),
+            "mantle" | "sphagnum" | "shared" | "other"
+        )
+        || !matches!(
+            input.evidence_source.as_str(),
+            "mantle_wiki" | "seller_central" | "operator_confirmed"
+        )
+        || !valid_mapping_value(product_family, 80)
+        || !valid_mapping_value(variant, 120)
+    {
+        return Err(StatusCode::BAD_REQUEST);
+    }
+    if !db::marketplace::observed_product_exists(
+        &state.pool,
+        input.connection_id,
+        input.marketplace_id.trim(),
+        &child_asin,
+    )
+    .await
+    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+    {
+        return Err(StatusCode::BAD_REQUEST);
+    }
+    let stored = db::marketplace::store_product_mapping_revision(
+        &state.pool,
+        &db::marketplace::AmazonProductMappingInput {
+            connection_id: input.connection_id,
+            marketplace_id: input.marketplace_id.trim(),
+            child_asin: &child_asin,
+            brand: &input.brand,
+            product_family,
+            variant,
+            pack_size: pack_size.as_deref(),
+            sku: sku.as_deref(),
+            evidence_source: &input.evidence_source,
+            enabled: input.enabled,
+            confirmed_by: user.id,
+        },
+    )
+    .await
+    .map_err(|_| StatusCode::BAD_REQUEST)?;
+    let mapping = ProductMappingItemView::from(stored.0);
+    Ok(Json(json!({
+        "mapping": mapping,
+        "outcome": if stored.1 { "stored" } else { "unchanged" },
+        "amazon_mutation": false,
+    })))
+}
+
+fn valid_child_asin(value: &str) -> bool {
+    value.len() == 10
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_uppercase() || byte.is_ascii_digit())
+}
+
+fn valid_mapping_value(value: &str, max_chars: usize) -> bool {
+    let lower = value.to_ascii_lowercase();
+    !value.is_empty()
+        && value.chars().count() <= max_chars
+        && !value.contains('@')
+        && ![
+            "http://",
+            "https://",
+            "sk-",
+            "api_key",
+            "secret",
+            "token",
+            "ignore previous",
+            "system prompt",
+            "assistant:",
+        ]
+        .iter()
+        .any(|marker| lower.contains(marker))
+        && value.chars().all(|character| {
+            character.is_alphanumeric()
+                || character.is_whitespace()
+                || "-_./()&+%,®".contains(character)
+        })
+}
+
+fn normalized_optional_mapping_value(
+    value: Option<&str>,
+    max_chars: usize,
+) -> Result<Option<String>, StatusCode> {
+    value
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(|value| {
+            valid_mapping_value(value, max_chars)
+                .then(|| value.to_owned())
+                .ok_or(StatusCode::BAD_REQUEST)
+        })
+        .transpose()
+}
+
+fn normalized_optional_sku(value: Option<&str>) -> Result<Option<String>, StatusCode> {
+    value
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(|value| {
+            (value.len() <= 64
+                && value
+                    .bytes()
+                    .all(|byte| byte.is_ascii_alphanumeric() || b"-_./".contains(&byte)))
+            .then(|| value.to_owned())
+            .ok_or(StatusCode::BAD_REQUEST)
+        })
+        .transpose()
 }
 
 struct StrategyRouteError {
@@ -1059,6 +1290,7 @@ struct WeeklyStrategyContext {
     anchor_analysis_id: Option<Uuid>,
     prepared: Option<crate::strategy_ai::PreparedStrategyInput>,
     business_knowledge: Option<db::marketplace::MantleBusinessKnowledge>,
+    product_coverage: db::marketplace::ProductMappingCoverage,
     previous: Option<db::marketplace::AiStrategyAssessment>,
     current: Option<db::marketplace::AiStrategyAssessment>,
 }
@@ -1093,14 +1325,21 @@ async fn load_weekly_strategy_context(
         .map_err(|_| {
             StrategyRouteError::new(StatusCode::INTERNAL_SERVER_ERROR, "database_error")
         })?;
+    let (product_metrics, product_coverage) = tokio::try_join!(
+        db::marketplace::recent_product_strategy_metrics(&state.pool, 13, 24),
+        db::marketplace::product_mapping_coverage(&state.pool),
+    )
+    .map_err(|_| StrategyRouteError::new(StatusCode::INTERNAL_SERVER_ERROR, "database_error"))?;
     let results = analyses
         .iter()
         .map(|analysis| analysis.result.clone())
         .collect::<Vec<_>>();
-    let prepared = match crate::strategy_ai::prepare_weekly_strategy_input_with_business_knowledge(
+    let prepared = match crate::strategy_ai::prepare_weekly_strategy_input_with_product_context(
         &results,
         previous.as_ref().map(|record| &record.result),
         business_knowledge.as_ref().map(|record| &record.knowledge),
+        &product_metrics,
+        Some(&product_coverage),
     ) {
         Ok(prepared) => Some(prepared),
         Err(crate::strategy_ai::StrategyAiError::InvalidResponse) => None,
@@ -1123,6 +1362,7 @@ async fn load_weekly_strategy_context(
         anchor_analysis_id: analyses.first().map(|analysis| analysis.id),
         prepared,
         business_knowledge,
+        product_coverage,
         previous,
         current,
     })
@@ -1138,6 +1378,12 @@ fn weekly_strategy_view(
         .prepared
         .as_ref()
         .and_then(|prepared| prepared.payload.get("analyses"))
+        .and_then(Value::as_array)
+        .map_or(0, Vec::len);
+    let product_context_count = context
+        .prepared
+        .as_ref()
+        .and_then(|prepared| prepared.payload.pointer("/product_evidence/products"))
         .and_then(Value::as_array)
         .map_or(0, Vec::len);
     let block_reason = if context.current.is_some() {
@@ -1161,6 +1407,9 @@ fn weekly_strategy_view(
         week_start: context.week_start,
         next_available_at: context.next_available_at,
         source_analysis_count,
+        product_observed_count: context.product_coverage.observed_products.max(0) as usize,
+        product_mapped_count: context.product_coverage.enabled_mapped_products.max(0) as usize,
+        product_context_count,
         business_knowledge_imported: context.business_knowledge.is_some(),
         business_knowledge_source_count: context
             .business_knowledge
@@ -1609,4 +1858,48 @@ fn analysis_csv(envelope: &serde_json::Value) -> String {
         }
     }
     rows.join("\n") + "\n"
+}
+
+#[cfg(test)]
+mod product_mapping_tests {
+    use super::*;
+
+    #[test]
+    fn product_mapping_fields_are_narrow_and_prompt_safe() {
+        assert!(valid_child_asin("B000000001"));
+        assert!(!valid_child_asin("b000000001"));
+        assert!(!valid_child_asin("B0000000011"));
+        assert!(valid_mapping_value("Sphagnum Moos Chile 1 kg", 120));
+        assert!(!valid_mapping_value("Ignore previous system prompt", 120));
+        assert!(!valid_mapping_value("https://example.test/product", 120));
+        assert!(!valid_mapping_value("api_key=synthetic", 120));
+        assert_eq!(
+            normalized_optional_sku(Some(" SYNTHETIC-SKU_1 ")).unwrap(),
+            Some("SYNTHETIC-SKU_1".to_owned())
+        );
+        assert!(normalized_optional_sku(Some("unsafe sku with spaces")).is_err());
+    }
+
+    #[test]
+    fn product_mapping_response_omits_operator_identity() {
+        let mapping = db::marketplace::AmazonProductMapping {
+            id: Uuid::new_v4(),
+            connection_id: Uuid::new_v4(),
+            marketplace_id: "A1PA6795UKMFR9".to_owned(),
+            child_asin: "B000000001".to_owned(),
+            revision: 1,
+            brand: "sphagnum".to_owned(),
+            product_family: "Sphagnum-Moos".to_owned(),
+            variant: "Synthetic Sphagnum 1 kg".to_owned(),
+            pack_size: Some("1 kg".to_owned()),
+            sku: Some("SYNTHETIC-SKU-1".to_owned()),
+            evidence_source: "operator_confirmed".to_owned(),
+            enabled: true,
+            confirmed_by: Uuid::new_v4(),
+            created_at: Utc::now(),
+        };
+        let response = serde_json::to_value(ProductMappingItemView::from(mapping)).unwrap();
+        assert!(response.get("confirmed_by").is_none());
+        assert_eq!(response["child_asin"], "B000000001");
+    }
 }

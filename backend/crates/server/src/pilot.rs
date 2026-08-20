@@ -199,6 +199,7 @@ fn pilot_request_allowed(method: &Method, path: &str) -> bool {
             | "/api/marketplace/imports/preview"
             | "/api/marketplace/imports/ads"
             | "/api/marketplace/imports/ads/preview"
+            | "/api/marketplace/product-mappings"
             | "/api/marketplace/strategy/knowledge"
             | "/api/pilot/provider-secrets/openai"
             | "/api/pilot/provider-secrets/amazon"
@@ -224,6 +225,7 @@ pub(crate) fn anonymous_pilot_request_allowed(method: &Method, path: &str) -> bo
                 | "/api/pilot/status"
                 | "/api/pilot/provider-secrets/status"
                 | "/api/marketplace"
+                | "/api/marketplace/product-mappings"
                 | "/api/marketplace/strategy/status"
                 | "/api/marketplace/strategy/knowledge"
                 | "/api/marketplace/strategy/weekly"
@@ -243,6 +245,7 @@ pub(crate) fn anonymous_pilot_request_allowed(method: &Method, path: &str) -> bo
             | "/api/marketplace/imports/preview"
             | "/api/marketplace/imports/ads"
             | "/api/marketplace/imports/ads/preview"
+            | "/api/marketplace/product-mappings"
             | "/api/marketplace/strategy/knowledge"
             | "/api/marketplace/strategy/weekly"
             | "/api/pilot/provider-secrets/openai"
@@ -322,6 +325,7 @@ mod tests {
             "/api/marketplace/imports",
             "/api/marketplace/imports/ads/preview",
             "/api/marketplace/imports/ads",
+            "/api/marketplace/product-mappings",
             "/api/marketplace/strategy/knowledge",
             "/api/marketplace/strategy/weekly",
             "/api/pilot/provider-secrets/openai",
@@ -350,6 +354,7 @@ mod tests {
             (Method::GET, "/api/pilot/status"),
             (Method::GET, "/api/pilot/provider-secrets/status"),
             (Method::GET, "/api/marketplace"),
+            (Method::GET, "/api/marketplace/product-mappings"),
             (Method::GET, "/api/marketplace/strategy/knowledge"),
             (
                 Method::GET,
@@ -363,6 +368,7 @@ mod tests {
             (Method::POST, "/api/marketplace/imports"),
             (Method::POST, "/api/marketplace/imports/ads/preview"),
             (Method::POST, "/api/marketplace/imports/ads"),
+            (Method::POST, "/api/marketplace/product-mappings"),
             (Method::POST, "/api/marketplace/strategy/knowledge"),
             (Method::POST, "/api/marketplace/strategy/weekly"),
             (Method::POST, "/api/pilot/provider-secrets/openai"),

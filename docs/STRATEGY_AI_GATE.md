@@ -59,7 +59,7 @@ external-gate reason.
 The browser sends only the displayed aggregate-input SHA-256 and an explicit
 aggregate-only confirmation boolean when the operator clicks `Analyse`. The
 backend reloads the newest deterministic results, reduces them through a second
-closed provider DTO, removes duplicates, and retains at most eight newest-first
+closed provider DTO, removes duplicates, and retains at most thirteen newest-first
 analysis documents. It also adds the previous immutable, validated AI result as
 untrusted continuity context. No browser-supplied report or analysis body is
 accepted.
@@ -74,6 +74,9 @@ Eligible provider input is limited to:
   attributed sales/orders/units, CTR, CPC, ROAS, and ACOS;
 - allowlisted period values, absolute and percentage delta, trend, and anomaly
   class;
+- up to thirteen periods of aggregate metrics for explicitly reviewed product
+  labels, plus coverage counts; Child ASIN, SKU, and unmapped-product metrics
+  are excluded;
 - deterministic uncertainty, missing-data/evidence statements, and open
   questions authored by the server;
 - the preceding validated AI summary, findings, questions, actions, and

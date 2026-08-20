@@ -306,6 +306,71 @@ pub struct NormalizedMetric {
     pub evidence: Value,
 }
 
+#[derive(Debug, Clone, Serialize, sqlx::FromRow)]
+pub struct AmazonProductMapping {
+    pub id: Uuid,
+    pub connection_id: Uuid,
+    pub marketplace_id: String,
+    pub child_asin: String,
+    pub revision: i32,
+    pub brand: String,
+    pub product_family: String,
+    pub variant: String,
+    pub pack_size: Option<String>,
+    pub sku: Option<String>,
+    pub evidence_source: String,
+    pub enabled: bool,
+    pub confirmed_by: Uuid,
+    pub created_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone)]
+pub struct AmazonProductMappingInput<'a> {
+    pub connection_id: Uuid,
+    pub marketplace_id: &'a str,
+    pub child_asin: &'a str,
+    pub brand: &'a str,
+    pub product_family: &'a str,
+    pub variant: &'a str,
+    pub pack_size: Option<&'a str>,
+    pub sku: Option<&'a str>,
+    pub evidence_source: &'a str,
+    pub enabled: bool,
+    pub confirmed_by: Uuid,
+}
+
+#[derive(Debug, Clone, Serialize, sqlx::FromRow)]
+pub struct ObservedAmazonProduct {
+    pub connection_id: Uuid,
+    pub marketplace_id: String,
+    pub child_asin: String,
+    pub first_seen: Option<DateTime<Utc>>,
+    pub last_seen: Option<DateTime<Utc>>,
+    pub period_count: i64,
+}
+
+#[derive(Debug, Clone, sqlx::FromRow)]
+pub struct ProductStrategyMetric {
+    pub mapping_id: Uuid,
+    pub brand: String,
+    pub product_family: String,
+    pub variant: String,
+    pub pack_size: Option<String>,
+    pub period_start: DateTime<Utc>,
+    pub period_end: DateTime<Utc>,
+    pub metric_name: String,
+    pub value_numeric: Decimal,
+    pub unit: String,
+    pub currency_code: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, sqlx::FromRow)]
+pub struct ProductMappingCoverage {
+    pub observed_products: i64,
+    pub mapped_products: i64,
+    pub enabled_mapped_products: i64,
+}
+
 #[derive(Debug, Clone)]
 pub struct ParsedMetric {
     pub metric_name: String,
@@ -1825,6 +1890,281 @@ pub async fn metrics_for_snapshot(
     .await
 }
 
+pub async fn active_product_mappings(
+    pool: &PgPool,
+) -> Result<Vec<AmazonProductMapping>, sqlx::Error> {
+    sqlx::query_as::<_, AmazonProductMapping>(
+        "SELECT mapping.id, mapping.connection_id, mapping.marketplace_id,
+                mapping.child_asin, mapping.revision, mapping.brand,
+                mapping.product_family, mapping.variant, mapping.pack_size,
+                mapping.sku, mapping.evidence_source, mapping.enabled,
+                mapping.confirmed_by, mapping.created_at
+         FROM (
+             SELECT DISTINCT ON (revision.connection_id, revision.marketplace_id,
+                                 revision.child_asin)
+                    revision.*
+             FROM amazon_product_mapping_revisions revision
+             JOIN amazon_connections connection ON connection.id = revision.connection_id
+             WHERE connection.mode = 'live'
+               AND NOT starts_with(revision.marketplace_id, 'SYNTHETIC-')
+             ORDER BY revision.connection_id, revision.marketplace_id,
+                      revision.child_asin, revision.revision DESC
+         ) mapping
+         ORDER BY mapping.brand, mapping.product_family, mapping.variant,
+                  mapping.child_asin",
+    )
+    .fetch_all(pool)
+    .await
+}
+
+pub async fn observed_products(pool: &PgPool) -> Result<Vec<ObservedAmazonProduct>, sqlx::Error> {
+    sqlx::query_as::<_, ObservedAmazonProduct>(
+        "SELECT snapshot.connection_id, snapshot.marketplace_id,
+                metric.evidence->>'dimension' AS child_asin,
+                min(snapshot.period_start) AS first_seen,
+                max(snapshot.period_end) AS last_seen,
+                count(DISTINCT snapshot.id)::bigint AS period_count
+         FROM amazon_normalized_metrics metric
+         JOIN amazon_metric_snapshots snapshot ON snapshot.id = metric.snapshot_id
+         JOIN amazon_connections connection ON connection.id = snapshot.connection_id
+         WHERE connection.mode = 'live'
+           AND NOT starts_with(snapshot.marketplace_id, 'SYNTHETIC-')
+           AND metric.dimension_type = 'child_period'
+           AND metric.evidence->>'dimension' ~ '^[A-Z0-9]{10}$'
+         GROUP BY snapshot.connection_id, snapshot.marketplace_id,
+                  metric.evidence->>'dimension'
+         ORDER BY max(snapshot.period_end) DESC, metric.evidence->>'dimension'",
+    )
+    .fetch_all(pool)
+    .await
+}
+
+pub async fn observed_product_exists(
+    pool: &PgPool,
+    connection_id: Uuid,
+    marketplace_id: &str,
+    child_asin: &str,
+) -> Result<bool, sqlx::Error> {
+    sqlx::query_scalar(
+        "SELECT EXISTS (
+             SELECT 1
+             FROM amazon_normalized_metrics metric
+             JOIN amazon_metric_snapshots snapshot ON snapshot.id = metric.snapshot_id
+             JOIN amazon_connections connection ON connection.id = snapshot.connection_id
+             WHERE snapshot.connection_id = $1
+               AND snapshot.marketplace_id = $2
+               AND connection.mode = 'live'
+               AND NOT starts_with(snapshot.marketplace_id, 'SYNTHETIC-')
+               AND metric.dimension_type = 'child_period'
+               AND metric.evidence->>'dimension' = $3
+         )",
+    )
+    .bind(connection_id)
+    .bind(marketplace_id)
+    .bind(child_asin)
+    .fetch_one(pool)
+    .await
+}
+
+pub async fn store_product_mapping_revision(
+    pool: &PgPool,
+    input: &AmazonProductMappingInput<'_>,
+) -> Result<(AmazonProductMapping, bool), sqlx::Error> {
+    let mut tx = pool.begin().await?;
+    sqlx::query("SELECT id FROM amazon_connections WHERE id = $1 FOR UPDATE")
+        .bind(input.connection_id)
+        .fetch_one(&mut *tx)
+        .await?;
+    let current = sqlx::query_as::<_, AmazonProductMapping>(
+        "SELECT id, connection_id, marketplace_id, child_asin, revision, brand,
+                product_family, variant, pack_size, sku, evidence_source, enabled,
+                confirmed_by, created_at
+         FROM amazon_product_mapping_revisions
+         WHERE connection_id = $1 AND marketplace_id = $2 AND child_asin = $3
+         ORDER BY revision DESC LIMIT 1",
+    )
+    .bind(input.connection_id)
+    .bind(input.marketplace_id)
+    .bind(input.child_asin)
+    .fetch_optional(&mut *tx)
+    .await?;
+    if let Some(mapping) = current.as_ref() {
+        let unchanged = mapping.brand == input.brand
+            && mapping.product_family == input.product_family
+            && mapping.variant == input.variant
+            && mapping.pack_size.as_deref() == input.pack_size
+            && mapping.sku.as_deref() == input.sku
+            && mapping.evidence_source == input.evidence_source
+            && mapping.enabled == input.enabled;
+        if unchanged {
+            let mapping = mapping.clone();
+            tx.commit().await?;
+            return Ok((mapping, false));
+        }
+    }
+    let revision = current.map_or(1, |mapping| mapping.revision + 1);
+    let mapping = sqlx::query_as::<_, AmazonProductMapping>(
+        "INSERT INTO amazon_product_mapping_revisions
+             (connection_id, marketplace_id, child_asin, revision, brand,
+              product_family, variant, pack_size, sku, evidence_source, enabled,
+              confirmed_by)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+         RETURNING id, connection_id, marketplace_id, child_asin, revision, brand,
+                   product_family, variant, pack_size, sku, evidence_source, enabled,
+                   confirmed_by, created_at",
+    )
+    .bind(input.connection_id)
+    .bind(input.marketplace_id)
+    .bind(input.child_asin)
+    .bind(revision)
+    .bind(input.brand)
+    .bind(input.product_family)
+    .bind(input.variant)
+    .bind(input.pack_size)
+    .bind(input.sku)
+    .bind(input.evidence_source)
+    .bind(input.enabled)
+    .bind(input.confirmed_by)
+    .fetch_one(&mut *tx)
+    .await?;
+    sqlx::query(
+        "INSERT INTO administrative_audit_log
+             (actor_user_id, action, target_type, target_id, idempotency_key, details)
+         VALUES ($1, 'amazon.product_mapping_revised', 'amazon_product_mapping',
+                 $2, $3, $4)
+         ON CONFLICT (action, idempotency_key) DO NOTHING",
+    )
+    .bind(input.confirmed_by)
+    .bind(mapping.id.to_string())
+    .bind(format!("amazon-product-mapping:{}", mapping.id))
+    .bind(json!({
+        "connection_id": input.connection_id,
+        "marketplace_id": input.marketplace_id,
+        "revision": revision,
+        "brand": input.brand,
+        "evidence_source": input.evidence_source,
+        "enabled": input.enabled,
+        "amazon_mutation": false,
+    }))
+    .execute(&mut *tx)
+    .await?;
+    tx.commit().await?;
+    Ok((mapping, true))
+}
+
+pub async fn product_mapping_coverage(
+    pool: &PgPool,
+) -> Result<ProductMappingCoverage, sqlx::Error> {
+    sqlx::query_as::<_, ProductMappingCoverage>(
+        "WITH observed AS (
+             SELECT DISTINCT snapshot.connection_id, snapshot.marketplace_id,
+                    metric.evidence->>'dimension' AS child_asin
+             FROM amazon_normalized_metrics metric
+             JOIN amazon_metric_snapshots snapshot ON snapshot.id = metric.snapshot_id
+             JOIN amazon_connections connection ON connection.id = snapshot.connection_id
+             WHERE connection.mode = 'live'
+               AND NOT starts_with(snapshot.marketplace_id, 'SYNTHETIC-')
+               AND metric.dimension_type = 'child_period'
+               AND metric.evidence->>'dimension' ~ '^[A-Z0-9]{10}$'
+         ), current_mapping AS (
+             SELECT DISTINCT ON (connection_id, marketplace_id, child_asin)
+                    connection_id, marketplace_id, child_asin, enabled
+             FROM amazon_product_mapping_revisions
+             ORDER BY connection_id, marketplace_id, child_asin, revision DESC
+         )
+         SELECT count(*)::bigint AS observed_products,
+                count(mapping.child_asin)::bigint AS mapped_products,
+                count(mapping.child_asin) FILTER (WHERE mapping.enabled)::bigint
+                    AS enabled_mapped_products
+         FROM observed
+         LEFT JOIN current_mapping mapping USING (connection_id, marketplace_id, child_asin)",
+    )
+    .fetch_one(pool)
+    .await
+}
+
+pub async fn recent_product_strategy_metrics(
+    pool: &PgPool,
+    period_limit: i64,
+    product_limit: i64,
+) -> Result<Vec<ProductStrategyMetric>, sqlx::Error> {
+    sqlx::query_as::<_, ProductStrategyMetric>(
+        "WITH ranked_snapshots AS (
+             SELECT snapshot.*,
+                    row_number() OVER (
+                        PARTITION BY snapshot.connection_id, snapshot.marketplace_id,
+                                     snapshot.report_type, snapshot.period_start,
+                                     snapshot.period_end
+                        ORDER BY snapshot.created_at DESC
+                    ) AS duplicate_rank
+             FROM amazon_metric_snapshots snapshot
+             JOIN amazon_connections connection ON connection.id = snapshot.connection_id
+             WHERE connection.mode = 'live'
+               AND NOT starts_with(snapshot.marketplace_id, 'SYNTHETIC-')
+               AND snapshot.report_type = 'GET_SALES_AND_TRAFFIC_REPORT'
+               AND snapshot.period_start IS NOT NULL
+               AND snapshot.period_end IS NOT NULL
+         ), recent_snapshots AS (
+             SELECT * FROM ranked_snapshots
+             WHERE duplicate_rank = 1
+             ORDER BY period_end DESC, created_at DESC
+             LIMIT $1
+         ), current_mapping AS (
+             SELECT * FROM (
+                 SELECT DISTINCT ON (revision.connection_id, revision.marketplace_id,
+                                     revision.child_asin)
+                        revision.*
+                 FROM amazon_product_mapping_revisions revision
+                 ORDER BY revision.connection_id, revision.marketplace_id,
+                          revision.child_asin, revision.revision DESC
+             ) latest
+             WHERE latest.enabled
+         ), mapping_totals AS (
+             SELECT mapping.id AS mapping_id,
+                    COALESCE(sum(metric.value_numeric) FILTER (
+                        WHERE metric.metric_name = 'ordered_product_sales'
+                    ), 0) AS total_sales
+             FROM current_mapping mapping
+             JOIN recent_snapshots snapshot
+               ON snapshot.connection_id = mapping.connection_id
+              AND snapshot.marketplace_id = mapping.marketplace_id
+             JOIN amazon_normalized_metrics metric ON metric.snapshot_id = snapshot.id
+              AND metric.dimension_type = 'child_period'
+              AND metric.evidence->>'dimension' = mapping.child_asin
+             GROUP BY mapping.id
+         ), selected_mapping AS (
+             SELECT mapping_id FROM mapping_totals
+             ORDER BY total_sales DESC, mapping_id
+             LIMIT $2
+         )
+         SELECT mapping.id AS mapping_id, mapping.brand, mapping.product_family,
+                mapping.variant, mapping.pack_size,
+                snapshot.period_start, snapshot.period_end, metric.metric_name,
+                sum(metric.value_numeric) AS value_numeric, metric.unit,
+                metric.currency_code
+         FROM current_mapping mapping
+         JOIN selected_mapping selected ON selected.mapping_id = mapping.id
+         JOIN recent_snapshots snapshot
+           ON snapshot.connection_id = mapping.connection_id
+          AND snapshot.marketplace_id = mapping.marketplace_id
+         JOIN amazon_normalized_metrics metric ON metric.snapshot_id = snapshot.id
+          AND metric.dimension_type = 'child_period'
+          AND metric.evidence->>'dimension' = mapping.child_asin
+         WHERE metric.metric_name IN (
+             'ordered_product_sales', 'units_ordered', 'sessions', 'page_views'
+         )
+         GROUP BY mapping.id, mapping.brand, mapping.product_family, mapping.variant,
+                  mapping.pack_size, snapshot.period_start, snapshot.period_end,
+                  metric.metric_name, metric.unit, metric.currency_code
+         ORDER BY snapshot.period_end DESC, mapping.brand, mapping.product_family,
+                  mapping.variant, metric.metric_name",
+    )
+    .bind(period_limit.clamp(1, 13))
+    .bind(product_limit.clamp(1, 24))
+    .fetch_all(pool)
+    .await
+}
+
 pub async fn previous_compatible_snapshot(
     pool: &PgPool,
     snapshot: &MetricSnapshot,
@@ -2875,6 +3215,192 @@ mod tests {
         assert!(
             sqlx::query("UPDATE mantle_business_knowledge SET entry_count = 2 WHERE id = $1")
                 .bind(first.id)
+                .execute(&pool)
+                .await
+                .is_err()
+        );
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn live_product_mappings_are_observed_append_only_and_strategy_safe(pool: PgPool) {
+        let confirmed_by: Uuid = sqlx::query_scalar(
+            "INSERT INTO users (username, password_hash, role)
+             VALUES ('synthetic-product-admin', 'synthetic-not-a-secret', 'administrator')
+             RETURNING id",
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        let connection = upsert_connection(
+            &pool,
+            &AmazonConnectionInput {
+                seller_id: "SYNTHETIC-LIVE-SELLER".to_owned(),
+                region: "eu".to_owned(),
+                secret_ref: "synthetic-live-provider".to_owned(),
+                granted_roles: vec!["Brand Analytics".to_owned()],
+                marketplace_ids: vec!["A1PA6795UKMFR9".to_owned()],
+                mode: "live".to_owned(),
+                enabled: true,
+            },
+        )
+        .await
+        .unwrap();
+        let child_asin = "B000000001";
+        let first_period: DateTime<Utc> = "2026-07-01T00:00:00Z".parse().unwrap();
+        for period_index in 0..2 {
+            let period_start = first_period + chrono::Duration::days(period_index * 7);
+            let period_end =
+                period_start + chrono::Duration::days(7) - chrono::Duration::seconds(1);
+            let run_id: Uuid = sqlx::query_scalar(
+                "INSERT INTO amazon_report_runs (
+                     connection_id, marketplace_id, report_type, trigger_source,
+                     idempotency_key, status, completed_at
+                 ) VALUES ($1, 'A1PA6795UKMFR9', $2, 'manual', $3, 'succeeded', now())
+                 RETURNING id",
+            )
+            .bind(connection.id)
+            .bind(SALES_AND_TRAFFIC)
+            .bind(format!("synthetic-product-period-{period_index}"))
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+            let snapshot_id: Uuid = sqlx::query_scalar(
+                "INSERT INTO amazon_metric_snapshots (
+                     run_id, connection_id, marketplace_id, report_type, parser_version,
+                     period_start, period_end, granularity, comparability_key, summary
+                 ) VALUES ($1, $2, 'A1PA6795UKMFR9', $3, 'synthetic-parser-v1',
+                     $4, $5, 'day_child', 'synthetic-product:7d', '{}')
+                 RETURNING id",
+            )
+            .bind(run_id)
+            .bind(connection.id)
+            .bind(SALES_AND_TRAFFIC)
+            .bind(period_start)
+            .bind(period_end)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+            for (metric_name, value_numeric, unit, currency_code) in [
+                (
+                    "ordered_product_sales",
+                    Decimal::from(100 + period_index),
+                    "currency",
+                    Some("EUR"),
+                ),
+                (
+                    "units_ordered",
+                    Decimal::from(10 + period_index),
+                    "units",
+                    None,
+                ),
+                ("sessions", Decimal::from(100 + period_index), "count", None),
+                (
+                    "page_views",
+                    Decimal::from(150 + period_index),
+                    "count",
+                    None,
+                ),
+            ] {
+                sqlx::query(
+                    "INSERT INTO amazon_normalized_metrics (
+                         snapshot_id, metric_name, dimension_type, dimension_key,
+                         value_numeric, unit, currency_code, evidence
+                     ) VALUES ($1, $2, 'child_period', 'synthetic-child-key',
+                         $3, $4, $5, $6)",
+                )
+                .bind(snapshot_id)
+                .bind(metric_name)
+                .bind(value_numeric)
+                .bind(unit)
+                .bind(currency_code)
+                .bind(json!({"dimension": child_asin, "source": "synthetic_test"}))
+                .execute(&pool)
+                .await
+                .unwrap();
+            }
+        }
+
+        assert!(
+            observed_product_exists(&pool, connection.id, "A1PA6795UKMFR9", child_asin,)
+                .await
+                .unwrap()
+        );
+        assert!(
+            !observed_product_exists(&pool, connection.id, "A1PA6795UKMFR9", "B000000002",)
+                .await
+                .unwrap()
+        );
+        let observed = observed_products(&pool).await.unwrap();
+        assert_eq!(observed.len(), 1);
+        assert_eq!(observed[0].child_asin, child_asin);
+        assert_eq!(observed[0].period_count, 2);
+
+        let input = AmazonProductMappingInput {
+            connection_id: connection.id,
+            marketplace_id: "A1PA6795UKMFR9",
+            child_asin,
+            brand: "sphagnum",
+            product_family: "Sphagnum-Moos",
+            variant: "Synthetic Sphagnum 1 kg",
+            pack_size: Some("1 kg"),
+            sku: Some("SYNTHETIC-SKU-1"),
+            evidence_source: "operator_confirmed",
+            enabled: true,
+            confirmed_by,
+        };
+        let (first, first_inserted) = store_product_mapping_revision(&pool, &input).await.unwrap();
+        let (same, same_inserted) = store_product_mapping_revision(&pool, &input).await.unwrap();
+        assert!(first_inserted);
+        assert!(!same_inserted);
+        assert_eq!(first.id, same.id);
+        assert_eq!(first.revision, 1);
+
+        let revised_input = AmazonProductMappingInput {
+            variant: "Synthetic Sphagnum Chile 1 kg",
+            evidence_source: "mantle_wiki",
+            ..input.clone()
+        };
+        let (revised, revised_inserted) = store_product_mapping_revision(&pool, &revised_input)
+            .await
+            .unwrap();
+        assert!(revised_inserted);
+        assert_eq!(revised.revision, 2);
+        assert_ne!(revised.id, first.id);
+
+        let coverage = product_mapping_coverage(&pool).await.unwrap();
+        assert_eq!(coverage.observed_products, 1);
+        assert_eq!(coverage.mapped_products, 1);
+        assert_eq!(coverage.enabled_mapped_products, 1);
+        let strategy_rows = recent_product_strategy_metrics(&pool, 13, 24)
+            .await
+            .unwrap();
+        assert_eq!(strategy_rows.len(), 8);
+        assert!(strategy_rows
+            .iter()
+            .all(|row| row.mapping_id == revised.id
+                && row.variant == "Synthetic Sphagnum Chile 1 kg"));
+
+        let audit: Value = sqlx::query_scalar(
+            "SELECT details FROM administrative_audit_log
+             WHERE action = 'amazon.product_mapping_revised' AND target_id = $1",
+        )
+        .bind(revised.id.to_string())
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        let audit_text = audit.to_string();
+        assert!(!audit_text.contains(child_asin));
+        assert!(!audit_text.contains("SYNTHETIC-SKU-1"));
+        assert!(sqlx::query(
+            "UPDATE amazon_product_mapping_revisions SET enabled = false WHERE id = $1",
+        )
+        .bind(revised.id)
+        .execute(&pool)
+        .await
+        .is_err());
+        assert!(
+            sqlx::query("DELETE FROM amazon_product_mapping_revisions WHERE id = $1")
+                .bind(revised.id)
                 .execute(&pool)
                 .await
                 .is_err()

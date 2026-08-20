@@ -197,7 +197,7 @@ deterministic path and a disabled gate rather than a simulated provider result.
 ## 2026-08-20 — Make Mantle strategy a single weekly continuity loop
 
 **Decision:** Mantle exposes exactly one `Analyse` button over the existing Marketplace
-Intelligence results. Each request uses at most eight distinct newest-first aggregate analyses and
+Intelligence results. Each request uses at most thirteen distinct newest-first aggregate analyses and
 the last validated strategy result as untrusted continuity context. Every accepted response has the
 same strict structure and ends with a handover containing continuity, interim priorities, evidence
 to collect, and next-run checks. A successful immutable row is unique per Monday-based
@@ -208,12 +208,35 @@ report card. A server/database cadence boundary controls pay-per-use spend and a
 clicks, while explicit handover preserves continuity without relying on provider-side conversation
 storage or exposing raw reports.
 
+The thirteen-period window is the bounded 91-day full baseline. Subsequent
+runs add current evidence and the last validated handover, so they remain an
+incremental weekly continuity loop without a separate paid-analysis action.
+
 **Consequences:** The UI has one button and one fixed KPI/strategy layout. KPI bars remain
 deterministic and are never model-generated. The browser posts only the current aggregate hash and
 confirmation; failed provider calls do not consume the week, while an accepted row disables another
 run until the next local Monday. New imports after a run are visibly marked as outside the assessed
 hash. This workflow reads imported aggregates only and does not bypass the separate SP-API
 credential gate.
+
+## 2026-08-20 — Keep Amazon product identity internal while enabling variant analysis
+
+**Decision:** Product classification is an append-only Merchant metadata
+boundary. Only Child ASINs observed in validated live Sales and Traffic
+snapshots can be mapped, every revision requires explicit operator
+confirmation, and the settings page retains optional SKU/provenance for
+internal lookup. OpenAI receives only reviewed brand/family/variant/pack-size
+labels, bounded aggregate metrics, semantic evidence references, and coverage
+counts; Child ASIN and SKU never enter either provider request.
+
+**Reason:** Mantle needs pack-size and product-family strategy instead of one
+portfolio total, but Amazon identifiers are neither necessary nor appropriate
+provider context. Versioned mappings preserve correction history and avoid a
+second analysis implementation.
+
+**Consequences:** Saving a mapping writes local audit metadata only and has no
+Amazon transport or mutation capability. Unmapped products are not guessed;
+the assessment must retain the visible coverage limitation.
 
 ## 2026-08-20 — Keep public research separate from private Amazon evidence
 

@@ -150,7 +150,10 @@ if ([...productionStrategyTransport.matchAll(/reqwest::Client::builder\s*\(/g)].
 for (const marker of [
   "Policy::none()",
   '"store": false',
-  'input_boundary: "separate_public_research_then_curated_business_context_aggregate_history_and_handover"',
+  'input_boundary: "separate_public_research_then_curated_business_context_identifier_free_product_aggregates_history_and_handover"',
+  '"product_identifiers_included": false',
+  '"asin_included": false',
+  '"sku_included": false',
   '"type": "web_search"',
   '"max_tool_calls": MAX_WEB_SEARCH_CALLS',
   '"include": ["web_search_call.action.sources"]',

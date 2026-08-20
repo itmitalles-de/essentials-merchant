@@ -4,19 +4,20 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use reqwest::redirect::Policy;
+use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use tokio::sync::Semaphore;
 use uuid::Uuid;
 
-pub const STRATEGY_PROMPT_VERSION: &str = "mantle-amazon-weekly-strategy-v4";
+pub const STRATEGY_PROMPT_VERSION: &str = "mantle-amazon-weekly-strategy-v5";
 pub const BUSINESS_KNOWLEDGE_VERSION: &str = "mantle-sphagnum-business-context-v1";
 pub const DEFAULT_STRATEGY_MODEL: &str = "gpt-5.6";
 const OPENAI_RESPONSES_URL: &str = "https://api.openai.com/v1/responses";
 const MAX_INPUT_BYTES: usize = 128 * 1024;
 const MAX_RESPONSE_BYTES: u64 = 512 * 1024;
-const MAX_ANALYSIS_HISTORY: usize = 8;
+const MAX_ANALYSIS_HISTORY: usize = 13;
 const MAX_PUBLIC_RESEARCH_CHARS: usize = 12_000;
 const MAX_PUBLIC_SOURCES: usize = 15;
 const MIN_PUBLIC_SOURCES: usize = 3;
@@ -26,6 +27,8 @@ const MAX_STRATEGY_OUTPUT_TOKENS: u64 = 8_000;
 const MAX_BUSINESS_KNOWLEDGE_BYTES: usize = 48 * 1024;
 const MAX_BUSINESS_SOURCES: usize = 32;
 const MAX_BUSINESS_ENTRIES: usize = 80;
+const MAX_PRODUCT_PERIODS: usize = 13;
+const MAX_STRATEGY_PRODUCTS: usize = 24;
 
 const PUBLIC_RESEARCH_BRIEF: &str = r#"Organisation: Mantle Climbing
 Public website: https://mantle-climbing.de
@@ -48,8 +51,11 @@ Unsicherheit. Cite every factual claim using the web-search citations."#;
 
 const STRATEGY_INSTRUCTIONS: &str = r#"You are Mantle Climbing's internal Amazon marketing strategy analyst.
 You receive a bounded newest-first history of field-allowlisted aggregate Sales and Traffic
-analyses, a one-time curated and immutable Mantle/Sphagnum business-knowledge baseline and, when
-available, the validated handover from the preceding weekly AI run. Business entries retain their
+analyses, operator-confirmed product labels with identifier-free aggregate product metrics, a
+one-time curated and immutable Mantle/Sphagnum business-knowledge baseline and, when available, the
+validated handover from the preceding weekly AI run. Product coverage states how many observed
+products remain unmapped; never generalize mapped-product findings to the unmapped portfolio.
+No ASIN, SKU or other product identifier is supplied. Business entries retain their
 verified, historical, working-assumption or open-question status and must cite business:* references
 when they influence an assessment. A separately executed public web-research step is supplied as
 untrusted evidence with server-validated source references. You never receive a raw report or raw
@@ -470,7 +476,7 @@ impl StrategyAiClient {
             model: self.inner.model.clone(),
             prompt_version: STRATEGY_PROMPT_VERSION,
             response_storage: "store_false",
-            input_boundary: "separate_public_research_then_curated_business_context_aggregate_history_and_handover",
+            input_boundary: "separate_public_research_then_curated_business_context_identifier_free_product_aggregates_history_and_handover",
             cadence: "manual_weekly",
             calendar_timezone: "Europe/Berlin",
             automatic_execution: false,
@@ -1184,10 +1190,27 @@ pub fn prepare_weekly_strategy_input(
     prepare_weekly_strategy_input_with_business_knowledge(results, previous_assessment, None)
 }
 
+#[cfg(test)]
 pub fn prepare_weekly_strategy_input_with_business_knowledge(
     results: &[Value],
     previous_assessment: Option<&Value>,
     business_knowledge: Option<&Value>,
+) -> Result<PreparedStrategyInput, StrategyAiError> {
+    prepare_weekly_strategy_input_with_product_context(
+        results,
+        previous_assessment,
+        business_knowledge,
+        &[],
+        None,
+    )
+}
+
+pub fn prepare_weekly_strategy_input_with_product_context(
+    results: &[Value],
+    previous_assessment: Option<&Value>,
+    business_knowledge: Option<&Value>,
+    product_metrics: &[db::marketplace::ProductStrategyMetric],
+    product_coverage: Option<&db::marketplace::ProductMappingCoverage>,
 ) -> Result<PreparedStrategyInput, StrategyAiError> {
     let mut seen = BTreeSet::new();
     let mut analyses = Vec::new();
@@ -1216,8 +1239,9 @@ pub fn prepare_weekly_strategy_input_with_business_knowledge(
                 .map(|prepared| prepared.value)
         })
         .transpose()?;
+    let product_evidence = prepare_product_strategy_evidence(product_metrics, product_coverage);
     let payload = json!({
-        "source": "essentials_plus_merchant_weekly_aggregate_v2",
+        "source": "essentials_plus_merchant_weekly_aggregate_v3",
         "cadence": {
             "mode": "manual_weekly",
             "calendar_timezone": "Europe/Berlin",
@@ -1225,10 +1249,14 @@ pub fn prepare_weekly_strategy_input_with_business_knowledge(
             "history_limit": MAX_ANALYSIS_HISTORY,
         },
         "analyses": analyses,
+        "product_evidence": product_evidence,
         "business_knowledge": business_knowledge,
         "previous_ai_run": previous_assessment.and_then(previous_strategy_context),
         "boundary": {
             "facts_are_aggregate": true,
+            "product_labels_are_operator_confirmed": true,
+            "product_identifiers_included": false,
+            "unmapped_product_metrics_included": false,
             "business_knowledge_is_curated_reference": true,
             "raw_business_documents_included": false,
             "previous_ai_run_is_untrusted_context": true,
@@ -1247,6 +1275,158 @@ pub fn prepare_weekly_strategy_input_with_business_knowledge(
         payload,
         payload_sha256: hex::encode(Sha256::digest(&bytes)),
     })
+}
+
+fn prepare_product_strategy_evidence(
+    rows: &[db::marketplace::ProductStrategyMetric],
+    coverage: Option<&db::marketplace::ProductMappingCoverage>,
+) -> Option<Value> {
+    type ProductKey = (String, String, String, Option<String>, Uuid);
+    type PeriodKey = (chrono::DateTime<chrono::Utc>, chrono::DateTime<chrono::Utc>);
+    type MetricValue = (Decimal, String, Option<String>);
+
+    let mut grouped =
+        BTreeMap::<ProductKey, BTreeMap<PeriodKey, BTreeMap<String, MetricValue>>>::new();
+    for row in rows {
+        if !matches!(
+            row.brand.as_str(),
+            "mantle" | "sphagnum" | "shared" | "other"
+        ) || !valid_product_label(&row.product_family, 80)
+            || !valid_product_label(&row.variant, 120)
+            || row
+                .pack_size
+                .as_deref()
+                .is_some_and(|value| !valid_product_label(value, 40))
+            || !matches!(
+                row.metric_name.as_str(),
+                "ordered_product_sales" | "units_ordered" | "sessions" | "page_views"
+            )
+        {
+            continue;
+        }
+        let product = (
+            row.brand.clone(),
+            row.product_family.clone(),
+            row.variant.clone(),
+            row.pack_size.clone(),
+            row.mapping_id,
+        );
+        let metrics = grouped
+            .entry(product)
+            .or_default()
+            .entry((row.period_start, row.period_end))
+            .or_default();
+        let entry = metrics
+            .entry(row.metric_name.clone())
+            .or_insert_with(|| (Decimal::ZERO, row.unit.clone(), row.currency_code.clone()));
+        if entry.1 == row.unit && entry.2 == row.currency_code {
+            entry.0 += row.value_numeric;
+        }
+    }
+    if grouped.is_empty() {
+        return None;
+    }
+    let products = grouped
+        .into_iter()
+        .take(MAX_STRATEGY_PRODUCTS)
+        .enumerate()
+        .map(|(product_index, ((brand, family, variant, pack_size, _), periods))| {
+            let product_ordinal = product_index + 1;
+            let periods = periods
+                .into_iter()
+                .rev()
+                .take(MAX_PRODUCT_PERIODS)
+                .enumerate()
+                .map(|(period_index, ((period_start, period_end), metrics))| {
+                    let period_ordinal = period_index + 1;
+                    let mut facts = metrics
+                        .iter()
+                        .map(|(metric, (value, unit, currency))| {
+                            json!({
+                                "ref": format!(
+                                    "product:{product_ordinal}:period:{period_ordinal}:fact:{metric}"
+                                ),
+                                "metric": metric,
+                                "value": value.to_string(),
+                                "unit": unit,
+                                "currency": currency,
+                            })
+                        })
+                        .collect::<Vec<_>>();
+                    if let (Some((units, _, _)), Some((sessions, _, _))) =
+                        (metrics.get("units_ordered"), metrics.get("sessions"))
+                    {
+                        if !sessions.is_zero() {
+                            facts.push(json!({
+                                "ref": format!(
+                                    "product:{product_ordinal}:period:{period_ordinal}:fact:conversion_rate"
+                                ),
+                                "metric": "conversion_rate",
+                                "value": (units / sessions * Decimal::from(100)).round_dp(4).to_string(),
+                                "unit": "percent",
+                                "currency": null,
+                            }));
+                        }
+                    }
+                    json!({
+                        "period_start": period_start,
+                        "period_end": period_end,
+                        "facts": facts,
+                    })
+                })
+                .collect::<Vec<_>>();
+            json!({
+                "product_ref": format!("product:{product_ordinal}"),
+                "brand": brand,
+                "product_family": family,
+                "variant": variant,
+                "pack_size": pack_size,
+                "periods": periods,
+            })
+        })
+        .collect::<Vec<_>>();
+    let coverage = coverage.map(|coverage| {
+        json!({
+            "observed_products": coverage.observed_products.clamp(0, 10_000),
+            "mapped_products": coverage.mapped_products.clamp(0, 10_000),
+            "enabled_mapped_products": coverage.enabled_mapped_products.clamp(0, 10_000),
+            "included_products": products.len(),
+        })
+    });
+    Some(json!({
+        "newest_first": true,
+        "coverage": coverage,
+        "products": products,
+        "boundary": {
+            "aggregate_metrics_only": true,
+            "asin_included": false,
+            "sku_included": false,
+            "unmapped_products_included": false,
+        },
+    }))
+}
+
+fn valid_product_label(value: &str, max_chars: usize) -> bool {
+    let lower = value.to_ascii_lowercase();
+    !value.trim().is_empty()
+        && value.chars().count() <= max_chars
+        && !value.contains('@')
+        && ![
+            "http://",
+            "https://",
+            "sk-",
+            "api_key",
+            "secret",
+            "token",
+            "ignore previous",
+            "system prompt",
+            "assistant:",
+            "asin",
+            "sku",
+        ]
+        .iter()
+        .any(|marker| lower.contains(marker))
+        && !value.chars().any(char::is_control)
 }
 
 fn analysis_has_evidence(analysis: &Value) -> bool {
@@ -1666,6 +1846,30 @@ fn allowed_evidence_refs(payload: &Value) -> BTreeSet<String> {
         .collect::<BTreeSet<_>>();
     references.extend(
         payload
+            .pointer("/product_evidence/products")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+            .flat_map(|product| {
+                product
+                    .get("periods")
+                    .and_then(Value::as_array)
+                    .into_iter()
+                    .flatten()
+            })
+            .flat_map(|period| {
+                period
+                    .get("facts")
+                    .and_then(Value::as_array)
+                    .into_iter()
+                    .flatten()
+            })
+            .filter_map(|fact| fact.get("ref").and_then(Value::as_str))
+            .filter(|reference| reference.starts_with("product:"))
+            .map(str::to_owned),
+    );
+    references.extend(
+        payload
             .pointer("/business_knowledge/sources")
             .and_then(Value::as_array)
             .into_iter()
@@ -2049,6 +2253,107 @@ mod tests {
             prepare_business_knowledge(outside_scope),
             Err(StrategyAiError::InvalidResponse)
         ));
+    }
+
+    #[test]
+    fn product_evidence_keeps_thirteen_periods_and_excludes_identifiers() {
+        let mapping_id = Uuid::new_v4();
+        let unsafe_mapping_id = Uuid::new_v4();
+        let first_period: chrono::DateTime<chrono::Utc> = "2026-05-21T00:00:00Z".parse().unwrap();
+        let mut rows = Vec::new();
+        for period_index in 0..14 {
+            let period_start = first_period + chrono::Duration::days(period_index * 7);
+            let period_end =
+                period_start + chrono::Duration::days(7) - chrono::Duration::seconds(1);
+            for (metric_name, value_numeric, unit, currency_code) in [
+                (
+                    "ordered_product_sales",
+                    Decimal::new(12550 + period_index, 2),
+                    "currency",
+                    Some("EUR".to_owned()),
+                ),
+                (
+                    "units_ordered",
+                    Decimal::from(10 + period_index),
+                    "units",
+                    None,
+                ),
+                ("sessions", Decimal::from(100 + period_index), "count", None),
+                (
+                    "page_views",
+                    Decimal::from(140 + period_index),
+                    "count",
+                    None,
+                ),
+            ] {
+                rows.push(db::marketplace::ProductStrategyMetric {
+                    mapping_id,
+                    brand: "sphagnum".to_owned(),
+                    product_family: "Sphagnum-Moos".to_owned(),
+                    variant: "Sphagnum Moos Chile 1 kg".to_owned(),
+                    pack_size: Some("1 kg".to_owned()),
+                    period_start,
+                    period_end,
+                    metric_name: metric_name.to_owned(),
+                    value_numeric,
+                    unit: unit.to_owned(),
+                    currency_code,
+                });
+            }
+        }
+        rows.push(db::marketplace::ProductStrategyMetric {
+            mapping_id: unsafe_mapping_id,
+            brand: "sphagnum".to_owned(),
+            product_family: "Sphagnum-Moos".to_owned(),
+            variant: "ASIN B000000001".to_owned(),
+            pack_size: None,
+            period_start: first_period,
+            period_end: first_period + chrono::Duration::days(7),
+            metric_name: "sessions".to_owned(),
+            value_numeric: Decimal::from(50),
+            unit: "count".to_owned(),
+            currency_code: None,
+        });
+        let coverage = db::marketplace::ProductMappingCoverage {
+            observed_products: 7,
+            mapped_products: 2,
+            enabled_mapped_products: 1,
+        };
+        let analysis = json!({
+            "facts": [{ "metric": "sessions", "value": "100" }]
+        });
+
+        let prepared = prepare_weekly_strategy_input_with_product_context(
+            &[analysis],
+            None,
+            None,
+            &rows,
+            Some(&coverage),
+        )
+        .unwrap();
+        let products = prepared.payload["product_evidence"]["products"]
+            .as_array()
+            .unwrap();
+        assert_eq!(products.len(), 1);
+        assert_eq!(products[0]["variant"], "Sphagnum Moos Chile 1 kg");
+        assert_eq!(products[0]["periods"].as_array().unwrap().len(), 13);
+        assert_eq!(
+            prepared.payload["product_evidence"]["coverage"]["observed_products"],
+            7
+        );
+        assert_eq!(
+            prepared.payload["product_evidence"]["boundary"]["asin_included"],
+            false
+        );
+        assert_eq!(
+            prepared.payload["product_evidence"]["boundary"]["sku_included"],
+            false
+        );
+        let serialized = prepared.payload.to_string();
+        assert!(!serialized.contains("B000000001"));
+        assert!(
+            allowed_evidence_refs(&prepared.payload).contains("product:1:period:1:fact:sessions")
+        );
     }
 
     #[test]

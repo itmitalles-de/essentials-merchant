@@ -6,6 +6,7 @@
 | --- | --- | --- |
 | Raw confidential report | Exact uploaded Sales and Traffic or Ads JSON/CSV/TSV bytes, potentially including campaign identifiers | Immutable PostgreSQL archive; backup-only access in the pilot profile; never Git, public research, or OpenAI. |
 | Aggregate business metric | Revenue, units, sessions, page views, Ads impressions/clicks/spend/attributed outcomes, percentages and ratios | Decimal normalized records; internal UI and allowlisted summary export. |
+| Internal product mapping | Observed Child ASIN, optional SKU, reviewed Mantle/Sphagnum family, variant, and pack-size label | Append-only internal revisions. Identifiers remain in the LAN/VPN-only service and backups; only labels plus aggregate product metrics may cross the OpenAI synthesis boundary. |
 | Curated business context | Reviewed Mantle/Sphagnum statements plus source repository, path, title, and SHA-256 provenance | Imported once into an immutable internal row; raw Wiki/Notes documents, personal notes, PII, and secrets do not cross the boundary. |
 | Operational metadata | SHA-256, format, report type, marketplace, period, parser version, freshness | Immutable provenance and internal diagnostics. |
 | Provider secret | LWA refresh token, LWA client ID/secret, OpenAI API key | Accepted only by write-only UI endpoints, encrypted with AES-256-GCM before persistence, never returned, and excluded even as ciphertext from pilot backup data. |
@@ -38,6 +39,16 @@ The UI shows aggregate data. Ads campaign names and IDs are discarded before
 normalization. Evidence references point to internal snapshot and metric IDs
 rather than raw rows or product/customer/campaign identifiers.
 
+Observed live Child ASINs can be classified on the gear-linked settings page.
+The write route accepts only products already present in a validated live Sales
+and Traffic snapshot, requires explicit operator confirmation, and appends a
+new revision instead of updating or deleting prior classifications. Product
+labels are screened for URLs, secret-shaped values, control characters, and
+prompt-injection markers. SKU and Child ASIN remain internal and are absent
+from the provider DTO, evidence references, activity log, and summary export.
+Unmapped products are represented only by bounded coverage counts, never by
+identifiers or inferred labels.
+
 ## Mantle/Sphagnum business context
 
 The initial business baseline is curated once from approved files in the
@@ -61,8 +72,8 @@ replacement migration, not an automatic scrape.
 
 Pilot backups contain the schema, module state, users, Amazon tables (including
 raw archives and manual-import provenance), parser versions, redacted Compose
-metadata, image IDs, the immutable curated business context, and integrity
-manifests. Backup directories are
+metadata, image IDs, the immutable curated business context, append-only
+product-mapping revisions, and integrity manifests. Backup directories are
 confidential operational data and must use host-restricted permissions.
 The backup script enforces umask `077` before creating any dump or manifest.
 The `pilot_provider_secrets` table definition is restored, but its rows are
@@ -87,11 +98,12 @@ The web-research request sees only a fixed public Mantle/category/market brief
 and the current date. It does not receive internal report periods, metrics,
 hashes, identifiers, or handover text. The later synthesis request receives an
 explicitly requested, hash-confirmed, closed aggregate DTO containing up to
-eight distinct newest-first period/marketplace analyses, allowlisted Sales,
+thirteen distinct newest-first period/marketplace analyses, allowlisted Sales,
 Traffic, and Ads metrics and deterministic deltas, freshness, bounded
-missing-field labels, semantic evidence references, the bounded public research
-and canonical citations, and the last validated structured AI result as
-untrusted continuity context. Raw bytes, raw rows, ASIN/SKU, campaign, or
+missing-field labels, up to thirteen periods of operator-confirmed
+identifier-free product aggregates, semantic evidence references, the bounded
+public research and canonical citations, and the last validated structured AI
+result as untrusted continuity context. Raw bytes, raw rows, ASIN/SKU, campaign, or
 customer identifiers, old database evidence UUIDs, local paths, archive hashes,
 secrets, and free report text are prohibited.
 

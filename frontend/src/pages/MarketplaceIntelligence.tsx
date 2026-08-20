@@ -1622,6 +1622,11 @@ function restoredStrategyActivity(result: MarketplaceStrategyView): StrategyActi
       `${result.source_analysis_count} freigegebene Amazon-Aggregatanalyse(n) gefunden.`,
       result.source_analysis_count > 0 ? "success" : "warning",
     ),
+    strategyActivityEntry(
+      "PRODUKTE",
+      `${result.product_mapped_count} von ${result.product_observed_count} beobachteten Produkten sind zugeordnet; ${result.product_context_count} fließen identifierfrei in den KI-Kontext ein.`,
+      result.product_mapped_count > 0 ? "success" : "warning",
+    ),
   ];
   if (!result.assessment) return entries;
   const createdAt = result.created_at
@@ -1971,7 +1976,7 @@ function WeeklyStrategyPanel({
       }
       appendActivity(
         "WISSEN",
-        `${prepared.business_knowledge_entry_count} Wissenseinträge und ${prepared.source_analysis_count} Amazon-Analyse(n) sind im bestätigten Kontext.`,
+        `${prepared.business_knowledge_entry_count} Wissenseinträge, ${prepared.source_analysis_count} Amazon-Analyse(n) und ${prepared.product_context_count} gemappte Produkte sind im bestätigten Kontext.`,
         "success",
       );
       appendActivity(
@@ -2105,6 +2110,10 @@ function WeeklyStrategyPanel({
                 </div>
               )}
               <div><dt>Eingelesene Analysen</dt><dd>{view.source_analysis_count}</dd></div>
+              <div>
+                <dt>Produktzuordnung</dt>
+                <dd>{view.product_mapped_count}/{view.product_observed_count} zugeordnet · {view.product_context_count} im KI-Kontext</dd>
+              </div>
               <div>
                 <dt>Mantle-/Sphagnum-Wissen</dt>
                 <dd>{view.business_knowledge_entry_count} Einträge aus {view.business_knowledge_source_count} Quellen</dd>

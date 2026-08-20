@@ -456,7 +456,7 @@ export interface MarketplaceStrategyStatus {
   model: string;
   prompt_version: string;
   response_storage: "store_false";
-  input_boundary: "separate_public_research_then_curated_business_context_aggregate_history_and_handover";
+  input_boundary: "separate_public_research_then_curated_business_context_identifier_free_product_aggregates_history_and_handover";
   cadence: "manual_weekly";
   calendar_timezone: "Europe/Berlin";
   automatic_execution: false;
@@ -537,6 +537,9 @@ export interface MarketplaceStrategyView {
   week_start: string;
   next_available_at: string;
   source_analysis_count: number;
+  product_observed_count: number;
+  product_mapped_count: number;
+  product_context_count: number;
   business_knowledge_imported: boolean;
   business_knowledge_source_count: number;
   business_knowledge_entry_count: number;
@@ -551,6 +554,41 @@ export interface MarketplaceStrategyView {
   input_tokens: number | null;
   output_tokens: number | null;
   created_at: string | null;
+}
+
+export interface AmazonProductMapping {
+  id: string;
+  connection_id: string;
+  marketplace_id: string;
+  child_asin: string;
+  revision: number;
+  brand: "mantle" | "sphagnum" | "shared" | "other";
+  product_family: string;
+  variant: string;
+  pack_size: string | null;
+  sku: string | null;
+  evidence_source: "mantle_wiki" | "seller_central" | "operator_confirmed";
+  enabled: boolean;
+  created_at: string;
+}
+
+export interface ObservedAmazonProduct {
+  connection_id: string;
+  marketplace_id: string;
+  child_asin: string;
+  first_seen: string | null;
+  last_seen: string | null;
+  period_count: number;
+}
+
+export interface AmazonProductMappingView {
+  coverage: {
+    observed_products: number;
+    mapped_products: number;
+    enabled_mapped_products: number;
+  };
+  mappings: AmazonProductMapping[];
+  observed: ObservedAmazonProduct[];
 }
 
 export interface MarketplaceOverview {

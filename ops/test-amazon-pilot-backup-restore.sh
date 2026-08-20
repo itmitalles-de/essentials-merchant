@@ -13,7 +13,7 @@ export JWT_SECRET='synthetic-pilot-jwt-at-least-thirty-two-bytes'
 export ADMIN_USERNAME='synthetic-admin'
 export ADMIN_PASSWORD='synthetic-admin-password'
 export INTEGRATION_SECRET='synthetic-pilot-integration-at-least-thirty-two-bytes'
-export PILOT_FRONTEND_PORT=${PILOT_BACKUP_SOURCE_PORT:-18092}
+export PILOT_FRONTEND_PORT="${PILOT_BACKUP_SOURCE_PORT:-18092}"
 export COMPOSE_ENV_FILE=/dev/null
 
 compose() {
@@ -191,6 +191,15 @@ SELECT
   }'::jsonb,
   id
 FROM users WHERE username = 'synthetic-admin';
+INSERT INTO amazon_product_mapping_revisions
+  (connection_id, marketplace_id, child_asin, revision, brand, product_family,
+   variant, pack_size, sku, evidence_source, enabled, confirmed_by)
+SELECT
+  '11111111-1111-4111-8111-111111111111', 'SYNTHETIC-MARKETPLACE',
+  'B000000001', 1, 'sphagnum', 'Synthetic Sphagnum',
+  'Synthetic Sphagnum 1 kg', '1 kg', 'SYNTHETIC-SKU-1',
+  'operator_confirmed', true, id
+FROM users WHERE username = 'synthetic-admin';
 INSERT INTO administrative_audit_log
   (actor_user_id, action, target_type, target_id, idempotency_key, details)
 SELECT id, 'pilot.synthetic_backup_fixture', 'pilot_profile', 'amazon-read-only',
@@ -218,6 +227,7 @@ source_fingerprint=$(compose "$source_project" exec -T db psql -U erplite -d erp
      (SELECT count(*) FROM amazon_analysis_results),
      (SELECT count(*) FROM amazon_ai_strategy_assessments),
      (SELECT count(*) FROM mantle_business_knowledge),
+     (SELECT count(*) FROM amazon_product_mapping_revisions),
      (SELECT count(*) FROM administrative_audit_log),
      (SELECT count(*) FROM essentials_modules WHERE enabled))")
 test "$(compose "$source_project" exec -T db psql -U erplite -d erplite -X -qAt -c \
@@ -252,7 +262,7 @@ compose "$source_project" exec -T db psql -U erplite -d erplite -X -qAt -v ON_ER
 COMPOSE_PROJECT_NAME="$source_project" "$repository_dir/ops/backup-amazon-pilot.sh" "$backup_dir"
 node "$repository_dir/ops/verify-amazon-pilot-backup.mjs" "$backup_dir"
 
-export PILOT_FRONTEND_PORT=${PILOT_BACKUP_RESTORE_PORT:-18093}
+export PILOT_FRONTEND_PORT="${PILOT_BACKUP_RESTORE_PORT:-18093}"
 COMPOSE_PROJECT_NAME="$restore_project" "$repository_dir/ops/restore-amazon-pilot.sh" "$backup_dir"
 
 restored_fingerprint=$(compose "$restore_project" exec -T db psql -U erplite -d erplite -X -qAt -v ON_ERROR_STOP=1 -c \
@@ -264,6 +274,7 @@ restored_fingerprint=$(compose "$restore_project" exec -T db psql -U erplite -d 
      (SELECT count(*) FROM amazon_analysis_results),
      (SELECT count(*) FROM amazon_ai_strategy_assessments),
      (SELECT count(*) FROM mantle_business_knowledge),
+     (SELECT count(*) FROM amazon_product_mapping_revisions),
      (SELECT count(*) FROM administrative_audit_log),
      (SELECT count(*) FROM essentials_modules WHERE enabled))")
 test "$source_fingerprint" = "$restored_fingerprint"
@@ -279,6 +290,11 @@ test "$(compose "$restore_project" exec -T db psql -U erplite -d erplite -X -qAt
      AND source_count = 2
      AND entry_count = 1")" = 1
 test "$(compose "$restore_project" exec -T db psql -U erplite -d erplite -X -qAt -v ON_ERROR_STOP=1 -c \
+  "SELECT count(*) FROM amazon_product_mapping_revisions
+   WHERE child_asin = 'B000000001'
+     AND variant = 'Synthetic Sphagnum 1 kg'
+     AND enabled")" = 1
+test "$(compose "$restore_project" exec -T db psql -U erplite -d erplite -X -qAt -v ON_ERROR_STOP=1 -c \
   "SELECT count(*) FROM amazon_report_documents document
    JOIN amazon_report_runs run ON run.id = document.run_id
    WHERE run.report_type = 'AMAZON_ADS_SPONSORED_PRODUCTS_CAMPAIGN_REPORT'
@@ -292,4 +308,4 @@ test "$(docker run --rm -v "${restore_project}_erplite_invoices:/source:ro" \
   postgres:16-alpine@sha256:cf78e76683b9ca8c5733cbbdce6c9262b45b6767934dd0a95e671f9a0fc20685 \
   cat /source/amazon-pilot/fixture.txt)" = 'synthetic pilot operations document'
 
-echo "Amazon pilot backup/restore passed: Sales and Traffic plus aggregate Ads raw archives, hashes, snapshots, parsers, deterministic/AI analyses, immutable business context, modules, audit, documents, credential exclusion, and fail-closed profile verified."
+echo "Amazon pilot backup/restore passed: Sales and Traffic plus aggregate Ads raw archives, hashes, snapshots, parsers, deterministic/AI analyses, immutable business context, append-only product mappings, modules, audit, documents, credential exclusion, and fail-closed profile verified."

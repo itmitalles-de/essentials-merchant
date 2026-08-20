@@ -1039,6 +1039,40 @@ form label.provider-checkbox {
   color: var(--fg);
 }
 
+.product-mapping {
+  margin-top: 1rem;
+}
+
+.product-mapping-form {
+  margin-top: 1rem;
+}
+
+.product-mapping-fields {
+  margin-top: 0;
+}
+
+.product-mapping-list {
+  margin-top: 1.25rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--border);
+}
+
+.product-mapping-search input {
+  min-width: min(22rem, 70vw);
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
 .pilot-unavailable {
   max-width: 42rem;
   margin: 10vh auto;

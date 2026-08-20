@@ -73,6 +73,7 @@ status=$(compose exec -T db psql -U erplite -d erplite -X -qAt -v ON_ERROR_STOP=
      'analyses', (SELECT count(*) FROM amazon_analysis_results),
      'ai_assessments', (SELECT count(*) FROM amazon_ai_strategy_assessments),
      'business_knowledge', (SELECT count(*) FROM mantle_business_knowledge),
+     'product_mapping_revisions', (SELECT count(*) FROM amazon_product_mapping_revisions),
      'provider_secrets', (SELECT count(*) FROM pilot_provider_secrets),
      'automatic_schedules', (SELECT count(*) FROM amazon_report_schedules WHERE enabled)
    ) FROM active")

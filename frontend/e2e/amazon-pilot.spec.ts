@@ -162,9 +162,9 @@ test("scoped Mantle session completes the synthetic read-only Amazon pilot flow"
         reason: null,
         provider: "openai",
         model: "gpt-5.6",
-        prompt_version: "mantle-amazon-weekly-strategy-v4",
+        prompt_version: "mantle-amazon-weekly-strategy-v5",
         response_storage: "store_false",
-        input_boundary: "separate_public_research_then_curated_business_context_aggregate_history_and_handover",
+        input_boundary: "separate_public_research_then_curated_business_context_identifier_free_product_aggregates_history_and_handover",
         cadence: "manual_weekly",
         calendar_timezone: "Europe/Berlin",
         automatic_execution: false,
@@ -177,6 +177,9 @@ test("scoped Mantle session completes the synthetic read-only Amazon pilot flow"
       week_start: "2026-08-17",
       next_available_at: "2026-08-23T22:00:00Z",
       source_analysis_count: 2,
+      product_observed_count: 3,
+      product_mapped_count: 1,
+      product_context_count: 1,
       business_knowledge_imported: true,
       business_knowledge_source_count: 6,
       business_knowledge_entry_count: 18,
@@ -220,7 +223,7 @@ test("scoped Mantle session completes the synthetic read-only Amazon pilot flow"
         output_tokens: 60,
         assessment_week_start: "2026-08-17",
         assessment_model: "gpt-5.6",
-        assessment_prompt_version: "mantle-amazon-weekly-strategy-v4",
+        assessment_prompt_version: "mantle-amazon-weekly-strategy-v5",
         created_at: "2026-08-20T12:00:00Z",
         assessment: {
           executive_summary: "Synthetische KI-Zusammenfassung ohne Geschäftsdaten.",
@@ -360,6 +363,54 @@ test("scoped Mantle session completes the synthetic read-only Amazon pilot flow"
 });
 
 test("Mantle route opens without login and provider values stay write-only", async ({ page }) => {
+  const syntheticObservedProduct = {
+    connection_id: "11111111-1111-4111-8111-111111111111",
+    marketplace_id: "A1PA6795UKMFR9",
+    child_asin: "B000000001",
+    first_seen: "2026-05-21T00:00:00Z",
+    last_seen: "2026-08-19T23:59:59Z",
+    period_count: 13,
+  };
+  let syntheticMapping: Record<string, unknown> | null = null;
+  await page.route(/\/api\/marketplace\/product-mappings$/, async (route) => {
+    if (route.request().method() === "GET") {
+      await route.fulfill({
+        json: {
+          coverage: {
+            observed_products: 1,
+            mapped_products: syntheticMapping ? 1 : 0,
+            enabled_mapped_products: syntheticMapping ? 1 : 0,
+          },
+          mappings: syntheticMapping ? [syntheticMapping] : [],
+          observed: [syntheticObservedProduct],
+        },
+      });
+      return;
+    }
+    const body = route.request().postDataJSON() as Record<string, unknown>;
+    expect(body).toMatchObject({
+      connection_id: syntheticObservedProduct.connection_id,
+      marketplace_id: syntheticObservedProduct.marketplace_id,
+      child_asin: syntheticObservedProduct.child_asin,
+      brand: "sphagnum",
+      product_family: "Sphagnum-Moos",
+      variant: "Synthetic Sphagnum 1 kg",
+      pack_size: "1 kg",
+      sku: null,
+      evidence_source: "operator_confirmed",
+      enabled: true,
+      confirmed_business_mapping: true,
+    });
+    syntheticMapping = {
+      id: "22222222-2222-4222-8222-222222222222",
+      ...body,
+      revision: 1,
+      created_at: "2026-08-20T12:00:00Z",
+    };
+    await route.fulfill({
+      json: { mapping: syntheticMapping, outcome: "stored", amazon_mutation: false },
+    });
+  });
   await page.addInitScript(() => {
     localStorage.setItem("erplite-token", "stale-token-must-be-replaced");
   });
@@ -402,6 +453,15 @@ test("Mantle route opens without login and provider values stay write-only", asy
   await expect(page.getByRole("heading", { name: "Einstellungen" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Zugänge" })).toBeVisible();
   await expect(page.getByText("Read-only-Systemgrenze aktiv")).toBeVisible();
+  const mappingPanel = page.locator("section.product-mapping");
+  await expect(mappingPanel.getByRole("heading", { name: "Produktzuordnung" })).toBeVisible();
+
+  await mappingPanel.getByLabel("Produkt / Variante").fill("Synthetic Sphagnum 1 kg");
+  await mappingPanel.getByLabel("Packungsgröße").fill("1 kg");
+  await mappingPanel.getByLabel(/Zuordnung wurde anhand interner Unterlagen/).check();
+  await mappingPanel.getByRole("button", { name: "Zuordnung speichern" }).click();
+  await expect(mappingPanel.getByRole("status")).toContainText("Zuordnung gespeichert");
+  await expect(mappingPanel.getByRole("cell", { name: "Synthetic Sphagnum 1 kg" })).toBeVisible();
 
   const syntheticKey = `sk-proj-${"synthetic".repeat(4)}`;
   await page.getByLabel("Neuer Project API-Key").fill(syntheticKey);
@@ -476,9 +536,9 @@ test("Mantle shell hides acceptance data and renders truthful live pipeline stat
       reason: null,
       provider: "openai",
       model: "gpt-5.6",
-      prompt_version: "mantle-amazon-weekly-strategy-v4",
+      prompt_version: "mantle-amazon-weekly-strategy-v5",
       response_storage: "store_false",
-      input_boundary: "separate_public_research_then_curated_business_context_aggregate_history_and_handover",
+      input_boundary: "separate_public_research_then_curated_business_context_identifier_free_product_aggregates_history_and_handover",
       cadence: "manual_weekly",
       calendar_timezone: "Europe/Berlin",
       automatic_execution: false,
@@ -491,6 +551,9 @@ test("Mantle shell hides acceptance data and renders truthful live pipeline stat
     week_start: "2026-08-17",
     next_available_at: "2026-08-23T22:00:00Z",
     source_analysis_count: 1,
+    product_observed_count: 0,
+    product_mapped_count: 0,
+    product_context_count: 0,
     business_knowledge_imported: true,
     business_knowledge_source_count: 6,
     business_knowledge_entry_count: 18,

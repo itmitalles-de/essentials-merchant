@@ -70,6 +70,14 @@ and an identical retry is idempotent. Every weekly synthesis receives this
 baseline plus the latest validated handover, allowing continuity to improve
 without silently rewriting the source material.
 
+The same synthesis can receive up to thirteen weekly periods of aggregate
+metrics for explicitly mapped products. Product mappings live only in the
+internal service as append-only revisions and are managed on the gear-linked
+settings page. Child ASIN and optional SKU never enter the provider payload;
+only reviewed Mantle/Sphagnum labels, pack sizes, aggregate metrics, and mapping
+coverage do. The 13-week window provides the one-time full baseline context,
+while the validated handover makes subsequent weekly runs incremental.
+
 Below the action, a terminal-style activity view reports only observable,
 sanitized phases such as Amazon acquisition, archive/parser validation,
 aggregate preparation, business-context loading, public research, synthesis,
@@ -154,7 +162,7 @@ Marketplace Intelligence boundary; no third runtime analysis system was added.
 | Redundant | The wiki CLI, local cache/snapshot storage, and static report writer were not copied. |
 | Reused in this extension | Aggregate Ads KPIs and competitor/category/global-context questions are implemented through the existing Merchant archive and analysis boundary. |
 | Valuable but not migrated | Inventory, profitability, portfolio, product-level Ads, and historical business-specific strategy remain later evidence sources. |
-| Real or identifying data | Product mappings, experiments, ASIN/SKU fixtures, names, and historical business metrics were not copied. |
+| Real or identifying data | Raw mapping files, experiments, ASIN/SKU fixtures, names, and historical business metrics were not copied into Merchant or Git. Reviewed mappings are entered directly into the internal database; identifiers never cross the AI boundary. |
 
 ## Runtime flow
 
