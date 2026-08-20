@@ -20,10 +20,12 @@ that never receives internal Amazon evidence.
 ## Current Mantle deployment
 
 The checked-out live revision is
-`0703a88666abe20229244043d93039b93fa0f8b8` in Compose project
-`essentials-merchant-amazon` on `192.168.178.15`. The unchanged running backend
-was built from `f984cd3e5bb2268d5c7523dbe497e60c70b32e06`; the running frontend was
-built from `0703a88666abe20229244043d93039b93fa0f8b8`. Internal operators use
+`77a2608f222bdc099d696518784cc95052fc9b33` in Compose project
+`essentials-merchant-amazon` on `192.168.178.15`. The running backend was built
+from `04808832d4a88982a750df9636f488662eb253f6`; the running frontend was built
+from `77a2608f222bdc099d696518784cc95052fc9b33`. Parent revision
+`d53581fe5a00b1c39b4b923ac65264af80251938` changes only the pinned Simple
+Business UI contract and is not a runtime deployment. Internal operators use
 `https://ai-marketing.mantle-climbing.de`; the retained fallback is
 `https://merchant.mantle-climbing.de/ai-marketing`. Both names resolve
 internally to the Docker host. This hostname has its own Caddy source matcher
@@ -39,14 +41,15 @@ Amazon route. The regular login endpoint is disabled in this profile. Anyone
 inside the allowed LAN/VPN boundary can run the weekly analysis or replace
 write-only credentials, so the Caddy/source-network restriction is mandatory.
 
-The live acceptance used only visibly synthetic, in-memory reports. Sales and
+Live acceptance first used visibly synthetic, in-memory reports. Sales and
 Traffic JSON/CSV/TSV plus two aggregate Sponsored Products campaign periods,
 retry idempotence, two-period comparisons, all summary formats, search-term and
 identifier rejection, and business-mutation blocking passed. Raw bytes were
-sent directly to the upload endpoints and were not written to host files. No
-authorized real report has been imported. The reserved `SYNTHETIC-` marketplace
-namespace is excluded before weekly provider-context construction, so these
-retained acceptance analyses can never become evidence in a real AI run.
+sent directly to the upload endpoints and were not written to host files. The
+reserved `SYNTHETIC-` marketplace namespace is excluded before weekly
+provider-context construction. A later authorized real Sales and Traffic run
+completed through the same archive/parser/analysis boundary; neither its raw
+path nor business metrics were written to Git or application logs.
 
 The weekly AI mini-tool renders one `Analyse` button before result history, the
 fixed KPI/public-context/strategy/handover structure, and a rising-market icon
@@ -80,67 +83,62 @@ light/dark switch opens `/ai-marketing/settings`, which owns provider setup and
 the read-only system boundary. The analysis action appears before the pipeline;
 hash, model, storage, and other technical metadata are collapsed by default.
 
-Both provider credential sets are now present only in the encrypted write-only
-store. The first real Amazon attempt proved LWA refresh, report creation, and
-polling through Amazon `DONE`. It stopped locally before document retrieval
-because official Amazon document IDs contain dots that the original resource-ID
-allowlist omitted. Backend revision `f984cd3` fixes that exact boundary while
-continuing to reject path syntax and non-Amazon download hosts. The failed run
-archived no report bytes or metrics and made no OpenAI request; a retry remains
-an explicit operator click.
+Both provider credential sets are present only in the encrypted write-only
+store. The first attempt exposed a missing dot in the report-document ID
+allowlist; `f984cd3` fixed that exact boundary while retaining the path and
+download-host restrictions. The successful post-fix operator run then completed
+LWA refresh, report creation, polling/backoff, download, immutable archive,
+parsing, deterministic analysis, public research, structured AI synthesis, and
+handover validation. Repeating the action returned the cached weekly result and
+made no second provider call.
 
 The live image IDs are:
 
 - PostgreSQL: `sha256:75f5a96988cdf694a215073c3e9c001b706b371e2f94df3967f2efdec2787f6b`
-- backend: `sha256:3491f32cd921a3f97aa8e6417998815f7d99cd9e2a4479a994807e0d0a0bd99c`
-- frontend: `sha256:b0ac13937b72772b994bd18ac4346703322340ca741f16bb75905a42390bdc5d`
+- backend: `sha256:36c34249b6833b7aa0401e4bd007c462601bd4f9b9db9ca4c826533755a03caf`
+- frontend: `sha256:10871780498e12fb16f90e8359a22439d07112a6c6040b60eff688a1955074c2`
 
-Exact-head CI run `32363658273` passed all seven jobs for runtime parent
-`9c6f8ba30c829c42255f33311fcd838e9f761049`. Live revision `608691b` adds only
-the exact two-report backup allowlist, its recovery fixture, security assertion,
-and documentation. Its Sales+Ads backup/empty-target restore passed locally.
-Live safeguard `7c7f7da` excludes `SYNTHETIC-` analyses from weekly provider
-context; all 21 DB tests, DB Clippy with warnings denied, and the workspace
-all-target check passed locally. The deployed endpoint sees all six retained
-acceptance analyses but returns `source_analysis_count: 0` and
-`no_analysis_data`.
-UI revision `998d486` passed its frontend build, lint, focused Chromium pipeline
-test, and live light/dark/no-secret/no-synthetic-card check. Backend revision
-`f984cd3` passed the dotted-ID unit test, the fake-SP-API transport test, and
-server Clippy with warnings denied.
-UI revision `0703a88` passed frontend build/lint, both focused Chromium tests,
-and live analysis/settings separation with the primary button above the fold
-and zero readable secret values.
-GitHub did not start any job for run `32365245827`: every job was rejected before
-checkout because recent account payments failed or the Actions spending limit
-must be increased. This is an external CI-account gate, not a test failure; it
-must be cleared before PR #5 can leave draft.
+The final provider path passed Rust check and Clippy with warnings denied,
+strategy tests 8/8, an isolated DB suite 65/65, frontend build/lint, focused
+Chromium/axe E2E 3/3, Nginx validation, the Amazon-operation allowlist, secret
+scanning, and the synthetic JSON/CSV/TSV import/comparison/export flow. The
+successful live row uses model `gpt-5.6`, prompt
+`mantle-amazon-weekly-strategy-v4`, 15 bounded public sources, and the immutable
+13-source/30-entry Mantle/Sphagnum baseline. It was stored once for week
+`2026-08-17`; the next eligible action is 2026-08-24 00:00 Europe/Berlin.
 
-The UI deployment changed only this Compose project's application containers;
-the follow-up document-ID fix recreated only its backend. PostgreSQL was not
-restarted. A later targeted Caddy reload replaced only this hostname's fixed
-device list with the documented LAN/VPN matcher after a client received 403;
-the Caddy container kept its ID, start time, and zero restart count. The exact
-identity, restart-count, and start-time hash for every running container other
-than the replaced backend remained
-`7163964b9ede17532627b1e09a74a1b317b4949014932a33c632dacec3b4c434`.
-Live Chromium reached `/ai-marketing` with the no-login shell, one enabled
-`Analyse` button, the branded favicon, both configured-provider indicators,
-zero disclosed secret input values, zero synthetic result cards, the five
-pipeline phases, and working light/dark themes. Schema 20 is active and
-automatic schedules remain zero. The post-deployment backend log scan found
-zero credential-shaped values.
+The three operator-visible failures were resolved at their causes: exact weekly
+Nginx timeout (`fff8ede`), bounded provider timeout (`c35b5e6`), and invalid or
+truncated structured evidence output (`0480883`). Frontend revision `77a2608`
+also restores the sanitized terminal activity context after a page reload.
+
+GitHub did not start any job for parent-head run `32387256617`: every job was
+rejected before checkout because recent account payments failed or the Actions
+spending limit must be increased. This is an external CI-account gate, not a
+test failure; it must be cleared and the final exact head rerun before PR #5 can
+leave draft.
+
+All deployments and the final backup changed only this Compose project's
+application containers. PostgreSQL and Caddy retained their container IDs and
+zero restart counts. All 26 non-target running containers retained their exact
+identity, image, restart count, and start time; the before/after baseline hash
+is `fe6c775817727763a60b1b3a6608adc2f17c2ea910abd10176873b0cac6391a9`.
+Live Chromium reached `/ai-marketing` with the no-login shell, exactly one
+weekly `Analyse` button, the expected post-success lock, branded favicon,
+working light/dark themes, fixed output sections, public/global context,
+validated rationale and handover, the sanitized persistent activity log, and
+zero disclosed secret values. Schema 21 is active, automatic schedules remain
+zero, and the final application-log scan found zero sensitive markers.
 
 The final live backup is
-`/opt/essentials-merchant-amazon-backups/live-market-context-608691b-20260820T1146Z`.
-It was created with mode `0700`, verified six checksummed artifacts, registered
-manifest SHA-256
-`58eb2cd3375624159e717a08ca7fecb68b6a5a46e488d0d2ead0a99caa716bc0`
-against live revision `608691b`, and excludes all provider-secret rows. The
-isolated local empty-target restore matched both Sales and Ads raw hashes,
-snapshots and parser versions, retained the AI handover chain, restored zero
-provider secrets and zero schedules, and removed its disposable containers and
-volumes afterward. No additional restore was run against production.
+`/opt/essentials-merchant-amazon-backups/live-ai-context-77a2608-20260820T1540Z`.
+It has mode `0700` and manifest SHA-256
+`f1a06fa3cb5d6f070ce0ca90f0a2c2457962c4267b5333014ec0f3c7d3c15e4d`.
+The exact schema-21 allowlist includes the immutable curated baseline and the
+validated AI assessment but excludes all provider-secret rows. An isolated
+empty-target restore retained the Sales and Ads evidence, parser versions,
+business baseline, and handover chain while restoring zero provider secrets and
+zero schedules. Production itself was not used as a restore target.
 
 ## Relationship to the Mantle wiki toolchain
 
@@ -241,9 +239,10 @@ unnecessary decompression and archive-member attack surface.
 
 The manual workflow remains production-capable without Amazon secrets. The
 SP-API boundary is documented in [SP_API_GATE.md](SP_API_GATE.md). Approved
-credentials are now configured and Amazon accepted the one-shot Sales and
-Traffic request; completion of document download, parsing, and the downstream
-analysis still requires the explicit post-fix operator retry.
+credentials are configured and one authorized seven-day Sales and Traffic
+request completed through document download, parsing, deterministic analysis,
+and the weekly strategy flow. There is no remaining Amazon gate for this
+read-only report path.
 
 Generative strategy synthesis is implemented behind a separate external gate.
 The rules engine remains the source of facts and supported derivations. The
@@ -260,7 +259,11 @@ visibly separate from facts and deterministic derivations. Full activation and
 data-control details are in
 [STRATEGY_AI_GATE.md](STRATEGY_AI_GATE.md).
 
-The OpenAI key is configured in the write-only store, but no real synthesis has
-yet been sent. Manual report import, deterministic analysis, comparison, and
-export remain available; the first successful paid assessment and its weekly
-handover must be verified before provider success is claimed.
+The OpenAI key is configured in the write-only store and one paid structured
+assessment completed successfully. The stored weekly row and handover were
+validated, and a repeated request returned the cache without a second provider
+call. Remaining provider administration is external: confirm the dedicated
+project's intended budget/limits and applicable data-control/retention policy.
+`store:false` prevents Responses application-state storage but is not by itself
+a zero-retention claim. Manual report import, deterministic analysis,
+comparison, and export remain available independently of either provider.

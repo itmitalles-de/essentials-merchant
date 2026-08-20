@@ -359,15 +359,20 @@ CSV/TSV probes, hashes all three summary formats, and confirms that raw download
 and business mutations are blocked. It never writes report bytes or credentials
 to disk or stdout.
 
-An authorized real report may be imported once after this acceptance. Do not
-record its local path, raw bytes, ASIN/SKU values, or business metrics in Git or
-deployment logs. If authorization cannot be proven, stop after the synthetic
-run.
+The Mantle pilot completed one authorized real Sales and Traffic acquisition
+after this acceptance. Its local path, raw bytes, ASIN/SKU values, and business
+metrics were not recorded in Git or deployment logs. Future environments must
+still stop after the synthetic run unless their own authorization is proven.
 
 ## External validation gates
 
-- Amazon: no approved seller credentials, roles, or marketplace participation were supplied; no
-  real request has run.
+- Amazon: Mantle's approved private-app credentials and one marketplace are
+  configured in the encrypted write-only store. One bounded Sales and Traffic
+  request completed through analysis on 2026-08-20. No scheduler, Buyer/Order
+  PII, Ads API, or mutation client was enabled.
+- OpenAI: one paid aggregate assessment completed successfully. The dedicated
+  project budget and applicable provider data-control/retention policy remain
+  operator-owned administrative checks.
 - Stripe, payment webhooks, DHL, DPD, and carrier labels: ports/fakes are retained, but all adapters
   and account work are frozen until after a successful Amazon pilot.
 - DATEV: retained renderer stays disabled; checking-program/test-client work is frozen for this

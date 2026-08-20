@@ -190,8 +190,9 @@ remains only as a legacy fallback. Requests use the fixed Responses API, `store:
 payloads, and explicit aggregate-hash confirmation. The synthesis request has no tools and uses a
 strict output schema. Only validated output
 and redacted metadata are persisted immutably and idempotently; prompts/raw provider responses are
-not stored. Until the external credential gate exists, the deterministic path stays fully usable
-and the UI shows a disabled gate rather than simulating a provider result.
+not stored. The Mantle environment later supplied and technically proved the
+external credential, while environments without it retain the fully usable
+deterministic path and a disabled gate rather than a simulated provider result.
 
 ## 2026-08-20 — Make Mantle strategy a single weekly continuity loop
 
@@ -284,3 +285,22 @@ credentials exist, otherwise uses manual imports, then submits the closed
 aggregate history plus previous handover only to the tool-free synthesis step;
 the preceding public research sees neither. Provider failures do not
 consume the weekly slot; no scheduler or mutation capability is added.
+
+## 2026-08-20 — Keep business knowledge curated, immutable, and separate from AI memory
+
+**Decision:** Mantle/Sphagnum reference knowledge crosses from approved Wiki
+and Notes sources only once as a typed, reviewed business-context bundle. The
+database stores the bounded statements, source provenance, status, and content
+hashes in one immutable singleton row. Raw documents, personal notes, PII, and
+secrets are never copied. Weekly continuity is carried by the separately
+validated handover; model output cannot rewrite the source baseline.
+
+**Reason:** Every analysis needs stable knowledge of the business, but copying
+the document corpus or letting probabilistic output mutate its own source truth
+would expand disclosure, create unverifiable drift, and form a second knowledge
+system.
+
+**Consequences:** Identical imports are idempotent and a different second
+baseline is rejected. Every synthesis receives the same reviewed baseline plus
+the latest validated handover. A source update requires a separately reviewed
+migration/versioning decision rather than a hidden in-place edit.

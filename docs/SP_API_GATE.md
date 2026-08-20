@@ -10,12 +10,13 @@ from pilot backups. Without an explicitly approved credential set, manual upload
 stays fully usable.
 
 For the current Mantle deployment, the operator has entered and approved the
-credential set. A one-shot request on 2026-08-20 proved LWA refresh,
-`createReport`, polling, and an Amazon `DONE` Sales and Traffic report. It
-stopped before document retrieval because the original local resource-ID
-validator did not accept the dots in Amazon's official `amzn1.spdoc...` ID.
-Revision `f984cd3` is deployed with that exact fix. No report bytes, metrics, or
-OpenAI request were produced by the failed attempt.
+credential set. An initial one-shot request on 2026-08-20 exposed that the
+local resource-ID validator did not accept the dots in Amazon's official
+`amzn1.spdoc...` ID; revision `f984cd3` fixed that exact boundary. A later
+authorized operator run completed LWA refresh, `createReport`, bounded polling,
+document download, hashing, parsing, deterministic analysis, and the weekly
+strategy assessment. No raw path, report bytes, business metrics, full Amazon
+request ID, or secret value was printed or committed.
 
 The manual aggregate Sponsored Products campaign-report importer is also fully
 usable without credentials. It is not an SP-API operation. Amazon Ads API uses

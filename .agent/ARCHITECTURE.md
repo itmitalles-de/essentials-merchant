@@ -77,8 +77,12 @@ citation excerpts in provider citation order, plus a closed
 aggregate-history DTO. Internal metrics never enter a web query. When the
 approved live connection exists, that same click first creates or reuses exactly one seven-day
 Sales and Traffic run and waits for the normal immutable parser/analysis pipeline. The DTO contains
-at most eight distinct newest-first analyses and the previous validated strategy/handover as
-untrusted context. Both calls use the fixed Responses API POST and have no Amazon transport
+at most eight distinct newest-first analyses, one immutable curated
+Mantle/Sphagnum business-context baseline, and the previous validated
+strategy/handover as untrusted context. The singleton baseline stores only
+typed reviewed statements plus source paths/titles, statuses, and file hashes;
+raw Wiki/Notes documents, PII, and secrets never cross the import boundary.
+Both calls use the fixed Responses API POST and have no Amazon transport
 authority, automatic execution, or raw/product/customer/campaign input.
 
 Validated strategy output is stored separately in immutable
@@ -86,7 +90,10 @@ Validated strategy output is stored separately in immutable
 unique index and an optional predecessor reference; legacy v1 rows retain a null week. Prompts, raw
 provider responses, API credentials, archive hashes, and internal evidence UUIDs are not stored
 there. The browser renders fixed deterministic KPI charts followed by the validated strategy and
-handover outside the canonical facts and deterministic-derivation blocks.
+handover outside the canonical facts and deterministic-derivation blocks. The
+baseline in `mantle_business_knowledge` is independently immutable and is not
+rewritten by AI output; continuity changes only through each validated weekly
+handover.
 
 ## Retained full-stack topology
 

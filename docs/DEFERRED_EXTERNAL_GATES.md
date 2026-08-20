@@ -1,6 +1,13 @@
 # Deferred external gates
 
-Amazon Reports remains the only Amazon transport track. The optional OpenAI strategy adapter is implemented but disabled behind its own aggregate-data and credential gate; it is not an Amazon mutation or report-acquisition client. The ports, fakes, mapping tables, recovery behavior, and retained Commerce tests below remain in the repository, but no listed transactional adapter is implemented or activated. Every listed gate may begin only after the first approved Amazon pilot report succeeds and receives a separate scoped decision.
+Amazon Reports remains the only Amazon transport track. Mantle's optional
+OpenAI strategy adapter is active only for the closed aggregate-data path and
+is not an Amazon mutation or report-acquisition client. One approved report and
+weekly assessment succeeded on 2026-08-20; that success does not authorize any
+transactional adapter below. The ports, fakes, mapping tables, recovery
+behavior, and retained Commerce tests remain in the repository, but no listed
+transactional adapter is implemented or activated. Each still requires a
+separate scoped decision.
 
 | Gate | Benefit | Prerequisite | Current technical state | External account | Security review | Business acceptance | Earliest start / milestone decision |
 |---|---|---|---|---|---|---|---|

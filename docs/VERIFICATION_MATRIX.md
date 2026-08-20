@@ -63,8 +63,10 @@ browser integration on this workstation. Neither is evidence of Amazon authentic
 authorization, real rate limits, provider uptime, production encryption, legal/tax acceptance or
 operational RPO/RTO.
 
-Amazon staging is **blocked** because no approved seller, SP-API credential reference, Brand
-Analytics role, confirmed marketplace, or encrypted archive attestation was available. No real
-request was sent. The first safe external action remains the separately reviewed one-shot gate in
-[`operations/AMAZON_STAGING_GATE.md`](operations/AMAZON_STAGING_GATE.md); real-seller production
-operation is outside this milestone.
+The repository-owned matrix above remains synthetic evidence only. Separately,
+the Mantle live pilot subsequently supplied an approved private-app credential
+set, Brand Analytics role, one marketplace, and encrypted archive boundary. One
+bounded real Sales and Traffic request completed on 2026-08-20 through download,
+parsing, deterministic analysis, and the weekly AI assessment. This does not
+generalize to another seller or unlock Orders, Ads, mutation, or scheduled
+operation; those require their own reviewed gate.
