@@ -13,7 +13,7 @@ export JWT_SECRET='synthetic-pilot-jwt-at-least-thirty-two-bytes'
 export ADMIN_USERNAME='synthetic-admin'
 export ADMIN_PASSWORD='synthetic-admin-password'
 export INTEGRATION_SECRET='synthetic-pilot-integration-at-least-thirty-two-bytes'
-export PILOT_FRONTEND_PORT=18092
+export PILOT_FRONTEND_PORT=${PILOT_BACKUP_SOURCE_PORT:-18092}
 export COMPOSE_ENV_FILE=/dev/null
 
 compose() {
@@ -96,6 +96,18 @@ VALUES
    '{"facts":["synthetic"],"delta":[],"trend":"stable","anomalies":[],
      "hypotheses":[],"options":[],"uncertainty":"synthetic-only",
      "missing_data":[],"evidence_refs":["snapshot:44444444-4444-4444-8444-444444444444"]}');
+INSERT INTO amazon_ai_strategy_assessments
+  (id, analysis_id, payload_sha256, model_name, prompt_version, result,
+   provider_request_id_redacted, input_tokens, output_tokens, created_by)
+SELECT
+  '77777777-7777-4777-8777-777777777777',
+  '66666666-6666-4666-8666-666666666666', repeat('b', 64), 'gpt-5.6',
+  'mantle-amazon-strategy-v1',
+  '{"executive_summary":"synthetic only","assessment":"synthetic only",
+    "opportunities":[],"risks":[],"hypotheses":[],"recommended_actions":[],
+    "open_questions":[],"limitations":["no real data"]}',
+  '0123456789ab', 100, 50, id
+FROM users WHERE username = 'synthetic-admin';
 INSERT INTO amazon_transport_observations
   (run_id, operation, request_id_redacted, rate_limit_limit, retry_after_seconds)
 VALUES
@@ -118,6 +130,7 @@ source_fingerprint=$(compose "$source_project" exec -T db psql -U erplite -d erp
      (SELECT sha256 FROM amazon_report_documents WHERE id = '33333333-3333-4333-8333-333333333333'),
      (SELECT count(*) FROM amazon_metric_snapshots),
      (SELECT count(*) FROM amazon_analysis_results),
+     (SELECT count(*) FROM amazon_ai_strategy_assessments),
      (SELECT count(*) FROM administrative_audit_log),
      (SELECT count(*) FROM essentials_modules WHERE enabled))")
 test "$(compose "$source_project" exec -T db psql -U erplite -d erplite -X -qAt -c \
@@ -142,7 +155,7 @@ compose "$source_project" exec -T db psql -U erplite -d erplite -X -qAt -v ON_ER
 COMPOSE_PROJECT_NAME="$source_project" "$repository_dir/ops/backup-amazon-pilot.sh" "$backup_dir"
 node "$repository_dir/ops/verify-amazon-pilot-backup.mjs" "$backup_dir"
 
-export PILOT_FRONTEND_PORT=18093
+export PILOT_FRONTEND_PORT=${PILOT_BACKUP_RESTORE_PORT:-18093}
 COMPOSE_PROJECT_NAME="$restore_project" "$repository_dir/ops/restore-amazon-pilot.sh" "$backup_dir"
 
 restored_fingerprint=$(compose "$restore_project" exec -T db psql -U erplite -d erplite -X -qAt -v ON_ERROR_STOP=1 -c \
@@ -151,6 +164,7 @@ restored_fingerprint=$(compose "$restore_project" exec -T db psql -U erplite -d 
      (SELECT sha256 FROM amazon_report_documents WHERE id = '33333333-3333-4333-8333-333333333333'),
      (SELECT count(*) FROM amazon_metric_snapshots),
      (SELECT count(*) FROM amazon_analysis_results),
+     (SELECT count(*) FROM amazon_ai_strategy_assessments),
      (SELECT count(*) FROM administrative_audit_log),
      (SELECT count(*) FROM essentials_modules WHERE enabled))")
 test "$source_fingerprint" = "$restored_fingerprint"
@@ -162,4 +176,4 @@ test "$(docker run --rm -v "${restore_project}_erplite_invoices:/source:ro" \
   postgres:16-alpine@sha256:cf78e76683b9ca8c5733cbbdce6c9262b45b6767934dd0a95e671f9a0fc20685 \
   cat /source/amazon-pilot/fixture.txt)" = 'synthetic pilot operations document'
 
-echo "Amazon pilot backup/restore passed: large raw archive, hashes, snapshot, parser, analysis, modules, audit, documents, and fail-closed profile verified."
+echo "Amazon pilot backup/restore passed: large raw archive, hashes, snapshot, parser, deterministic/AI analyses, modules, audit, documents, and fail-closed profile verified."

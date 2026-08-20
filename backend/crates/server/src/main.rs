@@ -9,6 +9,7 @@ mod pdf_gen;
 mod pilot;
 mod routes;
 mod state;
+mod strategy_ai;
 
 use std::net::SocketAddr;
 use std::sync::Arc;
@@ -47,6 +48,7 @@ async fn main() -> anyhow::Result<()> {
     std::fs::create_dir_all(&config.pdf_storage_dir)?;
     let marketplace_worker =
         marketplace::MarketplaceWorker::new(Arc::new(marketplace::CompositeAmazonClient::new()?));
+    let strategy_ai = strategy_ai::StrategyAiClient::from_env()?;
 
     let state = AppState {
         pool,
@@ -55,6 +57,7 @@ async fn main() -> anyhow::Result<()> {
         outbox_policy: config.outbox_policy,
         pdf_storage_dir: config.pdf_storage_dir,
         marketplace_worker: marketplace_worker.clone(),
+        strategy_ai,
     };
 
     let api = Router::new()

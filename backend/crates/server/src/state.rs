@@ -10,4 +10,5 @@ pub struct AppState {
     pub outbox_policy: db::commerce::OutboxPolicy,
     pub pdf_storage_dir: String,
     pub marketplace_worker: MarketplaceWorker,
+    pub strategy_ai: crate::strategy_ai::StrategyAiClient,
 }

@@ -78,6 +78,7 @@ fn pilot_request_allowed(method: &Method, path: &str) -> bool {
         segments.as_slice(),
         ["api", "marketplace", "connections", _, "runs"]
             | ["api", "marketplace", "connections", _, "analyses"]
+            | ["api", "marketplace", "analyses", _, "strategy"]
     )
 }
 
@@ -116,6 +117,8 @@ mod tests {
             (Method::PUT, "/api/marketplace/connections/id/schedules"),
             (Method::GET, "/api/marketplace/runs/id/raw"),
             (Method::GET, "/api/modules/shipping.dhl/health"),
+            (Method::POST, "/api/marketplace/analyses/id/strategy/run"),
+            (Method::POST, "/api/marketplace/analyses/id/export"),
         ] {
             let response = app
                 .clone()
@@ -139,6 +142,7 @@ mod tests {
             "/api/marketplace/connections/id/analyses",
             "/api/marketplace/imports/preview",
             "/api/marketplace/imports",
+            "/api/marketplace/analyses/id/strategy",
         ] {
             let response = app
                 .clone()

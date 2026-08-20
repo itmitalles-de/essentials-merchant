@@ -1,6 +1,6 @@
 # Deferred external gates
 
-Amazon Reports is the only active external-integration track in this milestone. The ports, fakes, mapping tables, recovery behavior, and retained Commerce tests below remain in the repository, but no new adapter is implemented or activated. Every gate may begin only after the first approved Amazon pilot report succeeds and receives a separate scoped decision.
+Amazon Reports remains the only Amazon transport track. The optional OpenAI strategy adapter is implemented but disabled behind its own aggregate-data and credential gate; it is not an Amazon mutation or report-acquisition client. The ports, fakes, mapping tables, recovery behavior, and retained Commerce tests below remain in the repository, but no listed transactional adapter is implemented or activated. Every listed gate may begin only after the first approved Amazon pilot report succeeds and receives a separate scoped decision.
 
 | Gate | Benefit | Prerequisite | Current technical state | External account | Security review | Business acceptance | Earliest start / milestone decision |
 |---|---|---|---|---|---|---|---|
@@ -11,4 +11,4 @@ Amazon Reports is the only active external-integration track in this milestone. 
 | Real carrier labels | Printable production shipment documents | One accepted carrier adapter, printer/layout and cancellation flow | No label generator; manual tracking path retained outside pilot | Contracted carrier credentials/products required | Address PII, barcode integrity, access control, storage/deletion and reprint audit | Warehouse signs off samples and operational rollback | After successful Amazon pilot; disabled now |
 | DATEV activation | Transfer immutable accounting entries to tax/accounting tooling | DATEV checking-program validation and import into an approved empty test client | Deterministic EXTF-v13 renderer, immutable batches and local fixtures retained; `export.datev` disabled | Approved DATEV test client/adviser workflow required | Financial-data access, encrypted transfer/retention, tamper evidence and operator separation | Tax adviser/accounting signs off format and mappings | After successful Amazon pilot; no activation now |
 
-No external LLM, automatic procurement, additional marketplace, multi-tenant control plane, or Kubernetes deployment is introduced by any of these retained contracts.
+No automatic procurement, additional marketplace, multi-tenant control plane, or Kubernetes deployment is introduced by any of these retained contracts. The separately documented OpenAI strategy gate has no tools or execution path.

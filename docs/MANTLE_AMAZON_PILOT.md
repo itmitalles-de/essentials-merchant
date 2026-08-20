@@ -10,14 +10,18 @@ archive, parser, metric, analysis, and export pipeline.
 The service never changes prices, advertising, listings, inventory, orders,
 payments, shipping, or tax/accounting data. The production profile starts only
 PostgreSQL, the Merchant backend, and the Core frontend. Vendure, Storefront,
-payment, shipping, DATEV, and external AI are outside the deployment.
+payment, shipping, and DATEV are outside the deployment. Optional external AI
+uses the existing backend only, is disabled by default, and has no tool or
+mutation capability.
 
 ## Current Mantle deployment
 
 The accepted live revision is `66ce755da8fc1ebed1c4cf2dadd9ec838a4c34c3`
 in Compose project `essentials-merchant-amazon` on `192.168.178.15`. Internal
-operators use `https://merchant.mantle-climbing.de`. Split DNS maps that name to
-the Docker host only on the Mantle network, and Caddy accepts only private,
+operators use `https://merchant.mantle-climbing.de`; the AI-first target is
+`https://ai-marketing.mantle-climbing.de`. The existing Merchant name resolves
+internally to the Docker host; the AI name still requires an authorized A record
+on the Windows DNS server. Caddy accepts only private,
 loopback, or VPN source ranges. The frontend has no public host bind and there
 is no public registration path.
 
@@ -76,6 +80,8 @@ The Marketplace Intelligence page implements the following workflow:
 8. Upload a second compatible period.
 9. Review the deterministic comparison.
 10. Export an aggregate JSON, Markdown, or CSV summary.
+11. Optionally review and confirm the AI aggregate-input hash, then request a
+    visibly separated strategy assessment when the external OpenAI gate is active.
 
 Raw report downloads are blocked by the Amazon read-only pilot middleware, even
 for administrators. The raw bytes are available only to the database backup and
@@ -100,11 +106,12 @@ gate is documented in [SP_API_GATE.md](SP_API_GATE.md) and stays externally
 blocked until explicitly approved credentials and a one-shot staging gate are
 available.
 
-Generative strategy synthesis is a separate external gate. The current rules
-engine already produces evidence-linked possible causes, measures, uncertainty,
-and open questions, but it is deterministic rather than an LLM. Any future
-OpenAI adapter must use a separately funded, project-scoped server API key and
-may receive only the minimized aggregate summary after an explicit operator
-action. It may not receive raw reports or identifiers, store provider state,
-run automatically, or gain a mutation tool. Model output must remain visibly
-separate from facts and deterministic derivations.
+Generative strategy synthesis is implemented behind a separate external gate.
+The rules engine remains the source of facts and supported derivations. The
+OpenAI adapter requires a separately funded, project-scoped server API key and
+receives only a stricter aggregate DTO after explicit hash confirmation. It
+cannot receive raw reports or product/customer identifiers, run automatically,
+or gain a mutation tool. Validated model output is immutable, idempotent by
+analysis/hash/model/prompt version, and remains visibly separate from facts and
+deterministic derivations. Full activation and data-control details are in
+[STRATEGY_AI_GATE.md](STRATEGY_AI_GATE.md).

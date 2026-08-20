@@ -172,17 +172,21 @@ same exact read-only operation gate with no scheduler on first use.
 
 ## 2026-08-20 — Gate generative strategy behind minimized aggregate evidence
 
-**Decision:** A future Mantle OpenAI integration is an explicit operator-triggered adapter over the
-existing aggregate-only analysis export, not a second parser or analysis store. Deterministic facts
-and derivations remain canonical. Model output is visibly classified as hypotheses, possible
-measures, uncertainty, missing evidence, and open questions. The adapter has no Amazon or Merchant
-mutation tool, scheduler, raw-report access, or product/customer identifier input.
+**Decision:** The Mantle OpenAI integration is an explicit operator-triggered adapter over a closed
+DTO derived from the existing deterministic analysis, not a second parser or analysis system.
+Deterministic facts and derivations remain canonical. Model output is visibly classified as
+assessment, hypotheses, possible measures, uncertainty, missing evidence, and open questions. The
+adapter has no Amazon or Merchant mutation tool, scheduler, raw-report access, or product/customer
+identifier input.
 
 **Reason:** Mantle wants conversational strategy support, but a ChatGPT subscription does not supply
 server API credentials or API billing. Raw Amazon business reports must not be disclosed merely to
 gain narrative output, and probabilistic text must not be presented as evidence.
 
-**Consequences:** Activation requires a dedicated project-scoped OpenAI API key stored only in the
-host secret environment plus an approved aggregate field allowlist and provider data controls.
-Requests ask for no provider-side storage. Until those external gates exist, the deployed service
-remains fully usable with deterministic analysis and the AI path is absent rather than simulated.
+**Consequences:** The implemented adapter is disabled by default and activation requires a
+dedicated project-scoped OpenAI API key stored only in the host secret environment plus approved
+provider data controls. Requests use the fixed Responses API, `store: false`, no tools, a strict
+output schema, bounded payloads, and explicit aggregate-hash confirmation. Only validated output
+and redacted metadata are persisted immutably and idempotently; prompts/raw provider responses are
+not stored. Until the external credential gate exists, the deterministic path stays fully usable
+and the UI shows a disabled gate rather than simulating a provider result.

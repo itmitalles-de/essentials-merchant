@@ -106,8 +106,11 @@ BEGIN
             WHERE raw_content = decoded_content AND sha256 = decoded_sha256) <> 1 THEN
         RAISE EXCEPTION 'marketplace raw archive was not migrated losslessly';
     END IF;
-    IF (SELECT max(version) FROM _sqlx_migrations) <> 16 THEN
+    IF (SELECT max(version) FROM _sqlx_migrations) <> 17 THEN
         RAISE EXCEPTION 'unexpected final migration version';
+    END IF;
+    IF to_regclass('public.amazon_ai_strategy_assessments') IS NULL THEN
+        RAISE EXCEPTION 'AI strategy assessment store was not created';
     END IF;
 END $$;
 SELECT 'upgrade-rehearsal-ok';

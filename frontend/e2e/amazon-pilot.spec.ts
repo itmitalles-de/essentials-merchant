@@ -63,6 +63,10 @@ test("administrator completes the synthetic read-only Amazon pilot flow", async 
   await expect(page.getByText(/Roharchiv: unveränderlich/)).toBeVisible();
   await expect(page.getByText(/Snapshot: day_child/)).toBeVisible();
   await expect(page.getByRole("heading", { name: "Delta-Analyse" })).toBeVisible();
+  const defaultStrategyPanel = page.locator(".strategy-panel").first();
+  await expect(defaultStrategyPanel).toContainText("Externes OpenAI-Gate");
+  await expect(defaultStrategyPanel.getByRole("button", { name: "KI-Strategie jetzt erstellen" }))
+    .toBeDisabled();
 
   const download = page.waitForEvent("download");
   await page.getByRole("button", { name: "PII-minimierten Analyseexport laden" }).first().click();
@@ -110,6 +114,103 @@ test("administrator completes the synthetic read-only Amazon pilot flow", async 
     expect((await exportDownload).suggestedFilename()).toMatch(new RegExp(`\\.${extension}$`));
   }
 
+  let aggregateHash = "a".repeat(64);
+  let rejectFirstStrategyPost = true;
+  await page.route(/\/api\/marketplace\/analyses\/[^/]+\/strategy$/, async (route) => {
+    const analysisId = new URL(route.request().url()).pathname.split("/").at(-2) ?? "synthetic";
+    const base = {
+      analysis_id: analysisId,
+      payload_sha256: aggregateHash,
+      status: {
+        available: true,
+        reason: null,
+        provider: "openai",
+        model: "gpt-5.6",
+        prompt_version: "mantle-amazon-strategy-v1",
+        response_storage: "store_false",
+        input_boundary: "aggregate_analysis_only",
+        automatic_execution: false,
+        mutation_capability: false,
+      },
+      provider_request_id_redacted: null,
+      input_tokens: null,
+      output_tokens: null,
+      created_at: null,
+    };
+    if (route.request().method() === "GET") {
+      await route.fulfill({ json: { ...base, cached: false, assessment: null } });
+      return;
+    }
+    const body = route.request().postDataJSON() as Record<string, unknown>;
+    expect(body).toEqual({
+      confirmed_payload_sha256: aggregateHash,
+      confirmed_aggregate_only: true,
+    });
+    if (rejectFirstStrategyPost) {
+      rejectFirstStrategyPost = false;
+      aggregateHash = "b".repeat(64);
+      await route.fulfill({
+        status: 412,
+        json: { error: "aggregate_confirmation_mismatch" },
+      });
+      return;
+    }
+    await route.fulfill({
+      json: {
+        ...base,
+        cached: false,
+        input_tokens: 120,
+        output_tokens: 60,
+        created_at: "2026-08-20T12:00:00Z",
+        assessment: {
+          executive_summary: "Synthetische KI-Zusammenfassung ohne Geschäftsdaten.",
+          assessment: "Die Conversion sollte mit zusätzlicher Evidenz geprüft werden.",
+          opportunities: [{
+            title: "Synthetische Chance",
+            rationale: "Der Periodenvergleich zeigt ein messbares Signal.",
+            confidence: "medium",
+            evidence_refs: ["fact:sessions"],
+          }],
+          risks: [],
+          hypotheses: [{
+            statement: "Eine Kampagne könnte beigetragen haben.",
+            rationale: "Ads-Daten fehlen.",
+            confidence: "low",
+            evidence_needed: ["Ads-Bericht desselben Zeitraums"],
+            evidence_refs: [],
+          }],
+          recommended_actions: [{
+            title: "Evidenz abgleichen",
+            rationale: "Kausalität ist nicht belegt.",
+            priority: "now",
+            expected_signal: "Zeitlich übereinstimmende Veränderung",
+            risks: ["Scheinkorrelation"],
+            evidence_refs: [],
+          }],
+          open_questions: ["Welche Kampagnen liefen?"],
+          limitations: ["Keine Ads-, Preis- oder Bestandsdaten."],
+        },
+      },
+    });
+  });
+  await page.reload();
+  const strategyPanel = page.locator(".analysis-card").filter({ hasText: uiMarketplace })
+    .first().locator(".strategy-panel");
+  await expect(strategyPanel).toContainText(aggregateHash);
+  const strategyConfirmation = strategyPanel.getByLabel(/Aggregat-Hash geprüft/);
+  const strategyButton = strategyPanel.getByRole("button", { name: "KI-Strategie jetzt erstellen" });
+  await strategyConfirmation.check();
+  await strategyButton.click();
+  await expect(strategyPanel).toContainText("b".repeat(64));
+  await expect(strategyConfirmation).not.toBeChecked();
+  await expect(strategyButton).toBeDisabled();
+  await strategyConfirmation.check();
+  await strategyButton.click();
+  await expect(strategyPanel.getByText("KI-generiert – keine Faktenquelle")).toBeVisible();
+  await expect(strategyPanel).toContainText("Synthetische Chance");
+  await expect(strategyPanel).toContainText("Hypothesen – nicht als Fakten behandeln");
+  await expect(manualAnalysis.locator(".analysis-block").first()).not.toContainText("Synthetische Chance");
+
   const statuses = await page.evaluate(async () => {
     const requests: Array<[string, string]> = [
       ["POST", "/api/articles/"],
@@ -136,6 +237,9 @@ test("administrator completes the synthetic read-only Amazon pilot flow", async 
   });
   expect(statuses).toEqual([409, 409, 409, 409, 409, 409, 409, 409]);
 
+  await page.goto("/ai-marketing");
+  await expect(page.getByRole("heading", { name: "Amazon AI Marketing" })).toBeVisible();
+  await expect(page.getByText("Interne Strategiehilfe für Mantle")).toBeVisible();
   await expect(page.locator("body")).not.toContainText(/refresh_token|client_secret|access_token/i);
   const accessibility = await new AxeBuilder({ page }).analyze();
   expect(

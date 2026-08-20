@@ -439,6 +439,65 @@ export interface MarketplaceAnalysisSummary {
   created_at: string;
 }
 
+export interface MarketplaceStrategyStatus {
+  available: boolean;
+  reason: "feature_disabled" | "api_key_missing" | null;
+  provider: "openai";
+  model: string;
+  prompt_version: string;
+  response_storage: "store_false";
+  input_boundary: "aggregate_analysis_only";
+  automatic_execution: false;
+  mutation_capability: false;
+}
+
+export interface MarketplaceStrategyFinding {
+  title: string;
+  rationale: string;
+  confidence: "low" | "medium" | "high";
+  evidence_refs: string[];
+}
+
+export interface MarketplaceStrategyHypothesis {
+  statement: string;
+  rationale: string;
+  confidence: "low" | "medium" | "high";
+  evidence_needed: string[];
+  evidence_refs: string[];
+}
+
+export interface MarketplaceStrategyAction {
+  title: string;
+  rationale: string;
+  priority: "now" | "next" | "later";
+  expected_signal: string;
+  risks: string[];
+  evidence_refs: string[];
+}
+
+export interface MarketplaceStrategyAssessment {
+  executive_summary: string;
+  assessment: string;
+  opportunities: MarketplaceStrategyFinding[];
+  risks: MarketplaceStrategyFinding[];
+  hypotheses: MarketplaceStrategyHypothesis[];
+  recommended_actions: MarketplaceStrategyAction[];
+  open_questions: string[];
+  limitations: string[];
+}
+
+export interface MarketplaceStrategyView {
+  analysis_id: string;
+  payload_sha256: string;
+  status: MarketplaceStrategyStatus;
+  cached: boolean;
+  assessment: MarketplaceStrategyAssessment | null;
+  provider_request_id_redacted: string | null;
+  input_tokens: number | null;
+  output_tokens: number | null;
+  created_at: string | null;
+}
+
 export interface MarketplaceOverview {
   connections: AmazonConnectionSummary[];
   schedules: AmazonReportSchedule[];

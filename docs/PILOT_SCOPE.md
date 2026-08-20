@@ -6,7 +6,7 @@ The first pilot is an internal, read-only Amazon Marketplace Intelligence system
 
 > Essentials+ Merchant - Amazon Intelligence Pilot - Read-only
 
-The pilot acquires Amazon Reports data, preserves immutable source evidence, parses it with versioned deterministic code, creates comparable snapshots and deterministic rule analyses, and exports PII-minimized aggregates. Suggested actions remain text; no action executor exists in the pilot.
+The pilot acquires Amazon Reports data, preserves immutable source evidence, parses it with versioned deterministic code, creates comparable snapshots and deterministic rule analyses, and exports PII-minimized aggregates. An optional, manually triggered OpenAI panel can interpret only a stricter aggregate DTO. Suggested actions remain text; no action executor exists in the pilot.
 
 ## Persisted module profile
 
@@ -58,6 +58,9 @@ There is no Listings Items, Product Pricing, Orders, Inventory, Ads, Fulfillment
 - Tokens, client secrets, refresh tokens, raw payloads, clear seller IDs, and buyer data are never displayed.
 - A live pilot connection accepts only the logical reference `pilot_seller`; its LWA values remain
   exclusively in `AMAZON_SECRET_PILOT_SELLER` and are never persisted.
+- The optional OpenAI transport is a separate fixed Responses API POST, disabled by default. It
+  has no tools, receives no raw report/product/customer data, and cannot expand the Amazon
+  operation allowlist. Validated output is displayed outside the facts/derivations blocks.
 
 ## Reproducible start
 

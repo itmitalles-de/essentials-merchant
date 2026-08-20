@@ -142,10 +142,16 @@ correction invoices, immutable accounting entries, provider-neutral payment/ship
 synthetic providers remain implemented and tested.
 
 None of those retained mutation paths is part of the pilot. Stripe adapters/webhooks, DHL and DPD
-adapters/labels, DATEV activation, additional marketplaces, external AI, automated procurement,
+adapters/labels, DATEV activation, additional marketplaces, automated procurement,
 multi-tenancy, and Kubernetes are explicitly frozen for this milestone. See
 [deferred external gates](docs/DEFERRED_EXTERNAL_GATES.md) and
 [deferred capabilities](docs/NICE_TO_HAVE.md).
+
+An optional administrator-triggered OpenAI strategy panel is implemented inside Marketplace
+Intelligence. It is disabled by default, accepts only a hash-confirmed closed aggregate DTO, uses
+no tools, and cannot mutate Amazon or Merchant. A separately billed project API key and explicit
+host activation are required; a ChatGPT subscription is not an API credential. See
+[the strategy AI gate](docs/STRATEGY_AI_GATE.md).
 
 ## Verification
 

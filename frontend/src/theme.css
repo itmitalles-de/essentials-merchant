@@ -342,10 +342,79 @@ table caption {
   margin-top: 0.5rem;
 }
 
+.strategy-intro {
+  margin-top: 1rem;
+}
+
+.strategy-panel {
+  margin: 1.25rem 0;
+  padding: 1rem;
+  border: 2px solid color-mix(in srgb, var(--accent) 55%, var(--border));
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--accent) 5%, var(--bg-elevated));
+}
+
+.strategy-panel > :first-child {
+  margin-top: 0;
+}
+
+.strategy-contract,
+.strategy-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.75rem;
+}
+
+.strategy-contract {
+  margin: 1rem 0;
+}
+
+.strategy-contract > div,
+.strategy-section {
+  padding: 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-elevated);
+}
+
+.strategy-contract dt {
+  color: var(--fg-muted);
+  font-size: 0.8rem;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+.strategy-contract dd {
+  margin: 0.3rem 0 0;
+}
+
+.strategy-result {
+  margin-top: 1rem;
+}
+
+.strategy-result h4 {
+  margin-top: 0;
+}
+
+.strategy-summary {
+  font-size: 1.05rem;
+  font-weight: 600;
+}
+
+.strategy-badge {
+  border-color: color-mix(in srgb, var(--warning) 55%, var(--border));
+}
+
+.strategy-metadata {
+  margin-bottom: 0;
+}
+
 @media (max-width: 760px) {
   .marketplace-form-grid,
   .marketplace-meta-grid,
-  .analysis-separation {
+  .analysis-separation,
+  .strategy-contract,
+  .strategy-grid {
     grid-template-columns: 1fr;
   }
 }

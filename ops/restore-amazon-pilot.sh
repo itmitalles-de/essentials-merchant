@@ -68,6 +68,7 @@ status=$(compose exec -T db psql -U erplite -d erplite -X -qAt -v ON_ERROR_STOP=
      'raw_archives', (SELECT count(*) FROM amazon_report_documents),
      'snapshots', (SELECT count(*) FROM amazon_metric_snapshots),
      'analyses', (SELECT count(*) FROM amazon_analysis_results),
+     'ai_assessments', (SELECT count(*) FROM amazon_ai_strategy_assessments),
      'automatic_schedules', (SELECT count(*) FROM amazon_report_schedules WHERE enabled)
    ) FROM active")
 case "$status" in

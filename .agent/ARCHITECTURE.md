@@ -65,7 +65,15 @@ produce normalized decimals and explicit missing fields. Deterministic analysis 
 delta, trend, anomalies, hypotheses, possible actions, uncertainty, missing data, and evidence.
 Aggregate JSON, Markdown, and CSV exports recursively deny
 buyer/customer/address/email/order/comment/phone fields.
-Actions are never executed and no external LLM receives data.
+Actions are never executed. An optional, manually triggered OpenAI adapter can receive only a
+second closed aggregate DTO after hash confirmation. It has a fixed Responses API POST, no tools,
+no Amazon transport authority, no automatic execution, and no raw/product/customer input.
+
+Validated strategy output is stored separately in immutable
+`amazon_ai_strategy_assessments`, uniquely keyed by deterministic analysis, aggregate hash, model,
+and prompt version. Prompts, raw provider responses, API credentials, archive hashes, and internal
+evidence UUIDs are not stored there. The browser renders this output outside the canonical facts
+and deterministic-derivation blocks.
 
 ## Retained full-stack topology
 
@@ -118,5 +126,6 @@ proofs, not external encrypted-retention or RPO/RTO acceptance.
 - Vendure 3.7.2 is absent from the pilot runtime but retained advisories are not called fixed.
 - Pilot Playwright/axe, Amazon allowlist, audit/SBOM/secret checks, Rust/frontend/Commerce suites,
   recovery, full/pilot restores, and upgrade rehearsal are independent acceptance layers.
-- Multi-tenancy, Kubernetes, other marketplaces, external AI, marketplace writes, automated
-  procurement, and live provider adapters remain outside this architecture milestone.
+- Multi-tenancy, Kubernetes, other marketplaces, marketplace writes, automated procurement, and
+  live transactional provider adapters remain outside this architecture milestone. The optional
+  OpenAI strategy gate is interpretation-only and disabled without a separately approved API key.

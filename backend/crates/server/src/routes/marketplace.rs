@@ -2,11 +2,11 @@ use axum::body::{Body, Bytes};
 use axum::extract::DefaultBodyLimit;
 use axum::extract::{Path, Query, State};
 use axum::http::{header, HeaderValue, StatusCode};
-use axum::response::Response;
+use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post, put};
 use axum::{Json, Router};
 use chrono::{DateTime, NaiveDate, Utc};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use uuid::Uuid;
 
@@ -41,6 +41,13 @@ pub fn router() -> Router<AppState> {
         )
         .route("/runs/{run_id}", get(run_detail))
         .route("/runs/{run_id}/raw", get(raw_document))
+        .route("/strategy/status", get(strategy_status))
+        .route(
+            "/analyses/{analysis_id}/strategy",
+            get(strategy_preview)
+                .post(create_strategy_assessment)
+                .layer(DefaultBodyLimit::max(2 * 1024)),
+        )
         .route("/analyses/{analysis_id}/export", get(export_analysis))
 }
 
@@ -595,6 +602,255 @@ async fn raw_document(
         )
         .body(Body::from(document.content))
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)
+}
+
+#[derive(Debug, Serialize)]
+struct StrategyAssessmentView {
+    analysis_id: Uuid,
+    payload_sha256: String,
+    status: crate::strategy_ai::StrategyAiStatus,
+    cached: bool,
+    assessment: Option<Value>,
+    provider_request_id_redacted: Option<String>,
+    input_tokens: Option<i64>,
+    output_tokens: Option<i64>,
+    created_at: Option<DateTime<Utc>>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct StrategyAssessmentRequest {
+    confirmed_payload_sha256: String,
+    confirmed_aggregate_only: bool,
+}
+
+struct StrategyRouteError {
+    status: StatusCode,
+    code: &'static str,
+    retry_after_seconds: Option<u64>,
+}
+
+impl StrategyRouteError {
+    fn new(status: StatusCode, code: &'static str) -> Self {
+        Self {
+            status,
+            code,
+            retry_after_seconds: None,
+        }
+    }
+}
+
+impl IntoResponse for StrategyRouteError {
+    fn into_response(self) -> Response {
+        let mut body = json!({ "error": self.code });
+        if let Some(retry_after_seconds) = self.retry_after_seconds {
+            body["retry_after_seconds"] = json!(retry_after_seconds);
+        }
+        let mut response = (self.status, Json(body)).into_response();
+        if let Some(retry_after_seconds) = self.retry_after_seconds {
+            if let Ok(value) = HeaderValue::from_str(&retry_after_seconds.to_string()) {
+                response.headers_mut().insert(header::RETRY_AFTER, value);
+            }
+        }
+        response
+    }
+}
+
+async fn require_strategy_admin(
+    state: &AppState,
+    user: &db::users::User,
+) -> Result<(), StrategyRouteError> {
+    require_marketplace(state, user, false)
+        .await
+        .map_err(|status| StrategyRouteError::new(status, "marketplace_unavailable"))?;
+    if user.role != "administrator" {
+        return Err(StrategyRouteError::new(
+            StatusCode::FORBIDDEN,
+            "administrator_required",
+        ));
+    }
+    Ok(())
+}
+
+async fn strategy_status(
+    State(state): State<AppState>,
+    AuthUser(user): AuthUser,
+) -> Result<Json<crate::strategy_ai::StrategyAiStatus>, StrategyRouteError> {
+    require_strategy_admin(&state, &user).await?;
+    Ok(Json(state.strategy_ai.status()))
+}
+
+async fn load_strategy_view(
+    state: &AppState,
+    analysis_id: Uuid,
+) -> Result<
+    (
+        crate::strategy_ai::PreparedStrategyInput,
+        Option<db::marketplace::AiStrategyAssessment>,
+    ),
+    StrategyRouteError,
+> {
+    let analysis = db::marketplace::analysis_result(&state.pool, analysis_id)
+        .await
+        .map_err(|_| StrategyRouteError::new(StatusCode::INTERNAL_SERVER_ERROR, "database_error"))?
+        .ok_or_else(|| StrategyRouteError::new(StatusCode::NOT_FOUND, "analysis_not_found"))?;
+    let prepared = crate::strategy_ai::prepare_strategy_input(&analysis.result).map_err(
+        |error| match error {
+            crate::strategy_ai::StrategyAiError::PayloadTooLarge => StrategyRouteError::new(
+                StatusCode::PAYLOAD_TOO_LARGE,
+                "aggregate_payload_too_large",
+            ),
+            _ => StrategyRouteError::new(
+                StatusCode::UNPROCESSABLE_ENTITY,
+                "aggregate_payload_invalid",
+            ),
+        },
+    )?;
+    let cached = db::marketplace::ai_strategy_assessment(
+        &state.pool,
+        analysis_id,
+        &prepared.payload_sha256,
+        state.strategy_ai.model(),
+        crate::strategy_ai::STRATEGY_PROMPT_VERSION,
+    )
+    .await
+    .map_err(|_| StrategyRouteError::new(StatusCode::INTERNAL_SERVER_ERROR, "database_error"))?;
+    Ok((prepared, cached))
+}
+
+fn strategy_view(
+    state: &AppState,
+    analysis_id: Uuid,
+    prepared: &crate::strategy_ai::PreparedStrategyInput,
+    assessment: Option<db::marketplace::AiStrategyAssessment>,
+    cached: bool,
+) -> StrategyAssessmentView {
+    StrategyAssessmentView {
+        analysis_id,
+        payload_sha256: prepared.payload_sha256.clone(),
+        status: state.strategy_ai.status(),
+        cached,
+        assessment: assessment.as_ref().map(|record| record.result.clone()),
+        provider_request_id_redacted: assessment
+            .as_ref()
+            .and_then(|record| record.provider_request_id_redacted.clone()),
+        input_tokens: assessment.as_ref().and_then(|record| record.input_tokens),
+        output_tokens: assessment.as_ref().and_then(|record| record.output_tokens),
+        created_at: assessment.as_ref().map(|record| record.created_at),
+    }
+}
+
+async fn strategy_preview(
+    State(state): State<AppState>,
+    AuthUser(user): AuthUser,
+    Path(analysis_id): Path<Uuid>,
+) -> Result<Json<StrategyAssessmentView>, StrategyRouteError> {
+    require_strategy_admin(&state, &user).await?;
+    let (prepared, cached) = load_strategy_view(&state, analysis_id).await?;
+    let is_cached = cached.is_some();
+    Ok(Json(strategy_view(
+        &state,
+        analysis_id,
+        &prepared,
+        cached,
+        is_cached,
+    )))
+}
+
+async fn create_strategy_assessment(
+    State(state): State<AppState>,
+    AuthUser(user): AuthUser,
+    Path(analysis_id): Path<Uuid>,
+    Json(request): Json<StrategyAssessmentRequest>,
+) -> Result<Json<StrategyAssessmentView>, StrategyRouteError> {
+    require_strategy_admin(&state, &user).await?;
+    let (prepared, cached) = load_strategy_view(&state, analysis_id).await?;
+    if !request.confirmed_aggregate_only
+        || request.confirmed_payload_sha256 != prepared.payload_sha256
+    {
+        return Err(StrategyRouteError::new(
+            StatusCode::PRECONDITION_FAILED,
+            "aggregate_confirmation_mismatch",
+        ));
+    }
+    if cached.is_some() {
+        return Ok(Json(strategy_view(
+            &state,
+            analysis_id,
+            &prepared,
+            cached,
+            true,
+        )));
+    }
+    let completion = state
+        .strategy_ai
+        .assess(&prepared, &crate::strategy_ai::safety_identifier(user.id))
+        .await
+        .map_err(strategy_provider_error)?;
+    let result = serde_json::to_value(&completion.assessment).map_err(|_| {
+        StrategyRouteError::new(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "assessment_serialization_failed",
+        )
+    })?;
+    let input = db::marketplace::StoreAiStrategyAssessment {
+        analysis_id,
+        payload_sha256: &prepared.payload_sha256,
+        model_name: state.strategy_ai.model(),
+        prompt_version: crate::strategy_ai::STRATEGY_PROMPT_VERSION,
+        result: &result,
+        provider_request_id_redacted: completion.provider_request_id_redacted.as_deref(),
+        input_tokens: completion.input_tokens,
+        output_tokens: completion.output_tokens,
+        created_by: user.id,
+    };
+    let (stored, was_inserted) = db::marketplace::store_ai_strategy_assessment(&state.pool, &input)
+        .await
+        .map_err(|_| {
+            StrategyRouteError::new(StatusCode::INTERNAL_SERVER_ERROR, "database_error")
+        })?;
+    Ok(Json(strategy_view(
+        &state,
+        analysis_id,
+        &prepared,
+        Some(stored),
+        !was_inserted,
+    )))
+}
+
+fn strategy_provider_error(error: crate::strategy_ai::StrategyAiError) -> StrategyRouteError {
+    use crate::strategy_ai::StrategyAiError;
+
+    match error {
+        StrategyAiError::NotConfigured => {
+            StrategyRouteError::new(StatusCode::SERVICE_UNAVAILABLE, "openai_not_configured")
+        }
+        StrategyAiError::Busy => {
+            StrategyRouteError::new(StatusCode::CONFLICT, "strategy_assessment_busy")
+        }
+        StrategyAiError::PayloadTooLarge => {
+            StrategyRouteError::new(StatusCode::PAYLOAD_TOO_LARGE, "aggregate_payload_too_large")
+        }
+        StrategyAiError::AuthenticationFailed => {
+            StrategyRouteError::new(StatusCode::BAD_GATEWAY, "openai_authentication_failed")
+        }
+        StrategyAiError::RateLimited {
+            retry_after_seconds,
+        } => StrategyRouteError {
+            status: StatusCode::TOO_MANY_REQUESTS,
+            code: "openai_rate_limited",
+            retry_after_seconds,
+        },
+        StrategyAiError::Refused => {
+            StrategyRouteError::new(StatusCode::UNPROCESSABLE_ENTITY, "openai_refused")
+        }
+        StrategyAiError::InvalidResponse => {
+            StrategyRouteError::new(StatusCode::BAD_GATEWAY, "openai_invalid_response")
+        }
+        StrategyAiError::ProviderUnavailable => {
+            StrategyRouteError::new(StatusCode::BAD_GATEWAY, "openai_unavailable")
+        }
+    }
 }
 
 async fn export_analysis(

@@ -392,6 +392,33 @@ pub struct AnalysisResult {
 }
 
 #[derive(Debug, Clone, Serialize, sqlx::FromRow)]
+pub struct AiStrategyAssessment {
+    pub id: Uuid,
+    pub analysis_id: Uuid,
+    pub payload_sha256: String,
+    pub model_name: String,
+    pub prompt_version: String,
+    pub result: Value,
+    pub provider_request_id_redacted: Option<String>,
+    pub input_tokens: Option<i64>,
+    pub output_tokens: Option<i64>,
+    pub created_by: Uuid,
+    pub created_at: DateTime<Utc>,
+}
+
+pub struct StoreAiStrategyAssessment<'a> {
+    pub analysis_id: Uuid,
+    pub payload_sha256: &'a str,
+    pub model_name: &'a str,
+    pub prompt_version: &'a str,
+    pub result: &'a Value,
+    pub provider_request_id_redacted: Option<&'a str>,
+    pub input_tokens: Option<i64>,
+    pub output_tokens: Option<i64>,
+    pub created_by: Uuid,
+}
+
+#[derive(Debug, Clone, Serialize, sqlx::FromRow)]
 pub struct AmazonReportDocumentInfo {
     pub id: Uuid,
     pub run_id: Uuid,
@@ -1998,6 +2025,102 @@ pub async fn analysis_result(
     .await
 }
 
+pub async fn ai_strategy_assessment(
+    pool: &PgPool,
+    analysis_id: Uuid,
+    payload_sha256: &str,
+    model_name: &str,
+    prompt_version: &str,
+) -> Result<Option<AiStrategyAssessment>, sqlx::Error> {
+    sqlx::query_as::<_, AiStrategyAssessment>(
+        "SELECT id, analysis_id, payload_sha256, model_name, prompt_version, result,
+                provider_request_id_redacted, input_tokens, output_tokens, created_by, created_at
+         FROM amazon_ai_strategy_assessments
+         WHERE analysis_id = $1 AND payload_sha256 = $2
+           AND model_name = $3 AND prompt_version = $4",
+    )
+    .bind(analysis_id)
+    .bind(payload_sha256)
+    .bind(model_name)
+    .bind(prompt_version)
+    .fetch_optional(pool)
+    .await
+}
+
+/// Persist only the validated structured model result. The provider prompt,
+/// aggregate input document, authorization secret and raw provider response are
+/// intentionally absent from both this table and the administrative audit log.
+pub async fn store_ai_strategy_assessment(
+    pool: &PgPool,
+    input: &StoreAiStrategyAssessment<'_>,
+) -> Result<(AiStrategyAssessment, bool), sqlx::Error> {
+    let mut tx = pool.begin().await?;
+    let inserted = sqlx::query_as::<_, AiStrategyAssessment>(
+        "INSERT INTO amazon_ai_strategy_assessments
+             (analysis_id, payload_sha256, model_name, prompt_version, result,
+              provider_request_id_redacted, input_tokens, output_tokens, created_by)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+         ON CONFLICT (analysis_id, payload_sha256, model_name, prompt_version) DO NOTHING
+         RETURNING id, analysis_id, payload_sha256, model_name, prompt_version, result,
+                   provider_request_id_redacted, input_tokens, output_tokens, created_by, created_at",
+    )
+    .bind(input.analysis_id)
+    .bind(input.payload_sha256)
+    .bind(input.model_name)
+    .bind(input.prompt_version)
+    .bind(input.result)
+    .bind(input.provider_request_id_redacted)
+    .bind(input.input_tokens)
+    .bind(input.output_tokens)
+    .bind(input.created_by)
+    .fetch_optional(&mut *tx)
+    .await?;
+    let was_inserted = inserted.is_some();
+    let assessment = match inserted {
+        Some(assessment) => assessment,
+        None => sqlx::query_as::<_, AiStrategyAssessment>(
+            "SELECT id, analysis_id, payload_sha256, model_name, prompt_version, result,
+                    provider_request_id_redacted, input_tokens, output_tokens, created_by, created_at
+             FROM amazon_ai_strategy_assessments
+             WHERE analysis_id = $1 AND payload_sha256 = $2
+               AND model_name = $3 AND prompt_version = $4",
+        )
+        .bind(input.analysis_id)
+        .bind(input.payload_sha256)
+        .bind(input.model_name)
+        .bind(input.prompt_version)
+        .fetch_one(&mut *tx)
+        .await?,
+    };
+    if was_inserted {
+        let idempotency_key = format!(
+            "amazon-ai-strategy:{}:{}:{}:{}",
+            input.analysis_id, input.payload_sha256, input.model_name, input.prompt_version
+        );
+        sqlx::query(
+            "INSERT INTO administrative_audit_log
+                 (actor_user_id, action, target_type, target_id, idempotency_key, details)
+             VALUES ($1, 'amazon.ai_strategy_assessed', 'amazon_analysis', $2, $3, $4)
+             ON CONFLICT (action, idempotency_key) DO NOTHING",
+        )
+        .bind(input.created_by)
+        .bind(input.analysis_id.to_string())
+        .bind(idempotency_key)
+        .bind(json!({
+            "payload_sha256": input.payload_sha256,
+            "model_name": input.model_name,
+            "prompt_version": input.prompt_version,
+            "aggregate_only": true,
+            "response_storage": "store_false",
+            "amazon_mutation": false,
+        }))
+        .execute(&mut *tx)
+        .await?;
+    }
+    tx.commit().await?;
+    Ok((assessment, was_inserted))
+}
+
 pub async fn overview(pool: &PgPool) -> Result<MarketplaceOverview, sqlx::Error> {
     let connections = sqlx::query_as::<_, AmazonConnection>(
         "SELECT id, seller_id, region, secret_ref, granted_roles, mode, enabled, created_at, updated_at
@@ -2419,5 +2542,86 @@ mod tests {
         assert_eq!(comparison.1, older_outcome.run_id);
         assert_eq!(comparison.2, older.period_start.unwrap());
         assert_eq!(comparison.3, newer.period_end.unwrap());
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn ai_strategy_assessment_is_idempotent_immutable_and_metadata_only(pool: PgPool) {
+        let created_by: Uuid = sqlx::query_scalar(
+            "INSERT INTO users (username, password_hash, role)
+             VALUES ('synthetic-ai-admin', 'synthetic-not-a-secret', 'administrator')
+             RETURNING id",
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        let connection_id: Uuid = sqlx::query_scalar(
+            "SELECT id FROM amazon_connections WHERE seller_id = 'manual-report-import'",
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        let job_id: Uuid = sqlx::query_scalar(
+            "INSERT INTO amazon_analysis_jobs
+                 (connection_id, marketplace_id, report_type, analysis_type, status, completed_at)
+             VALUES ($1, 'SYNTHETIC-MARKETPLACE', $2, 'delta', 'completed', now())
+             RETURNING id",
+        )
+        .bind(connection_id)
+        .bind(SALES_AND_TRAFFIC)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        let analysis_id: Uuid = sqlx::query_scalar(
+            "INSERT INTO amazon_analysis_results
+                 (job_id, strategy, model_name, prompt_version, payload_sha256, result)
+             VALUES ($1, 'deterministic_rules', NULL, 'rules-v1', $2, $3)
+             RETURNING id",
+        )
+        .bind(job_id)
+        .bind("0".repeat(64))
+        .bind(json!({"facts": [{"metric": "sessions", "value": "20"}]}))
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        let result = json!({
+            "executive_summary": "Synthetic aggregate assessment",
+            "recommended_actions": [],
+        });
+        let payload_sha256 = "a".repeat(64);
+        let input = StoreAiStrategyAssessment {
+            analysis_id,
+            payload_sha256: &payload_sha256,
+            model_name: "gpt-5.6",
+            prompt_version: "mantle-amazon-strategy-v1",
+            result: &result,
+            provider_request_id_redacted: Some("0123456789ab"),
+            input_tokens: Some(100),
+            output_tokens: Some(50),
+            created_by,
+        };
+        let (first, first_inserted) = store_ai_strategy_assessment(&pool, &input).await.unwrap();
+        let (second, second_inserted) = store_ai_strategy_assessment(&pool, &input).await.unwrap();
+        assert!(first_inserted);
+        assert!(!second_inserted);
+        assert_eq!(first.id, second.id);
+        assert_eq!(first.result, result);
+        assert!(
+            sqlx::query("DELETE FROM amazon_ai_strategy_assessments WHERE id = $1")
+                .bind(first.id)
+                .execute(&pool)
+                .await
+                .is_err()
+        );
+        let audit: Value = sqlx::query_scalar(
+            "SELECT details FROM administrative_audit_log
+             WHERE action = 'amazon.ai_strategy_assessed' AND target_id = $1",
+        )
+        .bind(analysis_id.to_string())
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        let audit_text = audit.to_string();
+        assert!(!audit_text.contains("executive_summary"));
+        assert!(!audit_text.contains("Synthetic aggregate assessment"));
     }
 }

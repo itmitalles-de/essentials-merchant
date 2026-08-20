@@ -182,12 +182,21 @@ it only through a Caddy route restricted to private/LAN/VPN source ranges.
 An empty-target restore automatically substitutes a project-specific proxy
 alias, so the live Caddy upstream cannot resolve to the acceptance stack.
 
-The accepted Mantle route is `https://merchant.mantle-climbing.de`. Its internal
-DNS A record is `192.168.178.15`; public DNS must not publish that private
-address. Operator credentials are generated on the host and retained with mode
+The active Mantle route is `https://merchant.mantle-climbing.de`; the AI-first
+target is `https://ai-marketing.mantle-climbing.de`. Both must use internal DNS
+A records for `192.168.178.15`; public DNS must not publish that private address.
+The AI hostname requires an authorized Windows-DNS record before acceptance.
+Both routes target the same frontend alias and use the same LAN/VPN-only Caddy
+matcher. Operator credentials are generated on the host and retained with mode
 `0600` in `/root/essentials-merchant-amazon-admin-credentials`; never print or
 copy that file into the repository. The private runtime environment is
 `/opt/essentials-merchant-amazon/.env.mantle-amazon` with the same mode.
+
+The Mantle Homer dashboard may link an `AI Amazon Marketing` tile in its existing
+E-Commerce group to the AI-first route. Its config is a live bind mount, so the
+tile does not require a dashboard-container restart. Add the tile only after
+Caddy validation; until the authorized Windows-DNS A record exists, use
+`https://merchant.mantle-climbing.de/ai-marketing` as the working fallback.
 
 Before every deployment, capture without rendering environment values:
 
@@ -207,7 +216,9 @@ mechanism; compare all non-target container IDs and restart counts afterwards.
 
 The private `.env.mantle-amazon` must have mode `0600` and a
 `MERCHANT_GIT_SHA` equal to the checked-out commit. It deliberately has no
-placeholder Amazon credential. Configuration validation is the default:
+placeholder Amazon credential. OpenAI strategy access defaults to disabled;
+activation additionally requires the controls in
+[STRATEGY_AI_GATE.md](STRATEGY_AI_GATE.md). Configuration validation is the default:
 
 ```bash
 scripts/start-mantle-amazon.sh --check --env-file .env.mantle-amazon

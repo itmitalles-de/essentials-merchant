@@ -23,6 +23,12 @@ function RequireAuth({ children }: { children: ReactNode }) {
   return <>{children}</>;
 }
 
+function HomeRoute() {
+  return window.location.hostname === "ai-marketing.mantle-climbing.de"
+    ? <Navigate to="/ai-marketing" replace />
+    : <Dashboard />;
+}
+
 export default function App() {
   return (
     <Routes>
@@ -35,7 +41,7 @@ export default function App() {
           </RequireAuth>
         }
       >
-        <Route index element={<Dashboard />} />
+        <Route index element={<HomeRoute />} />
         <Route path="customers" element={<Customers />} />
         <Route path="invoices" element={<Invoices />} />
         <Route path="invoices/:id" element={<InvoiceDetail />} />
@@ -47,6 +53,7 @@ export default function App() {
         <Route path="admin-center" element={<AdminCenter />} />
         <Route path="integration-diagnostics" element={<IntegrationDiagnostics />} />
         <Route path="marketplace" element={<MarketplaceIntelligence />} />
+        <Route path="ai-marketing" element={<MarketplaceIntelligence aiFirst />} />
       </Route>
     </Routes>
   );

@@ -2401,9 +2401,9 @@ fn missing_data_for_metrics(metrics: &[NormalizedMetric]) -> Vec<&'static str> {
     missing
 }
 
-/// Export only aggregate allowlisted metrics. This is also the regression
-/// boundary that keeps buyer identifiers and raw report fields out of analysis
-/// exports even though no external AI provider is compiled into this product.
+/// Export only aggregate allowlisted metrics. This is the downloadable-summary
+/// boundary; the optional AI strategy integration applies an additional closed
+/// DTO that also removes internal evidence identifiers.
 pub fn pii_safe_analysis_export(result: &Value) -> Value {
     let allowed = [
         "ordered_product_sales",
@@ -2490,8 +2490,20 @@ fn strip_pii(value: &Value) -> Value {
                 .filter(|(key, _)| {
                     let key = key.to_ascii_lowercase();
                     ![
-                        "buyer", "customer", "email", "address", "order_id", "comment", "phone",
+                        "buyer",
+                        "customer",
+                        "email",
+                        "address",
+                        "order_id",
+                        "comment",
+                        "phone",
                         "person",
+                        "asin",
+                        "sku",
+                        "seller_id",
+                        "merchant_id",
+                        "raw",
+                        "path",
                     ]
                     .iter()
                     .any(|forbidden| key.contains(forbidden))

@@ -7,6 +7,9 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const transportPath = join(root, "backend/crates/server/src/marketplace.rs");
 const transport = readFileSync(transportPath, "utf8");
 const productionTransport = transport.split("#[cfg(test)]\nmod tests")[0];
+const strategyPath = join(root, "backend/crates/server/src/strategy_ai.rs");
+const strategyTransport = readFileSync(strategyPath, "utf8");
+const productionStrategyTransport = strategyTransport.split("#[cfg(test)]\nmod tests")[0];
 const expectedVariants = [
   "LwaTokenRefresh",
   "CreateReport",
@@ -75,7 +78,8 @@ for (const file of sourceFiles) {
   if (file !== transportPath && /sellingpartnerapi|x-amz-access-token/i.test(text)) {
     fail(`Amazon transport authority escaped its sole owner: ${owner}`);
   }
-  if (file !== transportPath && /reqwest::(?:Client|RequestBuilder)|reqwest\s*=/.test(productionText)) {
+  if (file !== transportPath && file !== strategyPath
+      && /reqwest::(?:Client|RequestBuilder)|reqwest\s*=/.test(productionText)) {
     fail(`A second production HTTP client was introduced outside the reviewed Amazon transport: ${owner}`);
   }
   for (const marker of [
@@ -94,6 +98,38 @@ for (const file of sourceFiles) {
   }
 }
 
+const strategyEndpoints = [...productionStrategyTransport.matchAll(/https:\/\/[^"\s]+/g)]
+  .map((match) => match[0]);
+if (JSON.stringify(strategyEndpoints) !== JSON.stringify(["https://api.openai.com/v1/responses"])) {
+  fail(`OpenAI strategy endpoint boundary changed: ${JSON.stringify(strategyEndpoints)}`);
+}
+if ([...productionStrategyTransport.matchAll(/reqwest::Client::builder\s*\(/g)].length !== 1
+    || [...productionStrategyTransport.matchAll(/\.http\s*\.\s*post\s*\(/g)].length !== 1
+    || /\.http\s*\.\s*(?:get|put|patch|delete|request)\s*\(/.test(productionStrategyTransport)) {
+  fail("OpenAI strategy transport must retain exactly one client and one POST request");
+}
+for (const marker of [
+  "Policy::none()",
+  '"store": false',
+  'input_boundary: "aggregate_analysis_only"',
+  "MAX_INPUT_BYTES",
+  "MAX_RESPONSE_BYTES",
+  ".chunk()",
+]) {
+  if (!productionStrategyTransport.includes(marker)) {
+    fail(`OpenAI strategy safety marker is missing: ${marker}`);
+  }
+}
+for (const marker of [
+  "OPENAI_BASE_URL", "OPENAI_API_URL", '"tools"', '"file_ids"',
+  '"conversation"', '"background": true', ".bearer_auth(std::env",
+  ".bytes()",
+]) {
+  if (productionStrategyTransport.includes(marker)) {
+    fail(`Forbidden OpenAI strategy transport marker: ${marker}`);
+  }
+}
+
 const amazonHostLiterals = [...productionTransport.matchAll(/https:\/\/sellingpartnerapi-[a-z]+\.amazon\.com/g)].map((match) => match[0]);
 if (JSON.stringify(amazonHostLiterals) !== JSON.stringify([
   "https://sellingpartnerapi-na.amazon.com",
@@ -108,6 +144,7 @@ if (!process.exitCode) {
     profile: "amazon-read-only",
     operations: expectedVariants,
     transport_owner: relative(root, transportPath),
+    strategy_transport_owner: relative(root, strategyPath),
     result: "passed",
   }) + "\n");
 }

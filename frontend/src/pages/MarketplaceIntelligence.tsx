@@ -14,6 +14,10 @@ import type {
   MarketplaceImportResult,
   MarketplaceOverview,
   MarketplaceRunDetail,
+  MarketplaceStrategyAction,
+  MarketplaceStrategyFinding,
+  MarketplaceStrategyHypothesis,
+  MarketplaceStrategyView,
 } from "../types";
 
 const salesReport = "GET_SALES_AND_TRAFFIC_REPORT";
@@ -68,7 +72,7 @@ function importPath(
   return `${endpoint}?${parameters.toString()}`;
 }
 
-export function MarketplaceIntelligence() {
+export function MarketplaceIntelligence({ aiFirst = false }: { aiFirst?: boolean }) {
   const { role } = useAuth();
   const pilot = usePilotStatus();
   const [overview, setOverview] = useState<MarketplaceOverview | null>(null);
@@ -261,17 +265,59 @@ export function MarketplaceIntelligence() {
     setConfirmed(false);
   };
 
+  const analysisSection = (
+    <section aria-labelledby="analysis-heading">
+      <div className="marketplace-section-heading">
+        <div>
+          <h2 id="analysis-heading">Analyse, Periodenvergleich und KI-Strategie</h2>
+          <p className="marketplace-muted">
+            Vergleiche entstehen nur aus kompatiblen importierten Zeiträumen. Die KI bewertet
+            ausschließlich die daraus abgeleiteten Aggregatkennzahlen.
+          </p>
+        </div>
+        <button type="button" className="secondary" onClick={() => void reload()}>
+          Analysen aktualisieren
+        </button>
+      </div>
+      {analyses.length === 0 && (
+        <div className="card">
+          Noch keine Analyse vorhanden. Importiere unten einen Zeitraum; für belastbare Deltas
+          anschließend einen kompatiblen zweiten Zeitraum.
+        </div>
+      )}
+      {analyses.map((analysis) => (
+        <AnalysisCard
+          key={analysis.id}
+          id={analysis.id}
+          result={analysis.result}
+          title={`Periodenvergleich · ${formatDate(analysis.created_at)}`}
+        />
+      ))}
+    </section>
+  );
+
   return (
     <div className="marketplace-flow">
       <section className="card">
-        <h1>Amazon Intelligence</h1>
+        <h1>{aiFirst ? "Amazon AI Marketing" : "Amazon Intelligence"}</h1>
         <p>
           Internes read-only Analysewerkzeug für offizielle Amazon-Reports. Uploads erzeugen
           nachvollziehbare Kennzahlen und Empfehlungen, aber keine Preis-, Ads-, Listing-,
           Bestands- oder Bestelländerung.
         </p>
+        {aiFirst && (
+          <div className="marketplace-callout strategy-intro">
+            <strong>Interne Strategiehilfe für Mantle</strong>
+            <p>
+              Zuerst bleiben Fakten und regelbasierte Ableitungen sichtbar. Eine externe
+              KI-Einschätzung wird nur nach deiner ausdrücklichen Hash-Bestätigung erzeugt.
+            </p>
+          </div>
+        )}
         {message && <p className="marketplace-status" role="status">{message}</p>}
       </section>
+
+      {aiFirst && analysisSection}
 
       <section className="card" aria-labelledby="manual-import-heading">
         <h2 id="manual-import-heading">Manueller Sales-&amp;-Traffic-Import</h2>
@@ -493,30 +539,7 @@ export function MarketplaceIntelligence() {
         )}
       </section>
 
-      <section aria-labelledby="analysis-heading">
-        <div className="marketplace-section-heading">
-          <div>
-            <h2 id="analysis-heading">Analyse und Periodenvergleich</h2>
-            <p className="marketplace-muted">
-              Vergleiche entstehen nur aus kompatiblen importierten Zeiträumen.
-            </p>
-          </div>
-          <button type="button" className="secondary" onClick={() => void reload()}>
-            Analysen aktualisieren
-          </button>
-        </div>
-        {analyses.length === 0 && (
-          <div className="card">Noch keine Vergleichsanalyse. Importiere zwei kompatible Zeiträume.</div>
-        )}
-        {analyses.map((analysis) => (
-          <AnalysisCard
-            key={analysis.id}
-            id={analysis.id}
-            result={analysis.result}
-            title={`Periodenvergleich · ${formatDate(analysis.created_at)}`}
-          />
-        ))}
-      </section>
+      {!aiFirst && analysisSection}
 
       <section className="card" aria-labelledby="sp-api-heading">
         <h2 id="sp-api-heading">Optionaler SP-API-Abruf</h2>
@@ -792,6 +815,264 @@ function AnalysisItems({ items, emptyText }: { items: unknown[]; emptyText: stri
   );
 }
 
+const confidenceLabel = (value: MarketplaceStrategyFinding["confidence"]) => ({
+  low: "niedrig",
+  medium: "mittel",
+  high: "hoch",
+})[value];
+
+const priorityLabel = (value: MarketplaceStrategyAction["priority"]) => ({
+  now: "jetzt",
+  next: "als Nächstes",
+  later: "später",
+})[value];
+
+function StrategyFindings({
+  title,
+  items,
+}: {
+  title: string;
+  items: MarketplaceStrategyFinding[];
+}) {
+  return (
+    <section className="strategy-section">
+      <h4>{title}</h4>
+      {items.length === 0 ? (
+        <p className="marketplace-muted">Keine ausgewiesen.</p>
+      ) : (
+        <ul>
+          {items.map((item, index) => (
+            <li key={`${item.title}-${index}`}>
+              <strong>{item.title}</strong> · Konfidenz: {confidenceLabel(item.confidence)}
+              <p>{item.rationale}</p>
+              <p className="marketplace-muted">
+                Evidenz: {item.evidence_refs.join(", ") || "keine direkte Referenz"}
+              </p>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
+  );
+}
+
+function StrategyResult({ view }: { view: MarketplaceStrategyView }) {
+  const assessment = view.assessment;
+  if (!assessment) return null;
+  return (
+    <div className="strategy-result">
+      <div className="marketplace-preview-header">
+        <h3>KI-Strategieeinschätzung</h3>
+        <span className="badge strategy-badge">KI-generiert – keine Faktenquelle</span>
+      </div>
+      <p className="strategy-summary">{assessment.executive_summary}</p>
+      <section className="strategy-section">
+        <h4>Bewertung</h4>
+        <p>{assessment.assessment}</p>
+      </section>
+      <div className="strategy-grid">
+        <StrategyFindings title="Chancen" items={assessment.opportunities} />
+        <StrategyFindings title="Risiken" items={assessment.risks} />
+      </div>
+      <section className="strategy-section">
+        <h4>Hypothesen – nicht als Fakten behandeln</h4>
+        {assessment.hypotheses.length === 0 ? (
+          <p className="marketplace-muted">Keine zusätzliche Hypothese.</p>
+        ) : (
+          <ul>
+            {assessment.hypotheses.map((item: MarketplaceStrategyHypothesis, index) => (
+              <li key={`${item.statement}-${index}`}>
+                <strong>{item.statement}</strong> · Konfidenz: {confidenceLabel(item.confidence)}
+                <p>{item.rationale}</p>
+                <p>Benötigte Evidenz: {item.evidence_needed.join(" · ") || "nicht benannt"}</p>
+                <p className="marketplace-muted">
+                  Vorhandene Evidenz: {item.evidence_refs.join(", ") || "keine direkte Referenz"}
+                </p>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+      <section className="strategy-section">
+        <h4>Mögliche Maßnahmen – nur nach menschlicher Entscheidung</h4>
+        {assessment.recommended_actions.length === 0 ? (
+          <p className="marketplace-muted">Keine zusätzliche Maßnahme.</p>
+        ) : (
+          <ol>
+            {assessment.recommended_actions.map((item, index) => (
+              <li key={`${item.title}-${index}`}>
+                <strong>{item.title}</strong> · Priorität: {priorityLabel(item.priority)}
+                <p>{item.rationale}</p>
+                <p>Erwartetes Prüfsignal: {item.expected_signal}</p>
+                {item.risks.length > 0 && <p>Risiken: {item.risks.join(" · ")}</p>}
+                <p className="marketplace-muted">
+                  Evidenz: {item.evidence_refs.join(", ") || "keine direkte Referenz"}
+                </p>
+              </li>
+            ))}
+          </ol>
+        )}
+      </section>
+      <div className="strategy-grid">
+        <section className="strategy-section">
+          <h4>Offene Fragen</h4>
+          <AnalysisItems items={assessment.open_questions} emptyText="Keine weitere offene Frage." />
+        </section>
+        <section className="strategy-section">
+          <h4>Grenzen und Unsicherheit</h4>
+          <AnalysisItems items={assessment.limitations} emptyText="Keine zusätzliche Grenze benannt." />
+        </section>
+      </div>
+      <p className="marketplace-muted strategy-metadata">
+        Modell {view.status.model} · Prompt {view.status.prompt_version} · erzeugt {formatDate(view.created_at)}
+        {view.input_tokens !== null && ` · Input ${view.input_tokens} Tokens`}
+        {view.output_tokens !== null && ` · Output ${view.output_tokens} Tokens`}
+        {view.cached && " · unverändert wiederverwendet"}
+      </p>
+    </div>
+  );
+}
+
+function strategyErrorMessage(error: unknown): string {
+  const code = error instanceof Error ? error.message : "strategy_request_failed";
+  const messages: Record<string, string> = {
+    openai_not_configured: "OpenAI ist auf diesem Server noch nicht freigegeben oder der API-Key fehlt.",
+    openai_authentication_failed: "Der konfigurierte OpenAI-Zugang wurde abgelehnt.",
+    openai_rate_limited: "Das OpenAI-Limit ist erreicht. Bitte später erneut versuchen.",
+    openai_refused: "Das Modell hat diese Einschätzung abgelehnt.",
+    openai_invalid_response: "OpenAI lieferte keine gültige strukturierte Einschätzung.",
+    openai_unavailable: "OpenAI ist vorübergehend nicht erreichbar.",
+    strategy_assessment_busy: "Eine Strategieeinschätzung läuft bereits.",
+    aggregate_confirmation_mismatch: "Die Aggregatdaten haben sich geändert. Bitte den neuen Hash prüfen.",
+    aggregate_payload_invalid: "Diese Analyse enthält keine freigegebenen Aggregatdaten für die KI-Strategie.",
+    aggregate_payload_too_large: "Die freigegebene Aggregatzusammenfassung ist zu groß.",
+  };
+  return messages[code] ?? `KI-Strategie konnte nicht geladen werden (${code}).`;
+}
+
+function StrategyPanel({ analysisId }: { analysisId: string }) {
+  const { role } = useAuth();
+  const [view, setView] = useState<MarketplaceStrategyView | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [confirmed, setConfirmed] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (role !== "administrator") return;
+    let active = true;
+    setLoading(true);
+    setError(null);
+    setConfirmed(false);
+    api.get<MarketplaceStrategyView>(`/marketplace/analyses/${analysisId}/strategy`)
+      .then((result) => {
+        if (active) setView(result);
+      })
+      .catch((reason) => {
+        if (active) setError(strategyErrorMessage(reason));
+      })
+      .finally(() => {
+        if (active) setLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [analysisId, role]);
+
+  if (role !== "administrator") return null;
+
+  const createAssessment = async () => {
+    if (!view || !confirmed || !view.status.available) return;
+    setSubmitting(true);
+    setError(null);
+    try {
+      const result = await api.post<MarketplaceStrategyView>(
+        `/marketplace/analyses/${analysisId}/strategy`,
+        {
+          confirmed_payload_sha256: view.payload_sha256,
+          confirmed_aggregate_only: true,
+        },
+      );
+      setView(result);
+      setConfirmed(false);
+    } catch (reason) {
+      setError(strategyErrorMessage(reason));
+      try {
+        const refreshed = await api.get<MarketplaceStrategyView>(
+          `/marketplace/analyses/${analysisId}/strategy`,
+        );
+        setView(refreshed);
+        setConfirmed(false);
+      } catch {
+        // Keep the original actionable error and the last verified hash visible.
+      }
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <section className="strategy-panel" aria-labelledby={`strategy-${analysisId}`} aria-busy={loading || submitting}>
+      <div className="marketplace-preview-header">
+        <h3 id={`strategy-${analysisId}`}>KI-Marketingstrategie</h3>
+        <span className="badge">optional · manuell ausgelöst</span>
+      </div>
+      <p>
+        OpenAI erhält nur Zeitraum, Marketplace-Dimension und verdichtete Kennzahlen/Deltas.
+        Keine Rohdatei, keine Reportzeile, keine ASIN/SKU, keine Buyer-/Order-PII und kein Secret.
+      </p>
+      {loading && <p role="status">Aggregatgrenze wird geprüft …</p>}
+      {error && <p className="marketplace-callout warning" role="alert">{error}</p>}
+      {view && (
+        <>
+          <dl className="strategy-contract">
+            <div><dt>Aggregat-Hash</dt><dd><code className="marketplace-hash">{view.payload_sha256}</code></dd></div>
+            <div><dt>Modell</dt><dd>{view.status.model}</dd></div>
+            <div><dt>Speicherung bei Anfrage</dt><dd><code>store: false</code></dd></div>
+            <div><dt>Amazon-Mutation</dt><dd>nicht vorhanden</dd></div>
+          </dl>
+          {!view.assessment && !view.status.available && (
+            <div className="marketplace-callout warning" role="status">
+              <strong>Externes OpenAI-Gate</strong>
+              <p>
+                {view.status.reason === "api_key_missing"
+                  ? "Der serverseitige OpenAI-API-Key fehlt. Die regelbasierte Amazon-Analyse bleibt vollständig nutzbar."
+                  : "Die OpenAI-Strategiefunktion ist serverseitig noch nicht freigegeben."}
+              </p>
+            </div>
+          )}
+          {!view.assessment && (
+            <>
+              <label className="marketplace-checkbox" htmlFor={`confirm-strategy-${analysisId}`}>
+                <input
+                  id={`confirm-strategy-${analysisId}`}
+                  type="checkbox"
+                  checked={confirmed}
+                  disabled={!view.status.available || submitting}
+                  onChange={(event) => setConfirmed(event.target.checked)}
+                />
+                Ich habe den Aggregat-Hash geprüft und bestätige die einmalige Übermittlung an OpenAI.
+              </label>
+              <button
+                type="button"
+                disabled={!confirmed || !view.status.available || submitting}
+                onClick={() => void createAssessment()}
+              >
+                {submitting ? "Strategie wird erstellt …" : "KI-Strategie jetzt erstellen"}
+              </button>
+            </>
+          )}
+          <StrategyResult view={view} />
+        </>
+      )}
+      <p className="marketplace-muted">
+        Die Ausgabe ist eine Entscheidungshilfe. Es wird keine Preis-, Ads-, Listing-, Bestands-
+        oder sonstige Amazon-Änderung ausgeführt.
+      </p>
+    </section>
+  );
+}
+
 function AnalysisCard({
   id,
   result,
@@ -892,6 +1173,7 @@ function AnalysisCard({
           </ul>
         </>
       )}
+      <StrategyPanel analysisId={id} />
       <div className="marketplace-actions" aria-label="Zusammenfassung exportieren">
         <button
           type="button"

@@ -82,6 +82,13 @@ All routes below are protected by `marketplace.amazon_intelligence`:
 - `GET /api/marketplace/runs/{id}/raw`: administrator-only unchanged transport document.
 - `POST /api/marketplace/connections/{id}/analyses`: deterministic aggregate-period analysis.
 - `GET /api/marketplace/analyses/{id}/export`: PII-minimized, allowlisted aggregate JSON.
+- `GET /api/marketplace/strategy/status`: administrator-only external-strategy gate metadata;
+  never a credential value or secret shape.
+- `GET /api/marketplace/analyses/{id}/strategy`: administrator-only aggregate-input hash and an
+  exact cached structured strategy assessment when available.
+- `POST /api/marketplace/analyses/{id}/strategy`: administrator-only, explicitly confirmed,
+  aggregate-only OpenAI assessment. The current SHA-256 and `confirmed_aggregate_only=true` are
+  required; no report content is accepted from the browser.
 
 Unknown `GET_*` report types are accepted only by the fixture connection, archived as raw bytes,
 and end as raw-only rather than successfully analysed. Live connections accept only registry types
@@ -96,6 +103,11 @@ live report is `GET_SALES_AND_TRAFFIC_REPORT`, requested manually for one comple
 one to seven days with `DAY`/`CHILD` options. The transport itself is sealed to LWA refresh,
 `createReport`, `getReport`, `getReportDocument`, and the validated presigned report download.
 Method and path are derived from that operation enum; callers cannot supply arbitrary Amazon URLs.
+
+The optional strategy POST is a separate, sealed OpenAI transport and does not expand the Amazon
+operation enum. It is disabled by default, uses only the fixed Responses API URL, has no tools or
+mutation capability, and stores only schema-validated output. See
+[STRATEGY_AI_GATE.md](STRATEGY_AI_GATE.md).
 
 ## Direct connector boundaries
 
