@@ -73,6 +73,7 @@ pub struct AmazonReportRequest {
     pub seller_id: String,
     pub region: String,
     pub secret_ref: String,
+    pub mode: String,
     pub report_type: String,
     pub marketplace_id: String,
     pub data_start_time: Option<DateTime<Utc>>,
@@ -690,11 +691,20 @@ impl AmazonReportsClient for FixtureAmazonClient {
         request: &AmazonReportRequest,
         document_id: &str,
     ) -> Result<AmazonClientResponse<AmazonReportDocument>, AmazonClientError> {
+        let period_query = match (request.data_start_time, request.data_end_time) {
+            (Some(start), Some(end)) => {
+                format!("?start={}&end={}", start.date_naive(), end.date_naive())
+            }
+            _ => String::new(),
+        };
         Ok(fixture_response(
             AmazonOperation::GetReportDocument,
             AmazonReportDocument {
                 document_id: document_id.to_owned(),
-                url: format!("fixture://{}/{}", request.secret_ref, request.report_type),
+                url: format!(
+                    "fixture://{}/{}{}",
+                    request.secret_ref, request.report_type, period_query
+                ),
                 compression_algorithm: if request.secret_ref.contains("gzip") {
                     Some("GZIP".to_owned())
                 } else {
@@ -714,7 +724,29 @@ impl AmazonReportsClient for FixtureAmazonClient {
         let content = if document.url.contains("broken") {
             b"not a valid report".to_vec()
         } else if document.url.contains(marketplace::SALES_AND_TRAFFIC) {
-            SALES_FIXTURE.as_bytes().to_vec()
+            let query_value = |name: &str| {
+                document
+                    .url
+                    .split_once('?')
+                    .and_then(|(_, query)| {
+                        query.split('&').find_map(|pair| {
+                            let (key, value) = pair.split_once('=')?;
+                            (key == name).then_some(value)
+                        })
+                    })
+                    .map(str::to_owned)
+            };
+            match (query_value("start"), query_value("end")) {
+                (Some(start), Some(end)) => {
+                    let mut fixture: Value = serde_json::from_str(SALES_FIXTURE)
+                        .map_err(|error| AmazonClientError::Permanent(error.to_string()))?;
+                    fixture["reportSpecification"]["dataStartTime"] = Value::String(start);
+                    fixture["reportSpecification"]["dataEndTime"] = Value::String(end);
+                    serde_json::to_vec(&fixture)
+                        .map_err(|error| AmazonClientError::Permanent(error.to_string()))?
+                }
+                _ => SALES_FIXTURE.as_bytes().to_vec(),
+            }
         } else if document.url.contains(marketplace::INVENTORY_PLANNING) {
             INVENTORY_FIXTURE.as_bytes().to_vec()
         } else {
@@ -752,11 +784,19 @@ impl CompositeAmazonClient {
         })
     }
 
-    fn client(&self, request: &AmazonReportRequest) -> &dyn AmazonReportsClient {
-        if request.secret_ref.starts_with("fixture:") {
-            &self.fixture
-        } else {
-            &self.live
+    fn client(
+        &self,
+        request: &AmazonReportRequest,
+    ) -> Result<&dyn AmazonReportsClient, AmazonClientError> {
+        match (
+            request.mode.as_str(),
+            request.secret_ref.starts_with("fixture:"),
+        ) {
+            ("fixture", true) => Ok(&self.fixture),
+            ("live", false) => Ok(&self.live),
+            _ => Err(AmazonClientError::Permanent(
+                "Amazon connection mode and transport selector do not match".to_owned(),
+            )),
         }
     }
 }
@@ -767,7 +807,7 @@ impl AmazonReportsClient for CompositeAmazonClient {
         &self,
         request: &AmazonReportRequest,
     ) -> Result<AmazonClientResponse<String>, AmazonClientError> {
-        self.client(request).create_report(request).await
+        self.client(request)?.create_report(request).await
     }
 
     async fn get_report(
@@ -775,7 +815,7 @@ impl AmazonReportsClient for CompositeAmazonClient {
         request: &AmazonReportRequest,
         report_id: &str,
     ) -> Result<AmazonClientResponse<AmazonReportStatus>, AmazonClientError> {
-        self.client(request).get_report(request, report_id).await
+        self.client(request)?.get_report(request, report_id).await
     }
 
     async fn get_report_document(
@@ -783,7 +823,7 @@ impl AmazonReportsClient for CompositeAmazonClient {
         request: &AmazonReportRequest,
         document_id: &str,
     ) -> Result<AmazonClientResponse<AmazonReportDocument>, AmazonClientError> {
-        self.client(request)
+        self.client(request)?
             .get_report_document(request, document_id)
             .await
     }
@@ -830,10 +870,22 @@ impl MarketplaceWorker {
     }
 
     async fn process_run(&self, pool: &sqlx::PgPool, run: ClaimedReportRun) {
+        if !marketplace::transport_mode_is_consistent(&run.mode, &run.secret_ref) {
+            let _ = marketplace::mark_run_terminal(
+                pool,
+                run.id,
+                "failed",
+                "transport_mode_mismatch",
+                "Amazon connection mode and transport selector do not match",
+            )
+            .await;
+            return;
+        }
         let request = AmazonReportRequest {
             seller_id: run.seller_id.clone(),
             region: run.region.clone(),
             secret_ref: run.secret_ref.clone(),
+            mode: run.mode.clone(),
             report_type: run.report_type.clone(),
             marketplace_id: run.marketplace_id.clone(),
             data_start_time: run.data_start_time,
@@ -2359,6 +2411,7 @@ mod tests {
             seller_id: "SYNTHETIC-SELLER".to_owned(),
             region: "eu".to_owned(),
             secret_ref: "fake-server".to_owned(),
+            mode: "live".to_owned(),
             report_type: marketplace::SALES_AND_TRAFFIC.to_owned(),
             marketplace_id: "A1PA6795UKMFR9".to_owned(),
             data_start_time: None,
@@ -2529,6 +2582,52 @@ mod tests {
                 .await
                 .unwrap();
         assert_eq!(snapshots, 1);
+    }
+
+    #[sqlx::test(migrations = "../db/migrations")]
+    async fn inconsistent_fixture_mode_is_failed_before_any_transport(pool: sqlx::PgPool) {
+        db::modules::set_enabled(&pool, db::modules::MARKETPLACE_INTELLIGENCE, true)
+            .await
+            .unwrap();
+        let connection_id: uuid::Uuid = sqlx::query_scalar(
+            "INSERT INTO amazon_connections
+                 (seller_id, region, secret_ref, granted_roles, mode)
+             VALUES ('SYNTHETIC-MISMATCH', 'eu', 'pilot_seller',
+                     ARRAY['Brand Analytics'], 'fixture')
+             RETURNING id",
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        let run_id: uuid::Uuid = sqlx::query_scalar(
+            "INSERT INTO amazon_report_runs
+                 (connection_id, marketplace_id, report_type, report_options,
+                  trigger_source, idempotency_key, status)
+             VALUES ($1, 'A1PA6795UKMFR9', $2,
+                     '{\"dateGranularity\":\"DAY\",\"asinGranularity\":\"CHILD\"}',
+                     'manual', 'synthetic-mode-mismatch', 'queued')
+             RETURNING id",
+        )
+        .bind(connection_id)
+        .bind(marketplace::SALES_AND_TRAFFIC)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+
+        MarketplaceWorker::new(Arc::new(FixtureAmazonClient))
+            .cycle(&pool)
+            .await
+            .unwrap();
+        let detail = db::marketplace::get_run_detail(&pool, run_id)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(detail.run.status, "failed");
+        assert_eq!(
+            detail.run.failure_code.as_deref(),
+            Some("transport_mode_mismatch")
+        );
+        assert!(detail.document.is_none());
     }
 
     #[sqlx::test(migrations = "../db/migrations")]

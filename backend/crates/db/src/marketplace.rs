@@ -489,10 +489,22 @@ fn validate_connection_input(input: &AmazonConnectionInput) -> Result<(), String
             "seller, region, secret reference, mode, and a marketplace are required".into(),
         );
     }
+    if !transport_mode_is_consistent(&input.mode, &input.secret_ref) {
+        return Err("fixture connections require a fixture: secret reference, and live connections must not use one".into());
+    }
     if input.marketplace_ids.iter().any(|id| id.trim().is_empty()) {
         return Err("marketplace identifiers cannot be empty".into());
     }
     Ok(())
+}
+
+/// Keep the persisted connection mode and transport selector inseparable. The
+/// worker repeats this check so legacy or directly inserted rows fail closed.
+pub fn transport_mode_is_consistent(mode: &str, secret_ref: &str) -> bool {
+    matches!(
+        (mode, secret_ref.starts_with("fixture:")),
+        ("fixture", true) | ("live", false)
+    )
 }
 
 pub async fn upsert_connection(
@@ -1408,8 +1420,8 @@ pub async fn previous_compatible_snapshot(
          FROM amazon_metric_snapshots
          WHERE connection_id = $1 AND marketplace_id = $2 AND report_type = $3
            AND comparability_key = $4 AND parser_version = $5
-           AND id <> $6 AND created_at < $7
-         ORDER BY created_at DESC LIMIT 1",
+           AND id <> $6 AND period_end < $7
+         ORDER BY period_end DESC, period_start DESC, created_at DESC LIMIT 1",
     )
     .bind(snapshot.connection_id)
     .bind(&snapshot.marketplace_id)
@@ -1417,7 +1429,7 @@ pub async fn previous_compatible_snapshot(
     .bind(&snapshot.comparability_key)
     .bind(&snapshot.parser_version)
     .bind(snapshot.id)
-    .bind(snapshot.created_at)
+    .bind(snapshot.period_start)
     .fetch_optional(pool)
     .await
 }
@@ -1743,6 +1755,75 @@ mod tests {
             "GET_SYNTHETIC_UNKNOWN_REPORT",
             &json!({})
         ));
+    }
+
+    #[test]
+    fn connection_mode_and_transport_selector_cannot_diverge() {
+        assert!(transport_mode_is_consistent("fixture", "fixture:demo"));
+        assert!(transport_mode_is_consistent("live", "pilot_seller"));
+        assert!(!transport_mode_is_consistent("fixture", "pilot_seller"));
+        assert!(!transport_mode_is_consistent("live", "fixture:demo"));
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn previous_snapshot_is_selected_by_report_period_not_import_order(pool: PgPool) {
+        let connection = create_demo_connection(&pool).await.unwrap();
+        let mut snapshots = Vec::new();
+        for (key, period_start, period_end, created_at) in [
+            (
+                "older-period-imported-later",
+                "2026-07-01T00:00:00Z",
+                "2026-07-07T23:59:59Z",
+                "2026-08-20T12:00:00Z",
+            ),
+            (
+                "current-period-imported-first",
+                "2026-07-08T00:00:00Z",
+                "2026-07-14T23:59:59Z",
+                "2026-08-20T11:00:00Z",
+            ),
+        ] {
+            let run_id: Uuid = sqlx::query_scalar(
+                "INSERT INTO amazon_report_runs (
+                     connection_id, marketplace_id, report_type, trigger_source,
+                     idempotency_key, status, completed_at
+                 ) VALUES ($1, 'A1PA6795UKMFR9', $2, 'manual', $3, 'succeeded', now())
+                 RETURNING id",
+            )
+            .bind(connection.id)
+            .bind(SALES_AND_TRAFFIC)
+            .bind(key)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+            let snapshot = sqlx::query_as::<_, MetricSnapshot>(
+                "INSERT INTO amazon_metric_snapshots (
+                     run_id, connection_id, marketplace_id, report_type, parser_version,
+                     period_start, period_end, granularity, comparability_key, summary, created_at
+                 ) VALUES ($1, $2, 'A1PA6795UKMFR9', $3, 'parser-v1',
+                     $4::timestamptz, $5::timestamptz, 'day_child',
+                     'sales-traffic:day_child:7d', '{}', $6::timestamptz)
+                 RETURNING id, run_id, connection_id, marketplace_id, report_type,
+                     parser_version, period_start, period_end, granularity,
+                     comparability_key, summary, created_at",
+            )
+            .bind(run_id)
+            .bind(connection.id)
+            .bind(SALES_AND_TRAFFIC)
+            .bind(period_start)
+            .bind(period_end)
+            .bind(created_at)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+            snapshots.push(snapshot);
+        }
+
+        let previous = previous_compatible_snapshot(&pool, &snapshots[1])
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(previous.id, snapshots[0].id);
     }
 
     #[sqlx::test(migrations = "./migrations")]
