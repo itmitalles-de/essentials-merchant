@@ -48,3 +48,19 @@ read-only module allowlist and zero automatic schedules.
 No production retention deletion is implemented in the pilot. Introducing one
 requires a reviewed retention policy and a deliberate replacement for the
 current immutable-delete triggers.
+
+## Optional external strategy synthesis
+
+The live pilot does not send data to an external AI provider. Activation is a
+separate privacy and credential gate. The only eligible input is an explicitly
+requested, field-allowlisted summary containing period/marketplace context,
+aggregate metrics, deterministic deltas, freshness, missing fields, and
+evidence-class labels. Raw bytes, raw rows, ASIN/SKU or customer identifiers,
+local paths, archive hashes, secrets, and free text are prohibited.
+
+The provider key must be project-scoped and stored only in the host secret
+environment. Requests must disable provider-side response storage where the API
+supports it. Neither request nor response may be logged verbatim. Generated
+content is untrusted strategy assistance and is stored/displayed only as
+hypotheses, possible measures, uncertainty, missing evidence, and open
+questions; it cannot alter Amazon or Merchant state.

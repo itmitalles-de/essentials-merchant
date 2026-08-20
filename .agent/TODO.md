@@ -10,10 +10,11 @@ This file is the authoritative unfinished-work handoff. Do not create a competin
 - [x] Implement and locally verify the manual Sales and Traffic import, two-period comparison,
   separated evidence classes, UI workflow, aggregate exports, backup/restore, and exact live
   three-service topology.
-- [ ] Commit and push `pilot/mantle-amazon-analysis-live`; require every CI job on the exact head.
-- [ ] Baseline `192.168.178.15`, deploy only Compose project `essentials-merchant-amazon`, add a
-  private Caddy route by validated graceful reload, and prove non-target containers unchanged.
-- [ ] Run live in-memory JSON/CSV/TSV acceptance, backup, empty-target restore, secret/log/raw-Git
+- [x] Commit and push `pilot/mantle-amazon-analysis-live`; require every CI job on the exact head.
+- [x] Baseline `192.168.178.15`, deploy only Compose project `essentials-merchant-amazon`, add a
+  private Caddy route by validated graceful reload, prove all 21 non-Caddy baseline containers
+  unchanged, and separately record the concurrent Office deployment's Caddy replacement.
+- [x] Run live in-memory JSON/CSV/TSV acceptance, backup, empty-target restore, secret/log/raw-Git
   checks, and record the deployed SHA/image IDs and internal route.
 
 ## External Amazon gate — blocked
@@ -26,13 +27,16 @@ This file is the authoritative unfinished-work handoff. Do not create a competin
 - [ ] Import an authorized real report only when its authorization and local availability are
   proven; never record its path, raw bytes, product identifiers, or business metrics in Git/logs.
 
-## Next analysis milestone after live acceptance
+## Next Mantle analysis milestone — external AI gate
 
-- [ ] Add the smallest compatible Ads evidence adapter for period attribution, reusing the same
-  archive/snapshot/comparison/export boundary and keeping all Ads operations read-only. Do not
-  start this before the manual pilot is accepted.
+- [ ] Create and fund a dedicated OpenAI API project and provide a project-scoped server-side key
+  through the approved host secret path; do not reuse or export a ChatGPT browser session.
+- [ ] Approve the minimized aggregate field allowlist and provider retention/data-control settings.
+- [ ] Add one explicit operator-triggered strategy synthesis adapter over the existing safe summary
+  export. Preserve deterministic facts as canonical, label model output as hypotheses/questions,
+  request no provider-side storage, and expose no raw report or mutation capability.
 
 ## Explicitly deferred
 
-- Stripe/production payments, DHL/DPD, DATEV activation, external AI, automatic Amazon actions,
+- Ads evidence, Stripe/production payments, DHL/DPD, DATEV activation, automatic Amazon actions,
   multi-tenancy, Kubernetes, and unrelated Marketplace integrations remain outside this milestone.

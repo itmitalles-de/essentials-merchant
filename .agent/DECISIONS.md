@@ -169,3 +169,20 @@ implementations and ambiguous period revisions would weaken evidence and operati
 cannot leave partial data, and comparisons require equal marketplace, report, granularity, parser,
 period length, currency, and timezone. ZIP remains unsupported. SP-API is optional and retains the
 same exact read-only operation gate with no scheduler on first use.
+
+## 2026-08-20 — Gate generative strategy behind minimized aggregate evidence
+
+**Decision:** A future Mantle OpenAI integration is an explicit operator-triggered adapter over the
+existing aggregate-only analysis export, not a second parser or analysis store. Deterministic facts
+and derivations remain canonical. Model output is visibly classified as hypotheses, possible
+measures, uncertainty, missing evidence, and open questions. The adapter has no Amazon or Merchant
+mutation tool, scheduler, raw-report access, or product/customer identifier input.
+
+**Reason:** Mantle wants conversational strategy support, but a ChatGPT subscription does not supply
+server API credentials or API billing. Raw Amazon business reports must not be disclosed merely to
+gain narrative output, and probabilistic text must not be presented as evidence.
+
+**Consequences:** Activation requires a dedicated project-scoped OpenAI API key stored only in the
+host secret environment plus an approved aggregate field allowlist and provider data controls.
+Requests ask for no provider-side storage. Until those external gates exist, the deployed service
+remains fully usable with deterministic analysis and the AI path is absent rather than simulated.

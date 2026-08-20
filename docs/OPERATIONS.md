@@ -182,6 +182,13 @@ it only through a Caddy route restricted to private/LAN/VPN source ranges.
 An empty-target restore automatically substitutes a project-specific proxy
 alias, so the live Caddy upstream cannot resolve to the acceptance stack.
 
+The accepted Mantle route is `https://merchant.mantle-climbing.de`. Its internal
+DNS A record is `192.168.178.15`; public DNS must not publish that private
+address. Operator credentials are generated on the host and retained with mode
+`0600` in `/root/essentials-merchant-amazon-admin-credentials`; never print or
+copy that file into the repository. The private runtime environment is
+`/opt/essentials-merchant-amazon/.env.mantle-amazon` with the same mode.
+
 Before every deployment, capture without rendering environment values:
 
 - `docker compose ls`;

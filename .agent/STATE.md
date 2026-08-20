@@ -28,7 +28,7 @@ project `essentials-merchant-amazon`, SHA-tagged backend/frontend images, and a 
 port. Backup/restore supports that Compose file and includes manual-import provenance and parser
 versions.
 
-## Verification status — 2026-08-20
+## Verification and live status — 2026-08-20
 
 - PR #4 was reviewed at exact head `ddf0f18d7aa455af715469bae106a8205da8347f`, all seven jobs
   passed, and it was squash-merged; the resulting `main` run also passed all seven jobs.
@@ -44,6 +44,23 @@ versions.
   documented and CI proves `rkyv`, `rsa`, and `sqlx-mysql` absent from every compiled target before
   applying those narrow exceptions. Retained Vendure advisories remain open and outside the pilot
   runtime.
+- Commit `66ce755da8fc1ebed1c4cf2dadd9ec838a4c34c3` is live on `192.168.178.15` as Compose project
+  `essentials-merchant-amazon`. The LAN/VPN-only route is `https://merchant.mantle-climbing.de`;
+  internal split DNS resolves it to `192.168.178.15`, while public DNS remains on the external host.
+- The running image IDs are PostgreSQL
+  `sha256:75f5a96988cdf694a215073c3e9c001b706b371e2f94df3967f2efdec2787f6b`, backend
+  `sha256:6f0b36ad79b1c54cb9b3f6ae39aeae0f1da99154970d91d443018fd618a323cb`, and frontend
+  `sha256:cf2ecd75a4b036e47f87679a2ee41f6efb5d2333aaad519d21f19c0b089b4ca6`.
+- Live synthetic acceptance imported JSON, CSV, and TSV entirely in memory. The identical JSON retry
+  returned the original run; the second period produced a comparison; aggregate JSON, Markdown, and
+  CSV exports succeeded; raw download and business mutation probes were blocked.
+- A checksum-backed live backup was restored into the empty isolated project
+  `essentials-merchant-amazon-restore-20260820`. Counts, four document hashes, and parser
+  `manual-sales-traffic-v1` matched live. The restore project is stopped with its volumes retained.
+- All 21 non-Caddy pre-existing baseline containers kept their IDs, start times, and restart counts.
+  A concurrent Office/Nextcloud deployment replaced Caddy after the initial baseline; the Merchant
+  route preserved that newer route set and used only validated graceful reload. Current Caddy has
+  zero restarts since that external replacement.
 
 ## External gates
 
@@ -51,9 +68,13 @@ versions.
   scope, role, and one-shot approval exist. No fake credentials are created; manual upload is fully
   usable. The only transport operations remain LWA refresh, Reports create/get/document, and a
   validated report download.
+- **Generative strategy AI:** the live service remains deterministic and has no OpenAI credential.
+  A ChatGPT subscription is not an API credential or API billing entitlement. The next approved
+  implementation may send only an explicitly requested, minimized aggregate analysis export from a
+  dedicated server-side OpenAI API project; raw reports, identifiers, secrets, schedulers, and
+  mutation tools remain prohibited.
 - **Real report:** none is authorized in repository or local test state. All acceptance data is
   visibly synthetic and generated in memory.
-- Host deployment and live acceptance are the remaining operational step for this branch.
 
 ## Authoritative files
 

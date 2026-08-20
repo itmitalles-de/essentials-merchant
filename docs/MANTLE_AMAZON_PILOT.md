@@ -12,6 +12,20 @@ payments, shipping, or tax/accounting data. The production profile starts only
 PostgreSQL, the Merchant backend, and the Core frontend. Vendure, Storefront,
 payment, shipping, DATEV, and external AI are outside the deployment.
 
+## Current Mantle deployment
+
+The accepted live revision is `66ce755da8fc1ebed1c4cf2dadd9ec838a4c34c3`
+in Compose project `essentials-merchant-amazon` on `192.168.178.15`. Internal
+operators use `https://merchant.mantle-climbing.de`. Split DNS maps that name to
+the Docker host only on the Mantle network, and Caddy accepts only private,
+loopback, or VPN source ranges. The frontend has no public host bind and there
+is no public registration path.
+
+The first live acceptance used only visibly synthetic, in-memory reports. JSON,
+CSV, TSV, retry idempotence, two-period comparison, all summary formats,
+business-mutation blocking, backup, and empty-target restore passed. No
+authorized real report has been imported.
+
 ## Relationship to the Mantle wiki toolchain
 
 The full `mantle-climbing-de/wiki/amazon/marketing` tree was reviewed before
@@ -85,3 +99,12 @@ The manual workflow is production-capable without Amazon secrets. The SP-API
 gate is documented in [SP_API_GATE.md](SP_API_GATE.md) and stays externally
 blocked until explicitly approved credentials and a one-shot staging gate are
 available.
+
+Generative strategy synthesis is a separate external gate. The current rules
+engine already produces evidence-linked possible causes, measures, uncertainty,
+and open questions, but it is deterministic rather than an LLM. Any future
+OpenAI adapter must use a separately funded, project-scoped server API key and
+may receive only the minimized aggregate summary after an explicit operator
+action. It may not receive raw reports or identifiers, store provider state,
+run automatically, or gain a mutation tool. Model output must remain visibly
+separate from facts and deterministic derivations.
