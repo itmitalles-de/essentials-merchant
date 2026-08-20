@@ -325,23 +325,21 @@ impl LiveAmazonClient {
             ));
         }
         let base = self.endpoint(&request.region)?;
-        let valid_resource_id = |value: &str| {
-            !value.is_empty()
-                && value.chars().all(|character| {
-                    character.is_ascii_alphanumeric() || matches!(character, '-' | '_')
-                })
-        };
         let (method, path) = match (operation, resource_id) {
             (AmazonOperation::CreateReport, None) => (
                 reqwest::Method::POST,
                 "/reports/2021-06-30/reports".to_owned(),
             ),
-            (AmazonOperation::GetReport, Some(report_id)) if valid_resource_id(report_id) => (
-                reqwest::Method::GET,
-                format!("/reports/2021-06-30/reports/{report_id}"),
-            ),
+            (AmazonOperation::GetReport, Some(report_id))
+                if amazon_resource_id_allowed(report_id) =>
+            {
+                (
+                    reqwest::Method::GET,
+                    format!("/reports/2021-06-30/reports/{report_id}"),
+                )
+            }
             (AmazonOperation::GetReportDocument, Some(document_id))
-                if valid_resource_id(document_id) =>
+                if amazon_resource_id_allowed(document_id) =>
             {
                 (
                     reqwest::Method::GET,
@@ -370,6 +368,20 @@ fn retry_after(response: &reqwest::Response) -> Option<i64> {
         .get(reqwest::header::RETRY_AFTER)
         .and_then(|value| value.to_str().ok())
         .and_then(|value| value.parse::<i64>().ok())
+}
+
+fn amazon_resource_id_allowed(value: &str) -> bool {
+    let mut characters = value.chars();
+    let Some(first) = characters.next() else {
+        return false;
+    };
+    let last = value.chars().last().unwrap_or(first);
+    value.len() <= 256
+        && first.is_ascii_alphanumeric()
+        && last.is_ascii_alphanumeric()
+        && value.chars().all(|character| {
+            character.is_ascii_alphanumeric() || matches!(character, '-' | '_' | '.')
+        })
 }
 
 fn transport_observation(
@@ -2648,6 +2660,20 @@ mod tests {
     }
 
     #[test]
+    fn amazon_resource_ids_allow_official_dotted_document_ids_but_no_path_syntax() {
+        assert!(amazon_resource_id_allowed("fake-report-1"));
+        assert!(amazon_resource_id_allowed(
+            "amzn1.spdoc.1.4.synthetic-document-1"
+        ));
+        assert!(!amazon_resource_id_allowed(""));
+        assert!(!amazon_resource_id_allowed(".hidden"));
+        assert!(!amazon_resource_id_allowed("../document"));
+        assert!(!amazon_resource_id_allowed("document/child"));
+        assert!(!amazon_resource_id_allowed("document%2Fchild"));
+        assert!(!amazon_resource_id_allowed(&"a".repeat(257)));
+    }
+
+    #[test]
     fn pilot_live_period_requires_completed_utc_days_and_exact_sales_options() {
         let yesterday = Utc::now().date_naive().pred_opt().unwrap();
         let start =
@@ -2706,14 +2732,14 @@ mod tests {
             assert_eq!(report_id, "fake-report-1");
             Json(json!({
                 "processingStatus": "DONE",
-                "reportDocumentId": "fake-document-1",
+                "reportDocumentId": "amzn1.spdoc.1.4.fake-document-1",
             }))
         }
         async fn document(
             State(base): State<String>,
             Path(document_id): Path<String>,
         ) -> Json<Value> {
-            assert_eq!(document_id, "fake-document-1");
+            assert_eq!(document_id, "amzn1.spdoc.1.4.fake-document-1");
             Json(json!({ "url": format!("{base}/download") }))
         }
         async fn download() -> &'static [u8] {
