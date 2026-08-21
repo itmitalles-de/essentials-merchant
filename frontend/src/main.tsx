@@ -6,6 +6,7 @@ import { ThemeProvider } from "./contexts/ThemeContext";
 import { LanguageProvider } from "./contexts/LanguageContext";
 import { AuthProvider } from "./contexts/AuthContext";
 import { isMantlePilotExperience } from "./pilot";
+import "@itmitalles-de/simple-business-design-system/tokens.css";
 import "./theme.css";
 
 if (isMantlePilotExperience()) {

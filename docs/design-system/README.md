@@ -8,8 +8,10 @@ In the standard workspace, read the sibling checkout at
 `../simple-business-design-system/docs/design-system/`. The canonical remote is
 `itmitalles-de/simple-business-design-system`. Do not follow an unpinned branch.
 
-Package and product-CI activation is intentionally pending because GitHub
-Actions is currently blocked before checkout by the organization billing or
-spending-limit state. Existing UI remains legacy; new work must not expand rule
-violations while migration is pending. Upstream Vendure UI is outside the owned
-surface lint boundary.
+The product-owned frontend installs the exact public `v0.1.1` release artifact
+named in the manifest. Its lockfile records the artifact integrity, the central
+token stylesheet loads before the product theme, and the existing frontend lint
+job runs the shared icon-semantics architecture check. Existing UI remains
+legacy; this activation does not claim that every historical visual rule
+violation has already been migrated. Upstream Vendure UI remains outside the
+owned-surface lint boundary.
