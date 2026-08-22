@@ -1,0 +1,131 @@
+# Amazon data handling
+
+## Data classes
+
+| Class | Examples | Handling |
+| --- | --- | --- |
+| Raw confidential report | Exact uploaded Sales and Traffic or Ads JSON/CSV/TSV bytes, potentially including campaign identifiers | Immutable PostgreSQL archive; backup-only access in the pilot profile; never Git, public research, or OpenAI. |
+| Aggregate business metric | Revenue, units, sessions, page views, Ads impressions/clicks/spend/attributed outcomes, percentages and ratios | Decimal normalized records; internal UI and allowlisted summary export. |
+| Internal product mapping | Observed Child ASIN, optional SKU, reviewed Mantle/Sphagnum family, variant, and pack-size label | Append-only internal revisions. Identifiers remain in the LAN/VPN-only service and backups; only labels plus aggregate product metrics may cross the OpenAI synthesis boundary. |
+| Curated business context | Reviewed Mantle/Sphagnum statements plus source repository, path, title, and SHA-256 provenance | Imported once into an immutable internal row; raw Wiki/Notes documents, personal notes, PII, and secrets do not cross the boundary. |
+| Operational metadata | SHA-256, format, report type, marketplace, period, parser version, freshness | Immutable provenance and internal diagnostics. |
+| Provider secret | LWA refresh token, LWA client ID/secret, OpenAI API key | Accepted only by write-only UI endpoints, encrypted with AES-256-GCM before persistence, never returned, and excluded even as ciphertext from pilot backup data. |
+| Host secret | Provider master key, JWT/admin/database secrets | Host environment only; never database, logs, exports, backup manifest, or Git. |
+| PII or order data | Buyer/customer name, e-mail, phone, address, order ID | Not required, rejected by the manual importer, not requested from SP-API. |
+
+## Raw-report controls
+
+- Requests larger than 10 MiB are rejected before parsing.
+- Only JSON, CSV, and TSV are accepted; file extension alone is not trusted.
+- SHA-256 is computed from the received bytes and checked again at storage.
+- Database triggers prevent raw archive update or deletion.
+- Parser failure happens before the storage transaction.
+- Raw download routes are blocked by the read-only pilot policy.
+- Raw bytes never enter analysis results or JSON/Markdown/CSV summaries.
+- `.env`, report staging paths, artifacts, and generated outputs are ignored by
+  Git; the repository secret scan runs in CI and before release.
+
+## Privacy validation
+
+Structured JSON is accepted only for the aggregated Sales and Traffic schema or
+the aggregate Sponsored Products campaign-report schema. Tabular inputs fail
+closed on headings that resemble buyer, recipient, customer, address, e-mail,
+phone, order, payment, or free-text comment data. Ads inputs additionally fail
+closed on search-term, keyword, targeting, ASIN, SKU, and product dimensions. A
+filename or local source path is not persisted; only format and byte count are
+retained.
+
+The UI shows aggregate data. Ads campaign names and IDs are discarded before
+normalization. Evidence references point to internal snapshot and metric IDs
+rather than raw rows or product/customer/campaign identifiers.
+
+Observed live Child ASINs can be classified on the gear-linked settings page.
+The write route accepts only products already present in a validated live Sales
+and Traffic snapshot, requires explicit operator confirmation, and appends a
+new revision instead of updating or deleting prior classifications. Product
+labels are screened for URLs, secret-shaped values, control characters, and
+prompt-injection markers. SKU and Child ASIN remain internal and are absent
+from the provider DTO, evidence references, activity log, and summary export.
+Unmapped products are represented only by bounded coverage counts, never by
+identifiers or inferred labels.
+
+## Mantle/Sphagnum business context
+
+The initial business baseline is curated once from approved files in the
+Mantle Wiki and the operator's Notes repository. The import contract requires
+both repositories, allowlisted relative path prefixes, a SHA-256 for every
+source, typed statements with explicit evidence references, and a status of
+`verified`, `historical`, `working_assumption`, or `open_question`. It rejects
+e-mail addresses, control characters, secret-shaped text, unapproved paths,
+more than 32 sources or 80 statements, and payloads above 48 KiB.
+
+Only the reviewed statements and source manifest enter
+`mantle_business_knowledge`; raw Markdown and source file contents are not
+stored. The singleton row is immutable at the database boundary. Re-importing
+the identical content is idempotent, while different content is rejected. The
+weekly strategy input combines this fixed baseline with the latest validated
+AI handover, so continuity can improve on later runs without silently rewriting
+the source baseline. A source-document change requires a separately reviewed
+replacement migration, not an automatic scrape.
+
+## Backup and restore
+
+Pilot backups contain the schema, module state, users, Amazon tables (including
+raw archives and manual-import provenance), parser versions, redacted Compose
+metadata, image IDs, the immutable curated business context, append-only
+product-mapping revisions, and integrity manifests. Backup directories are
+confidential operational data and must use host-restricted permissions.
+The backup script enforces umask `077` before creating any dump or manifest.
+The `pilot_provider_secrets` table definition is restored, but its rows are
+explicitly excluded. A restored stack therefore contains no OpenAI or Amazon
+credential ciphertext and requires deliberate credential re-entry in the UI.
+
+Restore is permitted only into an empty, isolated Compose project. The restore
+procedure verifies manifest hashes before writing, starts the database first,
+restores schema and data, then starts the backend/frontend and rechecks the
+read-only module allowlist and zero automatic schedules.
+
+No production retention deletion is implemented in the pilot. Introducing one
+requires a reviewed retention policy and a deliberate replacement for the
+current immutable-delete triggers.
+
+## Optional external strategy synthesis
+
+The live Mantle adapter is enabled, but no external AI request is possible
+until an operator stores a separately billed project API key through the
+write-only UI. The provider workflow has two deliberately separated requests.
+The web-research request sees only a fixed public Mantle/category/market brief
+and the current date. It does not receive internal report periods, metrics,
+hashes, identifiers, or handover text. The later synthesis request receives an
+explicitly requested, hash-confirmed, closed aggregate DTO containing up to
+thirteen distinct newest-first period/marketplace analyses, allowlisted Sales,
+Traffic, and Ads metrics and deterministic deltas, freshness, bounded
+missing-field labels, up to thirteen periods of operator-confirmed
+identifier-free product aggregates, semantic evidence references, the bounded
+public research and canonical citations, and the last validated structured AI
+result as untrusted continuity context. Raw bytes, raw rows, ASIN/SKU, campaign, or
+customer identifiers, old database evidence UUIDs, local paths, archive hashes,
+secrets, and free report text are prohibited.
+
+Synthetic acceptance marketplaces occupy the reserved `SYNTHETIC-` namespace.
+Their deterministic analyses remain visible for operational evidence but are
+excluded at the database query boundary before the weekly provider DTO is
+built. A system containing only acceptance data therefore reports
+`no_analysis_data` and cannot send those fixtures to OpenAI.
+
+The provider key must be project-scoped. The browser sends it once over the
+internal HTTPS route; the backend encrypts it with the host-only
+`PILOT_SECRETS_KEY` and the API can subsequently report only configured state,
+field names, and timestamp. A legacy environment-key fallback remains for
+non-Mantle deployments. Both requests disable provider-side response storage.
+Neither request nor response may be logged verbatim. Generated content is
+untrusted strategy assistance and is stored/displayed only inside a visibly
+separate AI block as assessment, hypotheses, possible measures, public
+competitor/category/crisis signals with possible consumption effects,
+uncertainty, missing evidence, open questions, and a fixed next-run handover; it
+cannot alter Amazon or Merchant state. Exactly one successful row is accepted
+per Europe/Berlin calendar week. The immutable database row contains only
+validated structured output and redacted metadata, never the prompt or raw
+provider response. See
+[STRATEGY_AI_GATE.md](STRATEGY_AI_GATE.md) for the exact contract and provider
+retention caveat.

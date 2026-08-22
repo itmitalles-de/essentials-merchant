@@ -4,9 +4,16 @@ import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+const pilotBackupPath = join(root, "ops/backup-amazon-pilot.sh");
+const pilotBackup = readFileSync(pilotBackupPath, "utf8");
+const frontendProxyPath = join(root, "frontend/nginx.conf");
+const frontendProxy = readFileSync(frontendProxyPath, "utf8");
 const transportPath = join(root, "backend/crates/server/src/marketplace.rs");
 const transport = readFileSync(transportPath, "utf8");
 const productionTransport = transport.split("#[cfg(test)]\nmod tests")[0];
+const strategyPath = join(root, "backend/crates/server/src/strategy_ai.rs");
+const strategyTransport = readFileSync(strategyPath, "utf8");
+const productionStrategyTransport = strategyTransport.split("#[cfg(test)]\nmod tests")[0];
 const expectedVariants = [
   "LwaTokenRefresh",
   "CreateReport",
@@ -18,6 +25,38 @@ const expectedVariants = [
 function fail(message) {
   process.stderr.write(`${message}\n`);
   process.exitCode = 1;
+}
+
+const privacySafeLogFormat = frontendProxy.match(
+  /log_format\s+privacy_safe\s+([\s\S]*?);/,
+)?.[1] ?? "";
+if (!privacySafeLogFormat.includes("$request_method")
+    || !privacySafeLogFormat.includes("$uri")
+    || !/server\s*\{\s*(?:listen[^;]*;\s*server_name[^;]*;\s*)?access_log \/var\/log\/nginx\/access\.log privacy_safe;/.test(frontendProxy)
+    || [...frontendProxy.matchAll(/access_log\s+\/var\/log\/nginx\/access\.log\s+privacy_safe;/g)].length !== 1) {
+  fail("Frontend proxy must use the reviewed query-free access log format");
+}
+if (/\$(?:args|query_string|request_uri)\b|\$request(?:\s|['"])/.test(privacySafeLogFormat)) {
+  fail("Frontend access logs must not record upload query parameters");
+}
+const weeklyStrategyProxy = frontendProxy.match(
+  /location\s*=\s*\/api\/marketplace\/strategy\/weekly\s*\{([\s\S]*?)\n\s*\}/,
+)?.[1] ?? "";
+if (!/proxy_read_timeout\s+270s\s*;/.test(weeklyStrategyProxy)
+    || !/proxy_set_header\s+X-Mantle-Pilot-Proxy\s+"v1"\s*;/.test(weeklyStrategyProxy)) {
+  fail("Weekly strategy proxy must retain its exact bounded long-running route");
+}
+
+const backupReportAllowlistBody = pilotBackup.match(
+  /WHERE run\.report_type NOT IN \(([\s\S]*?)\)/,
+)?.[1] ?? "";
+const backupReportAllowlist = [...backupReportAllowlistBody.matchAll(/'([^']+)'/g)]
+  .map((match) => match[1]);
+if (JSON.stringify(backupReportAllowlist) !== JSON.stringify([
+  "GET_SALES_AND_TRAFFIC_REPORT",
+  "AMAZON_ADS_SPONSORED_PRODUCTS_CAMPAIGN_REPORT",
+])) {
+  fail(`Pilot backup report allowlist changed: ${JSON.stringify(backupReportAllowlist)}`);
 }
 
 const enumBody = transport.match(/pub enum AmazonOperation\s*\{([\s\S]*?)\n\}/)?.[1] ?? "";
@@ -75,7 +114,8 @@ for (const file of sourceFiles) {
   if (file !== transportPath && /sellingpartnerapi|x-amz-access-token/i.test(text)) {
     fail(`Amazon transport authority escaped its sole owner: ${owner}`);
   }
-  if (file !== transportPath && /reqwest::(?:Client|RequestBuilder)|reqwest\s*=/.test(productionText)) {
+  if (file !== transportPath && file !== strategyPath
+      && /reqwest::(?:Client|RequestBuilder)|reqwest\s*=/.test(productionText)) {
     fail(`A second production HTTP client was introduced outside the reviewed Amazon transport: ${owner}`);
   }
   for (const marker of [
@@ -94,6 +134,55 @@ for (const file of sourceFiles) {
   }
 }
 
+const strategyEndpoints = [...productionStrategyTransport.matchAll(/https:\/\/[^"\s]+/g)]
+  .map((match) => match[0]);
+if (JSON.stringify(strategyEndpoints) !== JSON.stringify([
+  "https://api.openai.com/v1/responses",
+  "https://mantle-climbing.de",
+])) {
+  fail(`OpenAI strategy endpoint boundary changed: ${JSON.stringify(strategyEndpoints)}`);
+}
+if ([...productionStrategyTransport.matchAll(/reqwest::Client::builder\s*\(/g)].length !== 1
+    || [...productionStrategyTransport.matchAll(/\.http\s*\.\s*post\s*\(/g)].length !== 1
+    || /\.http\s*\.\s*(?:get|put|patch|delete|request)\s*\(/.test(productionStrategyTransport)) {
+  fail("OpenAI strategy transport must retain exactly one client and one POST request");
+}
+for (const marker of [
+  "Policy::none()",
+  '"store": false',
+  'input_boundary: "separate_public_research_then_curated_business_context_identifier_free_product_aggregates_history_and_handover"',
+  '"product_identifiers_included": false',
+  '"asin_included": false',
+  '"sku_included": false',
+  '"type": "web_search"',
+  '"max_tool_calls": MAX_WEB_SEARCH_CALLS',
+  '"include": ["web_search_call.action.sources"]',
+  "PUBLIC_RESEARCH_BRIEF",
+  "MAX_INPUT_BYTES",
+  "MAX_RESPONSE_BYTES",
+  "PROVIDER_REQUEST_TIMEOUT_SECONDS",
+  "MAX_STRATEGY_OUTPUT_TOKENS",
+  ".chunk()",
+]) {
+  if (!productionStrategyTransport.includes(marker)) {
+    fail(`OpenAI strategy safety marker is missing: ${marker}`);
+  }
+}
+for (const marker of [
+  "OPENAI_BASE_URL", "OPENAI_API_URL", '"file_ids"',
+  '"conversation"', '"background": true', ".bearer_auth(std::env",
+  ".bytes()",
+]) {
+  if (productionStrategyTransport.includes(marker)) {
+    fail(`Forbidden OpenAI strategy transport marker: ${marker}`);
+  }
+}
+if ([...productionStrategyTransport.matchAll(/"tools"\s*:/g)].length !== 1
+    || [...productionStrategyTransport.matchAll(/"type"\s*:\s*"web_search"/g)].length !== 1
+    || /"type"\s*:\s*"(?:computer|file_search|code_interpreter|mcp|image_generation)"/.test(productionStrategyTransport)) {
+  fail("OpenAI strategy may expose exactly one built-in web_search tool and no other tool type");
+}
+
 const amazonHostLiterals = [...productionTransport.matchAll(/https:\/\/sellingpartnerapi-[a-z]+\.amazon\.com/g)].map((match) => match[0]);
 if (JSON.stringify(amazonHostLiterals) !== JSON.stringify([
   "https://sellingpartnerapi-na.amazon.com",
@@ -108,6 +197,7 @@ if (!process.exitCode) {
     profile: "amazon-read-only",
     operations: expectedVariants,
     transport_owner: relative(root, transportPath),
+    strategy_transport_owner: relative(root, strategyPath),
     result: "passed",
   }) + "\n");
 }

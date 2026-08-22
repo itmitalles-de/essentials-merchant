@@ -1,7 +1,7 @@
 use argon2::password_hash::rand_core::OsRng;
 use argon2::password_hash::SaltString;
 use argon2::{Argon2, PasswordHash, PasswordHasher, PasswordVerifier};
-use axum::extract::{FromRef, FromRequestParts};
+use axum::extract::{FromRef, FromRequestParts, OriginalUri};
 use axum::http::{header, request::Parts, StatusCode};
 use axum::Json;
 use chrono::{Duration, Utc};
@@ -13,6 +13,8 @@ use crate::state::AppState;
 use db::users::User;
 
 const TOKEN_EXPIRY_DAYS: i64 = 7;
+const PILOT_TOKEN_EXPIRY_HOURS: i64 = 12;
+const PILOT_SCOPE: &str = "mantle-amazon-read-only";
 
 pub fn hash_password(password: &str) -> String {
     let salt = SaltString::generate(&mut OsRng);
@@ -35,6 +37,8 @@ pub fn verify_password(password: &str, hash: &str) -> bool {
 struct Claims {
     sub: String,
     exp: i64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    scope: Option<String>,
 }
 
 pub fn create_token(username: &str, secret: &str) -> String {
@@ -42,6 +46,7 @@ pub fn create_token(username: &str, secret: &str) -> String {
     let claims = Claims {
         sub: username.to_string(),
         exp,
+        scope: None,
     };
     encode(
         &Header::default(),
@@ -51,14 +56,29 @@ pub fn create_token(username: &str, secret: &str) -> String {
     .expect("jwt encoding should not fail")
 }
 
-fn decode_token(token: &str, secret: &str) -> Option<String> {
+pub fn create_pilot_token(username: &str, secret: &str) -> String {
+    let exp = (Utc::now() + Duration::hours(PILOT_TOKEN_EXPIRY_HOURS)).timestamp();
+    let claims = Claims {
+        sub: username.to_owned(),
+        exp,
+        scope: Some(PILOT_SCOPE.to_owned()),
+    };
+    encode(
+        &Header::default(),
+        &claims,
+        &EncodingKey::from_secret(secret.as_bytes()),
+    )
+    .expect("JWT encoding should not fail")
+}
+
+fn decode_token(token: &str, secret: &str) -> Option<Claims> {
     decode::<Claims>(
         token,
         &DecodingKey::from_secret(secret.as_bytes()),
         &Validation::default(),
     )
     .ok()
-    .map(|data| data.claims.sub)
+    .map(|data| data.claims)
 }
 
 /// Extractor that verifies the bearer token and loads the current user, so
@@ -88,9 +108,26 @@ where
         let token = header.strip_prefix("Bearer ").ok_or_else(unauthorized)?;
 
         let app_state = AppState::from_ref(state);
-        let username = decode_token(token, &app_state.jwt_secret).ok_or_else(unauthorized)?;
+        let claims = decode_token(token, &app_state.jwt_secret).ok_or_else(unauthorized)?;
+        if claims.scope.as_deref() == Some(PILOT_SCOPE) {
+            let path = parts
+                .extensions
+                .get::<OriginalUri>()
+                .map(|uri| uri.0.path())
+                .unwrap_or_else(|| parts.uri.path());
+            if !app_state.mantle_pilot_no_login
+                || !crate::pilot::anonymous_pilot_request_allowed(&parts.method, path)
+            {
+                return Err((
+                    StatusCode::FORBIDDEN,
+                    Json(json!({ "error": "pilot_session_scope" })),
+                ));
+            }
+        } else if claims.scope.is_some() {
+            return Err(unauthorized());
+        }
 
-        let user = db::users::find_by_username(&app_state.pool, &username)
+        let user = db::users::find_by_username(&app_state.pool, &claims.sub)
             .await
             .map_err(|_| unauthorized())?
             .ok_or_else(unauthorized)?;
@@ -162,3 +199,25 @@ module_user!(InvoicesUser, "accounting.invoices");
 module_user!(CorrectionsUser, "accounting.corrections");
 module_user!(DatevExportUser, "export.datev");
 module_user!(ManualShippingUser, "shipping.manual");
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn pilot_token_has_short_lived_dedicated_scope() {
+        let token = create_pilot_token("pilot-admin", "synthetic-jwt-secret");
+        let claims = decode_token(&token, "synthetic-jwt-secret").unwrap();
+        assert_eq!(claims.sub, "pilot-admin");
+        assert_eq!(claims.scope.as_deref(), Some(PILOT_SCOPE));
+        let remaining = claims.exp - Utc::now().timestamp();
+        assert!(remaining > 11 * 60 * 60 && remaining <= 12 * 60 * 60);
+    }
+
+    #[test]
+    fn regular_token_has_no_pilot_scope() {
+        let token = create_token("admin", "synthetic-jwt-secret");
+        let claims = decode_token(&token, "synthetic-jwt-secret").unwrap();
+        assert_eq!(claims.scope, None);
+    }
+}

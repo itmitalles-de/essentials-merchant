@@ -36,6 +36,6 @@ The `ws@7.5.13` instance under legacy `subscriptions-transport-ws` is outside th
   claiming the not-yet-created commit that contains them. CI adds its exact `GITHUB_SHA` to the
   uploaded build artifact.
 - Native `npm sbom` succeeds for the frontend. It currently fails for Commerce with `ESBOMPROBLEMS` because npm identifies invalid peer relationships involving Dashboard `ajv`/`ajv-formats` and Nest GraphQL `ts-morph`. The committed generator deliberately reads the lockfile without rewriting that tree. This caveat remains open and is not represented as an npm-native SBOM success.
-- `cargo-audit`, Syft, Trivy, and `cyclonedx-npm` were not installed in the inspected environment. Their absence means Rust and container components are not claimed advisory-free.
+- Rust advisories are covered separately in [`RUST_ADVISORIES.md`](RUST_ADVISORIES.md). Syft, Trivy, and `cyclonedx-npm` were not installed in the inspected environment, so container components are not claimed advisory-free.
 
 Re-run the review whenever Vendure 3.x, Nest GraphQL, Apollo, or the asset plugin changes, and no later than 2026-09-19.

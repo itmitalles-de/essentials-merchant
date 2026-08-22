@@ -1,14 +1,14 @@
 {
   "bomFormat": "CycloneDX",
   "specVersion": "1.5",
-  "serialNumber": "urn:uuid:f40e7680-c65e-450b-a98d-63c50f33806d",
+  "serialNumber": "urn:uuid:5b324474-522c-46ae-a560-a3264eed82a9",
   "version": 1,
   "metadata": {
     "component": {
       "type": "application",
       "name": "Essentials+ Merchant Amazon Intelligence Pilot",
-      "version": "lockset-f40e7680c65e",
-      "bom-ref": "application:pilot:lockset:f40e7680c65ec50bc98d63c50f33806ddd2554423f228d96a0c028565de459d7"
+      "version": "lockset-5b324474522c",
+      "bom-ref": "application:pilot:lockset:5b324474522c46aea560a3264eed82a95844616a61a541c44d67cc94e5f7b60c"
     },
     "properties": [
       {
@@ -25,7 +25,7 @@
       },
       {
         "name": "essentials:lock:backend/Cargo.lock",
-        "value": "e39f1c953779587a55f306797a334c380e82605b673364ecdfc3768df36589bb"
+        "value": "125b9d2e70873cfec9f8efd79e7abf1f4bb11ec0ec86635a82c4c975b71bb821"
       }
     ]
   },
@@ -666,6 +666,32 @@
       "version": "0.1.7",
       "purl": "pkg:cargo/crypto-common@0.1.7",
       "bom-ref": "cargo:crypto-common@0.1.7:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "csv-core",
+      "version": "0.1.13",
+      "purl": "pkg:cargo/csv-core@0.1.13",
+      "bom-ref": "cargo:csv-core@0.1.13:c19b7c6f923b",
+      "properties": [
+        {
+          "name": "essentials:scope",
+          "value": "backend"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "csv",
+      "version": "1.4.0",
+      "purl": "pkg:cargo/csv@1.4.0",
+      "bom-ref": "cargo:csv@1.4.0:c19b7c6f923b",
       "properties": [
         {
           "name": "essentials:scope",

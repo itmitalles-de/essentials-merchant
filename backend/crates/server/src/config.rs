@@ -7,6 +7,7 @@ pub struct Config {
     pub outbox_policy: db::commerce::OutboxPolicy,
     pub pdf_storage_dir: String,
     pub module_profile: Option<ModuleProfile>,
+    pub mantle_pilot_no_login: bool,
     pub marketplace_worker_interval_seconds: u64,
 }
 
@@ -17,6 +18,11 @@ pub enum ModuleProfile {
 
 impl Config {
     pub fn from_env() -> Self {
+        let module_profile = module_profile_from_env();
+        let mantle_pilot_no_login = env_bool("MANTLE_PILOT_NO_LOGIN", false);
+        if mantle_pilot_no_login && module_profile != Some(ModuleProfile::AmazonReadOnly) {
+            panic!("MANTLE_PILOT_NO_LOGIN requires ESSENTIALS_MODULE_PROFILE=amazon-read-only");
+        }
         Self {
             database_url: std::env::var("DATABASE_URL").expect("DATABASE_URL must be set"),
             jwt_secret: std::env::var("JWT_SECRET").expect("JWT_SECRET must be set"),
@@ -31,7 +37,8 @@ impl Config {
             },
             pdf_storage_dir: std::env::var("PDF_STORAGE_DIR")
                 .unwrap_or_else(|_| "/data/invoices".into()),
-            module_profile: module_profile_from_env(),
+            module_profile,
+            mantle_pilot_no_login,
             marketplace_worker_interval_seconds: env_u64("MARKETPLACE_WORKER_INTERVAL_SECONDS", 30)
                 .clamp(1, 3_600),
         }
@@ -89,4 +96,13 @@ fn env_u64(name: &str, default: u64) -> u64 {
         .ok()
         .and_then(|value| value.parse().ok())
         .unwrap_or(default)
+}
+
+fn env_bool(name: &str, default: bool) -> bool {
+    match std::env::var(name).ok().as_deref().map(str::trim) {
+        None | Some("") => default,
+        Some("1" | "true" | "yes" | "on") => true,
+        Some("0" | "false" | "no" | "off") => false,
+        Some(_) => panic!("{name} must be a boolean"),
+    }
 }

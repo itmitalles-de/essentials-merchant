@@ -159,10 +159,13 @@ pub struct LiveAmazonClient {
     endpoint_override: Option<String>,
     lwa_endpoint: String,
     secret_override: Option<LiveSecret>,
+    provider_secrets: Option<crate::provider_secrets::ProviderSecretStore>,
 }
 
 impl LiveAmazonClient {
-    pub fn new() -> Result<Self, reqwest::Error> {
+    pub fn new(
+        provider_secrets: crate::provider_secrets::ProviderSecretStore,
+    ) -> Result<Self, reqwest::Error> {
         reqwest::Client::builder()
             .timeout(std::time::Duration::from_secs(30))
             .redirect(reqwest::redirect::Policy::none())
@@ -172,6 +175,7 @@ impl LiveAmazonClient {
                 endpoint_override: None,
                 lwa_endpoint: "https://api.amazon.com/auth/o2/token".to_owned(),
                 secret_override: None,
+                provider_secrets: Some(provider_secrets),
             })
     }
 
@@ -190,6 +194,7 @@ impl LiveAmazonClient {
                     client_id: "synthetic-client".to_owned(),
                     client_secret: "synthetic-secret".to_owned(),
                 }),
+                provider_secrets: None,
             })
     }
 
@@ -221,9 +226,28 @@ impl LiveAmazonClient {
         format!("AMAZON_SECRET_{normalized}")
     }
 
-    fn load_secret(&self, secret_ref: &str) -> Result<LiveSecret, AmazonClientError> {
+    async fn load_secret(&self, secret_ref: &str) -> Result<LiveSecret, AmazonClientError> {
         if let Some(secret) = &self.secret_override {
             return Ok(secret.clone());
+        }
+        if secret_ref == db::provider_secrets::PILOT_AMAZON_SECRET_REF {
+            if let Some(store) = &self.provider_secrets {
+                match store.amazon_credentials().await {
+                    Ok(Some(secret)) => {
+                        return Ok(LiveSecret {
+                            refresh_token: secret.refresh_token,
+                            client_id: secret.client_id,
+                            client_secret: secret.client_secret,
+                        });
+                    }
+                    Ok(None) => {}
+                    Err(_) => {
+                        return Err(AmazonClientError::Permanent(
+                            "Amazon provider credential storage is unavailable".to_owned(),
+                        ));
+                    }
+                }
+            }
         }
         let key = Self::secret_environment_key(secret_ref);
         let raw = std::env::var(&key).map_err(|_| {
@@ -249,7 +273,7 @@ impl LiveAmazonClient {
         &self,
         secret_ref: &str,
     ) -> Result<AmazonClientResponse<String>, AmazonClientError> {
-        let secret = self.load_secret(secret_ref)?;
+        let secret = self.load_secret(secret_ref).await?;
         let response = self
             .http
             .post(&self.lwa_endpoint)
@@ -301,23 +325,21 @@ impl LiveAmazonClient {
             ));
         }
         let base = self.endpoint(&request.region)?;
-        let valid_resource_id = |value: &str| {
-            !value.is_empty()
-                && value.chars().all(|character| {
-                    character.is_ascii_alphanumeric() || matches!(character, '-' | '_')
-                })
-        };
         let (method, path) = match (operation, resource_id) {
             (AmazonOperation::CreateReport, None) => (
                 reqwest::Method::POST,
                 "/reports/2021-06-30/reports".to_owned(),
             ),
-            (AmazonOperation::GetReport, Some(report_id)) if valid_resource_id(report_id) => (
-                reqwest::Method::GET,
-                format!("/reports/2021-06-30/reports/{report_id}"),
-            ),
+            (AmazonOperation::GetReport, Some(report_id))
+                if amazon_resource_id_allowed(report_id) =>
+            {
+                (
+                    reqwest::Method::GET,
+                    format!("/reports/2021-06-30/reports/{report_id}"),
+                )
+            }
             (AmazonOperation::GetReportDocument, Some(document_id))
-                if valid_resource_id(document_id) =>
+                if amazon_resource_id_allowed(document_id) =>
             {
                 (
                     reqwest::Method::GET,
@@ -346,6 +368,20 @@ fn retry_after(response: &reqwest::Response) -> Option<i64> {
         .get(reqwest::header::RETRY_AFTER)
         .and_then(|value| value.to_str().ok())
         .and_then(|value| value.parse::<i64>().ok())
+}
+
+fn amazon_resource_id_allowed(value: &str) -> bool {
+    let mut characters = value.chars();
+    let Some(first) = characters.next() else {
+        return false;
+    };
+    let last = value.chars().last().unwrap_or(first);
+    value.len() <= 256
+        && first.is_ascii_alphanumeric()
+        && last.is_ascii_alphanumeric()
+        && value.chars().all(|character| {
+            character.is_ascii_alphanumeric() || matches!(character, '-' | '_' | '.')
+        })
 }
 
 fn transport_observation(
@@ -777,9 +813,11 @@ pub struct CompositeAmazonClient {
 }
 
 impl CompositeAmazonClient {
-    pub fn new() -> Result<Self, reqwest::Error> {
+    pub fn new(
+        provider_secrets: crate::provider_secrets::ProviderSecretStore,
+    ) -> Result<Self, reqwest::Error> {
         Ok(Self {
-            live: LiveAmazonClient::new()?,
+            live: LiveAmazonClient::new(provider_secrets)?,
             fixture: FixtureAmazonClient,
         })
     }
@@ -908,7 +946,7 @@ impl MarketplaceWorker {
             .unwrap_or(true);
         if pilot_enabled
             && run.mode == "live"
-            && (!pilot_live_run_is_safe(&run)
+            && (!pilot_live_run_is_safe(pool, &run).await
                 || !pilot_live_sequence_is_safe(pool, &run, Some(run.id))
                     .await
                     .unwrap_or(false))
@@ -1244,6 +1282,7 @@ impl MarketplaceWorker {
     async fn process_analysis(&self, pool: &sqlx::PgPool, job: ClaimedAnalysisJob) {
         let result = match job.analysis_type.as_str() {
             "delta" => deterministic_delta(pool, &job).await,
+            "manual_comparison" => deterministic_manual_comparison(pool, &job).await,
             "total" => deterministic_total(pool, &job).await,
             _ => Err("Unknown analysis type".to_owned()),
         };
@@ -1273,29 +1312,38 @@ impl MarketplaceWorker {
     }
 }
 
-fn staging_context_is_approved(
+async fn staging_context_is_approved(
+    pool: &sqlx::PgPool,
     seller_id: &str,
     region: &str,
     secret_ref: &str,
     marketplace_id: &str,
 ) -> bool {
-    if !marketplace::live_secret_reference_is_configured(secret_ref) {
+    let environment_approved = std::env::var("AMAZON_STAGING_APPROVAL")
+        .ok()
+        .and_then(|raw| serde_json::from_str::<AmazonStagingApproval>(&raw).ok())
+        .is_some_and(|approval| {
+            marketplace::live_secret_reference_is_configured(secret_ref)
+                && approval.seller_sha256.len() == 64
+                && approval
+                    .seller_sha256
+                    .bytes()
+                    .all(|byte| byte.is_ascii_hexdigit() && !byte.is_ascii_uppercase())
+                && approval.seller_sha256 == sha256(seller_id.as_bytes())
+                && approval.region == region
+                && approval.marketplace_id == marketplace_id
+        });
+    if environment_approved {
+        return true;
+    }
+    if secret_ref != db::provider_secrets::PILOT_AMAZON_SECRET_REF {
         return false;
     }
-    let Ok(raw) = std::env::var("AMAZON_STAGING_APPROVAL") else {
-        return false;
-    };
-    let Ok(approval) = serde_json::from_str::<AmazonStagingApproval>(&raw) else {
-        return false;
-    };
-    approval.seller_sha256.len() == 64
-        && approval
-            .seller_sha256
-            .bytes()
-            .all(|byte| byte.is_ascii_hexdigit() && !byte.is_ascii_uppercase())
-        && approval.seller_sha256 == sha256(seller_id.as_bytes())
-        && approval.region == region
-        && approval.marketplace_id == marketplace_id
+    let context_sha256 =
+        crate::provider_secrets::amazon_context_sha256(seller_id, region, marketplace_id);
+    db::provider_secrets::amazon_context_is_approved(pool, &context_sha256)
+        .await
+        .unwrap_or(false)
 }
 
 fn pilot_period_is_safe(
@@ -1315,15 +1363,17 @@ fn pilot_period_is_safe(
         && *report_options == json!({"dateGranularity": "DAY", "asinGranularity": "CHILD"})
 }
 
-fn pilot_live_run_is_safe(run: &ClaimedReportRun) -> bool {
+async fn pilot_live_run_is_safe(pool: &sqlx::PgPool, run: &ClaimedReportRun) -> bool {
     run.trigger_source == "manual"
         && run.schedule_id.is_none()
         && staging_context_is_approved(
+            pool,
             &run.seller_id,
             &run.region,
             &run.secret_ref,
             &run.marketplace_id,
         )
+        .await
         && pilot_period_is_safe(
             &run.report_type,
             run.data_start_time,
@@ -1399,7 +1449,8 @@ pub(crate) async fn pilot_live_request_is_safe(
         granted_roles: connection.granted_roles.clone(),
         mode: connection.mode.clone(),
     };
-    Ok(pilot_live_run_is_safe(&run) && pilot_live_sequence_is_safe(pool, &run, None).await?)
+    Ok(pilot_live_run_is_safe(pool, &run).await
+        && pilot_live_sequence_is_safe(pool, &run, None).await?)
 }
 
 fn exponential_backoff(attempt: i32, base_seconds: i64, max_seconds: i64) -> i64 {
@@ -1548,6 +1599,29 @@ fn parse_sales_and_traffic(
     let mut currencies = BTreeMap::<String, Decimal>::new();
     let mut dates = Vec::new();
     let mut dimensions = HashSet::new();
+    // Amazon can legitimately emit the same child ASIN more than once when its
+    // parent variation relationship changed inside the requested period. Keep
+    // the strict duplicate guard, but disambiguate those rows by the parent
+    // dimension so their partitioned metrics are retained exactly once.
+    let mut child_parents = HashMap::<String, HashSet<String>>::new();
+    if asin_granularity == "CHILD" {
+        for (row, row_date) in &rows {
+            let Some(child_asin) = row.get("childAsin").and_then(Value::as_str) else {
+                continue;
+            };
+            let Some(parent_asin) = row.get("parentAsin").and_then(Value::as_str) else {
+                continue;
+            };
+            let key = format!(
+                "{child_asin}:{}",
+                row_date.map_or_else(|| "aggregate".to_owned(), |date| date.to_string())
+            );
+            child_parents
+                .entry(key)
+                .or_default()
+                .insert(parent_asin.to_owned());
+        }
+    }
     for (row, row_date) in rows {
         let asin = row
             .get(match asin_granularity {
@@ -1565,14 +1639,31 @@ fn parse_sales_and_traffic(
         if let Some(date) = row_date {
             dates.push(date);
         }
-        let dimension = format!(
+        let base_dimension = format!(
             "{asin}:{}",
             row_date.map_or_else(|| "aggregate".to_owned(), |date| date.to_string())
         );
+        let parent_asin = row.get("parentAsin").and_then(Value::as_str);
+        let disambiguate_parent = asin_granularity == "CHILD"
+            && child_parents
+                .get(&base_dimension)
+                .is_some_and(|parents| parents.len() > 1);
+        let dimension_key = match (disambiguate_parent, parent_asin) {
+            (true, Some(parent_asin)) => format!("{parent_asin}>{asin}"),
+            (true, None) => {
+                return Err(
+                    "Sales & Traffic duplicate child rows lack a stable parent dimension"
+                        .to_owned(),
+                )
+            }
+            (false, _) => asin.to_owned(),
+        };
+        let dimension = format!(
+            "{dimension_key}:{}",
+            row_date.map_or_else(|| "aggregate".to_owned(), |date| date.to_string())
+        );
         if !dimensions.insert(dimension) {
-            return Err(format!(
-                "Sales & Traffic report contains duplicate ASIN/date row for {asin}"
-            ));
+            return Err("Sales & Traffic report contains duplicate ASIN/date row".to_owned());
         }
         let sales = decimal(
             value_at(row, &["salesByAsin", "orderedProductSales", "amount"]),
@@ -1601,12 +1692,13 @@ fn parse_sales_and_traffic(
         *currencies.entry(currency.clone()).or_default() += sales;
         let evidence = json!({
             "dimension": asin,
+            "parent_dimension": disambiguate_parent.then_some(parent_asin).flatten(),
             "dimension_kind": asin_granularity_key,
             "date": row_date.map(|value| value.to_string()),
         });
         let asin_dimension_key = row_date
-            .map(|date| format!("{asin}:{date}"))
-            .unwrap_or_else(|| asin.to_owned());
+            .map(|date| format!("{dimension_key}:{date}"))
+            .unwrap_or(dimension_key);
         metrics.extend([
             ParsedMetric {
                 metric_name: "ordered_product_sales".to_owned(),
@@ -1967,6 +2059,27 @@ fn evidence_ref(snapshot: &MetricSnapshot, metric: &NormalizedMetric) -> String 
     format!("snapshot:{}:metric:{}", snapshot.id, metric.id)
 }
 
+fn analysis_context(snapshot: &MetricSnapshot) -> Value {
+    json!({
+        "period_start": snapshot.period_start,
+        "period_end": snapshot.period_end,
+        "marketplace": snapshot.marketplace_id,
+        "report_type": snapshot.report_type,
+        "granularity": snapshot.granularity,
+        "parser_version": snapshot.parser_version,
+        "data_freshness": snapshot.summary.get("data_freshness").cloned()
+            .or_else(|| snapshot.period_end.map(|value| json!(value)))
+            .unwrap_or(Value::Null),
+        "missing_fields": snapshot.summary.get("missing_fields").cloned().unwrap_or_else(|| json!([])),
+        "source_timezone": snapshot.summary.get("timezone").cloned()
+            .or_else(|| snapshot.summary.get("reporting_timezone").cloned())
+            .unwrap_or(Value::Null),
+        "currency": snapshot.summary.get("currency_code").cloned()
+            .or_else(|| snapshot.summary.get("currency").cloned())
+            .unwrap_or(Value::Null),
+    })
+}
+
 async fn deterministic_delta(
     pool: &sqlx::PgPool,
     job: &ClaimedAnalysisJob,
@@ -1978,6 +2091,68 @@ async fn deterministic_delta(
         .await
         .map_err(|error| error.to_string())?
         .ok_or_else(|| "Delta analysis lacks a normalized snapshot".to_owned())?;
+    let previous = marketplace::previous_compatible_snapshot(pool, &current)
+        .await
+        .map_err(|error| error.to_string())?;
+    deterministic_delta_for_snapshots(pool, &current, previous).await
+}
+
+async fn deterministic_manual_comparison(
+    pool: &sqlx::PgPool,
+    job: &ClaimedAnalysisJob,
+) -> Result<Value, String> {
+    let uploaded_run_id = job
+        .run_id
+        .ok_or_else(|| "Manual comparison requires an uploaded report run".to_owned())?;
+    let anchor = marketplace::snapshot_for_run(pool, uploaded_run_id)
+        .await
+        .map_err(|error| error.to_string())?
+        .ok_or_else(|| "Manual comparison lacks its uploaded snapshot".to_owned())?;
+    let snapshots = marketplace::snapshots_for_window(pool, job)
+        .await
+        .map_err(|error| error.to_string())?;
+    let expected_start = job
+        .period_start
+        .ok_or_else(|| "Manual comparison lacks a period start".to_owned())?;
+    let expected_end = job
+        .period_end
+        .ok_or_else(|| "Manual comparison lacks a period end".to_owned())?;
+    let previous = snapshots
+        .iter()
+        .find(|snapshot| {
+            snapshot.comparability_key == anchor.comparability_key
+                && snapshot.parser_version == anchor.parser_version
+                && snapshot.period_start == Some(expected_start)
+        })
+        .cloned()
+        .ok_or_else(|| "Manual comparison lacks its earlier compatible snapshot".to_owned())?;
+    let current = snapshots
+        .iter()
+        .rev()
+        .find(|snapshot| {
+            snapshot.comparability_key == anchor.comparability_key
+                && snapshot.parser_version == anchor.parser_version
+                && snapshot.period_end == Some(expected_end)
+        })
+        .cloned()
+        .ok_or_else(|| "Manual comparison lacks its later compatible snapshot".to_owned())?;
+    let previous_end = previous
+        .period_end
+        .ok_or_else(|| "Manual comparison earlier period is incomplete".to_owned())?;
+    let current_start = current
+        .period_start
+        .ok_or_else(|| "Manual comparison later period is incomplete".to_owned())?;
+    if previous.id == current.id || previous_end >= current_start {
+        return Err("Manual comparison periods overlap or are identical".to_owned());
+    }
+    deterministic_delta_for_snapshots(pool, &current, Some(previous)).await
+}
+
+async fn deterministic_delta_for_snapshots(
+    pool: &sqlx::PgPool,
+    current: &MetricSnapshot,
+    previous: Option<MetricSnapshot>,
+) -> Result<Value, String> {
     let current_metrics = marketplace::metrics_for_snapshot(pool, current.id)
         .await
         .map_err(|error| error.to_string())?;
@@ -1990,16 +2165,18 @@ async fn deterministic_delta(
                 "value": metric.value_numeric.to_string(),
                 "unit": metric.unit,
                 "currency": metric.currency_code,
-                "evidence_ref": evidence_ref(&current, metric),
+                "evidence_ref": evidence_ref(current, metric),
             })
         })
         .collect::<Vec<_>>();
-    let Some(previous) = marketplace::previous_compatible_snapshot(pool, &current)
-        .await
-        .map_err(|error| error.to_string())?
-    else {
+    let context = analysis_context(current);
+    let Some(previous) = previous else {
         return Ok(json!({
+            "context": context,
             "facts": facts,
+            "derived_observations": [
+                "The current report was normalized successfully; no compatible earlier period is available for a deterministic delta."
+            ],
             "changes_since_last_run": [],
             "overall_trend": "No comparable earlier snapshot is available.",
             "anomalies": [],
@@ -2007,6 +2184,8 @@ async fn deterministic_delta(
             "options": generic_options(),
             "uncertainty": "high",
             "missing_data": ["A previous successful snapshot with matching report type, granularity and period length is required for a delta analysis."],
+            "missing_evidence": ["A second non-overlapping period with identical marketplace, report type, granularity, parser version, currency and period length."],
+            "open_questions": ["Which earlier period should be imported for comparison?"],
             "recommendation_notice": "Recommendations only; Essentials+ Merchant does not make Amazon changes.",
         }));
     };
@@ -2037,14 +2216,24 @@ async fn deterministic_delta(
         } else {
             Some((difference / previous_metric.value_numeric * Decimal::from(100)).round_dp(2))
         };
+        let trend = match percentage {
+            Some(value) if value > Decimal::ONE => "up",
+            Some(value) if value < -Decimal::ONE => "down",
+            Some(_) => "stable",
+            None if difference.is_zero() => "stable",
+            None if difference.is_sign_positive() => "up_from_zero",
+            None => "down_to_zero",
+        };
         let change = json!({
             "metric": metric.metric_name,
             "current": metric.value_numeric.to_string(),
             "previous": previous_metric.value_numeric.to_string(),
             "difference": difference.to_string(),
             "percent_change": percentage.map(|value| value.to_string()),
+            "trend": trend,
             "unit": metric.unit,
-            "evidence_refs": [evidence_ref(&current, metric), evidence_ref(&previous, previous_metric)],
+            "currency": metric.currency_code,
+            "evidence_refs": [evidence_ref(current, metric), evidence_ref(&previous, previous_metric)],
         });
         if percentage.is_some_and(|value| value.abs() >= Decimal::from(20)) {
             anomalies.push(json!({
@@ -2062,15 +2251,58 @@ async fn deterministic_delta(
         "Comparable metrics were calculated against the immediately preceding compatible snapshot."
             .to_owned()
     };
+    let derived_observations = changes
+        .iter()
+        .map(|change| {
+            json!({
+                "kind": "deterministic_period_delta",
+                "metric": change.get("metric"),
+                "delta": change.get("difference"),
+                "percent_change": change.get("percent_change"),
+                "trend": change.get("trend"),
+                "evidence_refs": change.get("evidence_refs"),
+            })
+        })
+        .collect::<Vec<_>>();
+    let hypotheses = hypotheses_for_changes(&changes);
+    let (missing_evidence, open_questions) = if current.report_type
+        == marketplace::ADS_SPONSORED_PRODUCTS_CAMPAIGN
+    {
+        (
+                vec![
+                    "The aggregate campaign report contains no search terms, product identifiers, placement detail, organic attribution, competitor activity, price, listing, or inventory evidence.",
+                    "Attributed advertising metrics use the confirmed attribution window and support correlation, not causal attribution to total sales.",
+                ],
+                vec![
+                    "Were campaign budget, bids, targeting, placements or creative changed between the periods?",
+                    "Do the Ads period, currency, marketplace and attribution window align with the Sales and Traffic evidence?",
+                ],
+            )
+    } else {
+        (
+                vec![
+                    "Price, promotion, advertising, listing, availability and competitor changes are not contained in Sales and Traffic reports.",
+                    "The report supports correlation and deterministic deltas, not causal attribution.",
+                ],
+                vec![
+                    "Were price, promotions, advertising, availability or listing content changed between the periods?",
+                    "Was Seller Central report coverage complete and final for both periods?",
+                ],
+            )
+    };
     Ok(json!({
+        "context": context,
         "facts": facts,
+        "derived_observations": derived_observations,
         "changes_since_last_run": changes,
         "overall_trend": trend,
         "anomalies": anomalies,
-        "hypotheses": hypotheses_for_metrics(&current_metrics),
+        "hypotheses": hypotheses,
         "options": options,
         "uncertainty": if anomalies.is_empty() { "medium" } else { "medium; material changes need operational validation" },
         "missing_data": missing_data_for_metrics(&current_metrics),
+        "missing_evidence": missing_evidence,
+        "open_questions": open_questions,
         "recommendation_notice": "Recommendations only; Essentials+ Merchant does not make Amazon changes.",
     }))
 }
@@ -2147,7 +2379,7 @@ fn generic_options() -> Vec<Value> {
             "uncertainty": "medium",
         }),
         json!({
-            "action": "Run the same compatible report period again on schedule",
+            "action": "Import another completed, compatible comparison period",
             "expected_effect": "Builds a comparable baseline for later delta analysis.",
             "effort": "low",
             "risks": ["Amazon report availability and processing time vary."],
@@ -2172,7 +2404,10 @@ fn options_for_metrics(metrics: &[NormalizedMetric]) -> Vec<Value> {
         }));
     }
     if let Some(conversion) = metrics.iter().find(|metric| {
-        metric.metric_name == "conversion_rate" && metric.dimension_type == "catalog"
+        matches!(
+            metric.metric_name.as_str(),
+            "conversion_rate" | "unit_session_percentage"
+        ) && metric.dimension_type == "catalog"
     }) {
         options.push(json!({
             "action": "Review detail-page content and offer competitiveness",
@@ -2183,23 +2418,92 @@ fn options_for_metrics(metrics: &[NormalizedMetric]) -> Vec<Value> {
             "uncertainty": "high",
         }));
     }
+    if let Some(traffic) = metrics
+        .iter()
+        .find(|metric| metric.metric_name == "sessions" && metric.dimension_type == "catalog")
+    {
+        options.push(json!({
+            "action": "Review traffic-source and discoverability evidence for the same periods",
+            "expected_effect": "Helps distinguish a traffic shift from a conversion or reporting-coverage shift.",
+            "effort": "low",
+            "risks": ["Traffic correlation alone does not establish the cause."],
+            "evidence_refs": [format!("snapshot:{}:metric:{}", traffic.snapshot_id, traffic.id)],
+            "uncertainty": "medium",
+        }));
+    }
+    if let Some(buy_box) = metrics.iter().find(|metric| {
+        metric.metric_name == "buy_box_percentage" && metric.dimension_type == "catalog"
+    }) {
+        options.push(json!({
+            "action": "Review offer, fulfilment and availability history for the comparison periods",
+            "expected_effect": "May explain a Buy Box or conversion movement without changing Amazon automatically.",
+            "effort": "medium",
+            "risks": ["The Sales and Traffic report does not contain all offer-level causes."],
+            "evidence_refs": [format!("snapshot:{}:metric:{}", buy_box.snapshot_id, buy_box.id)],
+            "uncertainty": "high",
+        }));
+    }
+    if let Some(ads_spend) = metrics
+        .iter()
+        .find(|metric| metric.metric_name == "ads_spend" && metric.dimension_type == "catalog")
+    {
+        options.push(json!({
+            "action": "Review aggregate campaign efficiency alongside the matching Sales and Traffic period",
+            "expected_effect": "Helps distinguish advertising correlation from organic or conversion movement without changing campaigns.",
+            "effort": "low",
+            "risks": ["Attribution windows and total sales are not interchangeable; correlation is not causality."],
+            "evidence_refs": [format!("snapshot:{}:metric:{}", ads_spend.snapshot_id, ads_spend.id)],
+            "uncertainty": "medium",
+        }));
+    }
     options.truncate(5);
     options
 }
 
-fn hypotheses_for_metrics(metrics: &[NormalizedMetric]) -> Vec<Value> {
-    metrics
+fn hypotheses_for_changes(changes: &[Value]) -> Vec<Value> {
+    changes
         .iter()
-        .filter(|metric| {
-            metric.metric_name == "stock_cover_days" && metric.value_numeric < Decimal::from(14)
+        .filter_map(|change| {
+            let metric = change.get("metric")?.as_str()?;
+            let hypothesis = match metric {
+                "ordered_product_sales" => {
+                    "Revenue may have moved with traffic, conversion, Buy Box, assortment, availability or report coverage."
+                }
+                "sessions" | "page_views" => {
+                    "Traffic acquisition, organic discoverability, seasonality or report coverage may have changed."
+                }
+                "conversion_rate" | "unit_session_percentage" => {
+                    "Offer competitiveness, listing quality, availability or traffic mix may have changed conversion."
+                }
+                "buy_box_percentage" => {
+                    "Offer competitiveness, fulfilment eligibility or availability may have affected Buy Box share."
+                }
+                "b2b_share"
+                | "b2b_revenue_share"
+                | "b2b_units_share"
+                | "b2b_ordered_product_sales"
+                | "b2b_units_ordered" => {
+                    "The mix of business-customer demand may have changed between periods."
+                }
+                "ads_impressions" | "ads_clicks" | "ads_spend" => {
+                    "Campaign delivery, budget, bids, targeting, placements, competition or demand may have changed."
+                }
+                "ads_attributed_sales" | "ads_attributed_orders" | "ads_attributed_units" => {
+                    "Attributed campaign outcomes may have moved with delivery, conversion or the confirmed attribution window."
+                }
+                "ads_ctr" | "ads_cpc" | "ads_roas" | "ads_acos" => {
+                    "Aggregate campaign efficiency may have changed, but product, query, placement and organic evidence are intentionally absent."
+                }
+                _ => return None,
+            };
+            Some(json!({
+                "hypothesis": hypothesis,
+                "metric": metric,
+                "evidence_refs": change.get("evidence_refs").cloned().unwrap_or_else(|| json!([])),
+                "uncertainty": "high; aggregate Amazon reports do not establish causality.",
+            }))
         })
-        .map(|metric| {
-            json!({
-                "hypothesis": "Low reported stock cover could constrain future sales.",
-                "evidence_refs": [format!("snapshot:{}:metric:{}", metric.snapshot_id, metric.id)],
-                "uncertainty": "medium; inbound and non-Amazon stock are not included.",
-            })
-        })
+        .take(5)
         .collect()
 }
 
@@ -2209,18 +2513,42 @@ fn missing_data_for_metrics(metrics: &[NormalizedMetric]) -> Vec<&'static str> {
         .map(|metric| metric.metric_name.as_str())
         .collect::<Vec<_>>();
     let mut missing = Vec::new();
+    if names.iter().any(|name| name.starts_with("ads_")) {
+        if !names.contains(&"ads_attributed_sales") {
+            missing.push("Attributed advertising sales are not present in this campaign report.");
+        }
+        if !names.contains(&"ads_attributed_orders") {
+            missing.push("Attributed advertising orders are not present in this campaign report.");
+        }
+        if !names.contains(&"ads_attributed_units") {
+            missing.push("Attributed advertising units are not present in this campaign report.");
+        }
+        missing.push("Total Sales and Traffic, organic attribution, product/query detail, price, listing and inventory evidence are outside this report.");
+        return missing;
+    }
     if !names.contains(&"ordered_product_sales") {
         missing.push("Revenue and conversion are not present in this report type.");
     }
     if !names.contains(&"available_inventory") {
         missing.push("Inventory coverage is not present in this report type.");
     }
+    if !names.contains(&"buy_box_percentage") {
+        missing.push("Buy Box percentage is not present in the imported report.");
+    }
+    if !names.contains(&"b2b_share")
+        && !names.contains(&"b2b_revenue_share")
+        && !names.contains(&"b2b_units_share")
+        && !names.contains(&"b2b_ordered_product_sales")
+        && !names.contains(&"b2b_units_ordered")
+    {
+        missing.push("B2B sales or unit share is not present in the imported report.");
+    }
     missing
 }
 
-/// Export only aggregate allowlisted metrics. This is also the regression
-/// boundary that keeps buyer identifiers and raw report fields out of analysis
-/// exports even though no external AI provider is compiled into this product.
+/// Export only aggregate allowlisted metrics. This is the downloadable-summary
+/// boundary; the optional AI strategy integration applies an additional closed
+/// DTO that also removes internal evidence identifiers.
 pub fn pii_safe_analysis_export(result: &Value) -> Value {
     let allowed = [
         "ordered_product_sales",
@@ -2228,9 +2556,26 @@ pub fn pii_safe_analysis_export(result: &Value) -> Value {
         "sessions",
         "page_views",
         "conversion_rate",
+        "unit_session_percentage",
+        "buy_box_percentage",
+        "b2b_share",
+        "b2b_revenue_share",
+        "b2b_units_share",
+        "b2b_ordered_product_sales",
+        "b2b_units_ordered",
         "available_inventory",
         "units_shipped_t30",
         "stock_cover_days",
+        "ads_impressions",
+        "ads_clicks",
+        "ads_spend",
+        "ads_attributed_sales",
+        "ads_attributed_orders",
+        "ads_attributed_units",
+        "ads_ctr",
+        "ads_cpc",
+        "ads_roas",
+        "ads_acos",
     ];
     let facts = result
         .get("facts")
@@ -2245,8 +2590,33 @@ pub fn pii_safe_analysis_export(result: &Value) -> Value {
         .map(strip_pii)
         .collect::<Vec<_>>();
     let mut export = serde_json::Map::new();
+    if let Some(context) = result.get("context").and_then(Value::as_object) {
+        let allowed_context = [
+            "period_start",
+            "period_end",
+            "marketplace",
+            "report_type",
+            "granularity",
+            "parser_version",
+            "data_freshness",
+            "missing_fields",
+            "source_timezone",
+            "currency",
+        ];
+        export.insert(
+            "context".to_owned(),
+            Value::Object(
+                context
+                    .iter()
+                    .filter(|(key, _)| allowed_context.contains(&key.as_str()))
+                    .map(|(key, value)| (key.clone(), strip_pii(value)))
+                    .collect(),
+            ),
+        );
+    }
     export.insert("facts".to_owned(), Value::Array(facts));
     for field in [
+        "derived_observations",
         "changes_since_last_run",
         "overall_trend",
         "seasonality",
@@ -2255,6 +2625,8 @@ pub fn pii_safe_analysis_export(result: &Value) -> Value {
         "options",
         "uncertainty",
         "missing_data",
+        "missing_evidence",
+        "open_questions",
         "recommendation_notice",
         "analysis_engine",
     ] {
@@ -2273,8 +2645,20 @@ fn strip_pii(value: &Value) -> Value {
                 .filter(|(key, _)| {
                     let key = key.to_ascii_lowercase();
                     ![
-                        "buyer", "customer", "email", "address", "order_id", "comment", "phone",
+                        "buyer",
+                        "customer",
+                        "email",
+                        "address",
+                        "order_id",
+                        "comment",
+                        "phone",
                         "person",
+                        "asin",
+                        "sku",
+                        "seller_id",
+                        "merchant_id",
+                        "raw",
+                        "path",
                     ]
                     .iter()
                     .any(|forbidden| key.contains(forbidden))
@@ -2314,6 +2698,20 @@ mod tests {
             "https://example.invalid/report?signature=redacted"
         ));
         assert!(!download_url_allowed("file:///tmp/report"));
+    }
+
+    #[test]
+    fn amazon_resource_ids_allow_official_dotted_document_ids_but_no_path_syntax() {
+        assert!(amazon_resource_id_allowed("fake-report-1"));
+        assert!(amazon_resource_id_allowed(
+            "amzn1.spdoc.1.4.synthetic-document-1"
+        ));
+        assert!(!amazon_resource_id_allowed(""));
+        assert!(!amazon_resource_id_allowed(".hidden"));
+        assert!(!amazon_resource_id_allowed("../document"));
+        assert!(!amazon_resource_id_allowed("document/child"));
+        assert!(!amazon_resource_id_allowed("document%2Fchild"));
+        assert!(!amazon_resource_id_allowed(&"a".repeat(257)));
     }
 
     #[test]
@@ -2375,14 +2773,14 @@ mod tests {
             assert_eq!(report_id, "fake-report-1");
             Json(json!({
                 "processingStatus": "DONE",
-                "reportDocumentId": "fake-document-1",
+                "reportDocumentId": "amzn1.spdoc.1.4.fake-document-1",
             }))
         }
         async fn document(
             State(base): State<String>,
             Path(document_id): Path<String>,
         ) -> Json<Value> {
-            assert_eq!(document_id, "fake-document-1");
+            assert_eq!(document_id, "amzn1.spdoc.1.4.fake-document-1");
             Json(json!({ "url": format!("{base}/download") }))
         }
         async fn download() -> &'static [u8] {
@@ -2483,6 +2881,21 @@ mod tests {
           {"childAsin":"B0DUPLICATE","salesByAsin":{"orderedProductSales":{"amount":"1.00","currencyCode":"EUR"},"unitsOrdered":1}}
         ]}"#;
         assert!(parse_sales_and_traffic(duplicate_sales, None, None).is_err());
+
+        let reassigned_child = br#"{"salesAndTrafficByAsin":[
+          {"parentAsin":"B0PARENT01","childAsin":"B0REASSIGN","salesByAsin":{"orderedProductSales":{"amount":"1.00","currencyCode":"EUR"},"unitsOrdered":1}},
+          {"parentAsin":"B0PARENT02","childAsin":"B0REASSIGN","salesByAsin":{"orderedProductSales":{"amount":"2.00","currencyCode":"EUR"},"unitsOrdered":2}}
+        ]}"#;
+        let parsed = parse_sales_and_traffic(reassigned_child, None, None).unwrap();
+        assert_eq!(parsed.summary["ordered_product_sales"], "3.00");
+        assert_eq!(parsed.summary["units_ordered"], "3");
+        let dimension_keys = parsed
+            .metrics
+            .iter()
+            .filter(|metric| metric.dimension_type == "child_period")
+            .map(|metric| metric.dimension_key.as_str())
+            .collect::<HashSet<_>>();
+        assert_eq!(dimension_keys.len(), 2);
     }
 
     #[test]

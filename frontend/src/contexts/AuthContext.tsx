@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useState } from "react";
 import type { ReactNode } from "react";
 import { api, getToken, setToken } from "../api";
+import { isMantlePilotExperience } from "../pilot";
 
 interface AuthContextValue {
   isAuthenticated: boolean;
@@ -19,18 +20,43 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (!getToken()) {
-      setLoading(false);
-      return;
-    }
-    api
-      .get<{ username: string; role: "administrator" | "user" }>("/auth/me")
-      .then((me) => {
+    let active = true;
+    const loadMe = async () => {
+      const me = await api.get<{ username: string; role: "administrator" | "user" }>("/auth/me");
+      if (active) {
         setUsername(me.username);
         setRole(me.role);
-      })
-      .catch(() => setToken(null))
-      .finally(() => setLoading(false));
+      }
+    };
+    const bootstrap = async () => {
+      try {
+        // The public-facing Mantle pilot shell must always replace any token
+        // left by another Merchant route with the dedicated read-only scope.
+        if (isMantlePilotExperience()) {
+          setToken(null);
+          const session = await api.post<{ access_token: string }>("/auth/pilot-session");
+          setToken(session.access_token);
+          await loadMe();
+          return;
+        }
+        if (getToken()) {
+          try {
+            await loadMe();
+            return;
+          } catch {
+            setToken(null);
+          }
+        }
+      } catch {
+        setToken(null);
+      } finally {
+        if (active) setLoading(false);
+      }
+    };
+    void bootstrap();
+    return () => {
+      active = false;
+    };
   }, []);
 
   const login = async (u: string, password: string) => {

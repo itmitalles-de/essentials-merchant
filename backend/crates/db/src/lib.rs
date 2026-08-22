@@ -8,6 +8,7 @@ pub mod customers;
 pub mod invoices;
 pub mod marketplace;
 pub mod modules;
+pub mod provider_secrets;
 pub mod sales_orders;
 pub mod stock_movements;
 pub mod users;

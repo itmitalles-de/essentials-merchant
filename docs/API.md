@@ -1,8 +1,10 @@
 # Essentials+ Merchant API boundaries
 
 This is the human-readable contract for new operational APIs. Existing CRUD routes retain their
-established shapes. Every human route uses the Core bearer token; administrator-only routes also
-verify `role=administrator`. Module-bound routes fail with HTTP 409 and `module_disabled` before
+established shapes. Every human route uses a bearer token; administrator-only routes also
+verify `role=administrator`. On the Mantle no-login hostname, the frontend obtains a 12-hour
+`mantle-amazon-read-only` token from `POST /api/auth/pilot-session`. That token is accepted only on
+the exact pilot routes listed below. `POST /api/auth/login` returns 403 in this mode. Module-bound routes fail with HTTP 409 and `module_disabled` before
 business logic when the corresponding module is off.
 
 When `pilot.amazon_read_only` is enabled, a second server-wide policy applies before route
@@ -82,6 +84,19 @@ All routes below are protected by `marketplace.amazon_intelligence`:
 - `GET /api/marketplace/runs/{id}/raw`: administrator-only unchanged transport document.
 - `POST /api/marketplace/connections/{id}/analyses`: deterministic aggregate-period analysis.
 - `GET /api/marketplace/analyses/{id}/export`: PII-minimized, allowlisted aggregate JSON.
+- `GET /api/marketplace/strategy/status`: administrator-only external-strategy gate metadata;
+  never a credential value or secret shape.
+- `GET /api/marketplace/strategy/weekly`: administrator-only aggregate-history hash, input count,
+  Europe/Berlin week boundary, next eligible instant, previous-run context status, and latest
+  validated structured assessment.
+- `POST /api/marketplace/strategy/weekly`: administrator-only weekly OpenAI assessment. The current
+  SHA-256 and `confirmed_aggregate_only=true` are required; no report content is accepted from the
+  browser. A successful immutable row disables further provider calls until the next local Monday.
+- `GET /api/pilot/provider-secrets/status`: configured booleans, configured field names, approval
+  state, and replacement timestamps only; never stored values.
+- `POST /api/pilot/provider-secrets/openai`: replace the project API key after validation.
+- `POST /api/pilot/provider-secrets/amazon`: atomically replace LWA credentials and the single
+  approved `pilot_seller` connection after explicit authorization/read-only confirmations.
 
 Unknown `GET_*` report types are accepted only by the fixture connection, archived as raw bytes,
 and end as raw-only rather than successfully analysed. Live connections accept only registry types
@@ -96,6 +111,11 @@ live report is `GET_SALES_AND_TRAFFIC_REPORT`, requested manually for one comple
 one to seven days with `DAY`/`CHILD` options. The transport itself is sealed to LWA refresh,
 `createReport`, `getReport`, `getReportDocument`, and the validated presigned report download.
 Method and path are derived from that operation enum; callers cannot supply arbitrary Amazon URLs.
+
+The strategy POST is a separate, sealed OpenAI transport and does not expand the Amazon
+operation enum. It stays unavailable until a project key is configured, uses only the fixed
+Responses API URL, has no tools or mutation capability, and stores only schema-validated output. See
+[STRATEGY_AI_GATE.md](STRATEGY_AI_GATE.md).
 
 ## Direct connector boundaries
 

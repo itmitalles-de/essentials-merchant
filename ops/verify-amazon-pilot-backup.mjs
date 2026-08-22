@@ -16,11 +16,14 @@ for (const [name, expected] of Object.entries(manifest.files ?? {})) {
     throw new Error(`checksum or size mismatch: ${name}`);
   }
 }
-for (const store of [
+const requiredStores = [
   "core-schema", "pilot-core-data", "immutable-amazon-raw-archives",
   "normalized-amazon-snapshots", "deterministic-analysis-results", "module-states",
   "administrative-audit", "pilot-documents", "redacted-compose-metadata",
-]) {
+];
+if (manifest.schema_version >= 17) requiredStores.push("validated-ai-strategy-assessments");
+if (manifest.schema_version >= 21) requiredStores.push("immutable-curated-business-context");
+for (const store of requiredStores) {
   if (!manifest.stores.includes(store)) throw new Error(`pilot manifest lacks store: ${store}`);
 }
 if (!/^[0-9a-f]{40}$/.test(manifest.repository_revision)
@@ -28,7 +31,13 @@ if (!/^[0-9a-f]{40}$/.test(manifest.repository_revision)
     || !Object.keys(manifest.container_images?.runtime_image_digests ?? {}).length) {
   throw new Error("pilot manifest lacks commit, parser, or image digest metadata");
 }
-for (const exclusion of ["LWA refresh tokens", "OAuth client secrets", "access tokens", "real buyer data"]) {
+const requiredExclusions = [
+  "LWA refresh tokens", "OAuth client secrets", "access tokens", "real buyer data",
+];
+if (manifest.schema_version >= 17) {
+  requiredExclusions.push("OpenAI API keys", "OpenAI prompts and raw provider responses");
+}
+for (const exclusion of requiredExclusions) {
   if (!manifest.exclusions.includes(exclusion)) throw new Error(`pilot manifest lacks exclusion: ${exclusion}`);
 }
 process.stdout.write(`${JSON.stringify({ result: "verified", checksums: Object.keys(manifest.files).length, profile: manifest.profile })}\n`);

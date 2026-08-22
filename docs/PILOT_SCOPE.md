@@ -6,7 +6,7 @@ The first pilot is an internal, read-only Amazon Marketplace Intelligence system
 
 > Essentials+ Merchant - Amazon Intelligence Pilot - Read-only
 
-The pilot acquires Amazon Reports data, preserves immutable source evidence, parses it with versioned deterministic code, creates comparable snapshots and deterministic rule analyses, and exports PII-minimized aggregates. Suggested actions remain text; no action executor exists in the pilot.
+The pilot acquires Amazon Reports data, preserves immutable source evidence, parses it with versioned deterministic code, creates comparable snapshots and deterministic rule analyses, and exports PII-minimized aggregates. An optional, manually triggered OpenAI panel can interpret only a stricter aggregate DTO. Suggested actions remain text; no action executor exists in the pilot.
 
 ## Persisted module profile
 
@@ -56,14 +56,21 @@ There is no Listings Items, Product Pricing, Orders, Inventory, Ads, Fulfillment
 - Exports recursively remove buyer/customer/address/email/order/comment/phone fields and contain aggregate evidence only.
 - The UI displays redacted seller ID, region, marketplaces, role declarations, credential-shape status, latest job/success, retry/rate-limit metadata, archive hashes/size, parser, snapshot compatibility, missing data, and the last backup verification.
 - Tokens, client secrets, refresh tokens, raw payloads, clear seller IDs, and buyer data are never displayed.
-- A live pilot connection accepts only the logical reference `pilot_seller`; its LWA values remain
-  exclusively in `AMAZON_SECRET_PILOT_SELLER` and are never persisted.
+- A live pilot connection accepts only the logical reference `pilot_seller`. Mantle's write-only
+  GUI encrypts its LWA values under a host-only key; provider credential rows are never returned
+  or included in pilot backups. `AMAZON_SECRET_PILOT_SELLER` remains a legacy fallback.
+- The OpenAI transport is a separate fixed Responses API POST and fails closed without a key. It
+  has no tools, receives no raw report/product/customer data, and cannot expand the Amazon
+  operation allowlist. Validated output is displayed outside the facts/derivations blocks.
 
 ## Reproducible start
 
 `scripts/start-amazon-pilot.sh` defaults to `--check`, requires an explicitly named local environment file, renders no environment values, checks the exact service allowlist, and makes no data change. `--start` always uses Compose project `essentials-merchant-amazon-pilot`, starts the three named services, verifies the persisted state as JSON, and stops application services fail-closed if the module/service check differs.
 
-The synthetic browser flow logs in as administrator, checks the banner/modules, creates a fixture connection, follows report polling through snapshot and analysis, downloads a PII-minimized export, verifies blocked mutation routes, and rejects serious/critical axe findings. Synthetic evidence is not Amazon staging evidence.
+The synthetic browser flow obtains the scoped no-login Mantle session, checks the pilot boundary,
+creates a fixture connection, follows report polling through snapshot and analysis, downloads a
+PII-minimized export, verifies blocked mutation routes/write-only credential status, and rejects
+serious/critical axe findings. Synthetic evidence is not Amazon staging evidence.
 
 ## Evidence levels
 

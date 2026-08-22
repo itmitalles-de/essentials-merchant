@@ -1,16 +1,29 @@
 #!/bin/sh
 set -eu
+umask 077
 
 repository_dir=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)
 project=${COMPOSE_PROJECT_NAME:?COMPOSE_PROJECT_NAME must identify a new isolated pilot stack}
 compose_env_file=${COMPOSE_ENV_FILE:-.env.amazon-pilot}
 backup_dir=${1:?usage: COMPOSE_PROJECT_NAME=new-name ops/restore-amazon-pilot.sh BACKUP_DIRECTORY}
 backup_dir=$(CDPATH='' cd -- "$backup_dir" && pwd)
-compose_file="$repository_dir/compose.amazon-pilot.yml"
+compose_file=${PILOT_COMPOSE_FILE:-$repository_dir/compose.amazon-pilot.yml}
+case "$compose_file" in /*) ;; *) compose_file="$repository_dir/$compose_file" ;; esac
+if [ -n "${RESTORE_FRONTEND_PORT:-}" ]; then
+  export PILOT_FRONTEND_PORT="$RESTORE_FRONTEND_PORT"
+  export MANTLE_AMAZON_FRONTEND_PORT="$RESTORE_FRONTEND_PORT"
+fi
 
 case "$project" in *[!A-Za-z0-9_-]*|'') echo "invalid COMPOSE_PROJECT_NAME" >&2; exit 2 ;; esac
+# A restored frontend may share the host's external proxy network when the live
+# Compose file is used. Give it a project-specific alias so the live Caddy
+# upstream can never resolve to the isolated restore acceptance stack.
+export MANTLE_AMAZON_PROXY_ALIAS="${project}-frontend"
 compose() {
   docker compose --project-name "$project" --env-file "$compose_env_file" --file "$compose_file" "$@"
+}
+node_tool() {
+  "$repository_dir/ops/run-node-tool.sh" "$repository_dir" "$backup_dir" ro "$@"
 }
 if [ -n "$(compose ps -aq)" ]; then echo "restore project already has containers: $project" >&2; exit 2; fi
 for volume in erplite_db_data erplite_invoices; do
@@ -20,7 +33,7 @@ for volume in erplite_db_data erplite_invoices; do
   fi
 done
 
-node "$repository_dir/ops/verify-amazon-pilot-backup.mjs" "$backup_dir"
+node_tool "$repository_dir/ops/verify-amazon-pilot-backup.mjs" "$backup_dir"
 compose up -d --wait db
 compose exec -T db pg_restore -U erplite -d erplite --no-owner --no-acl --exit-on-error \
   <"$backup_dir/data/core-schema.dump"
@@ -41,7 +54,7 @@ docker run --rm \
 
 compose up -d --wait backend frontend
 manifest_sha=$(sha256sum "$backup_dir/manifest.json" | cut -d ' ' -f 1)
-revision=$(node -e 'const m=require(process.argv[1]); process.stdout.write(m.repository_revision)' "$backup_dir/manifest.json")
+revision=$(node_tool -e 'const m=require(process.argv[1]); process.stdout.write(m.repository_revision)' "$backup_dir/manifest.json")
 compose exec -T db psql -U erplite -d erplite -X -qAt -v ON_ERROR_STOP=1 -c \
   "INSERT INTO pilot_backup_verifications
      (profile, outcome, manifest_sha256, repository_revision, details)
@@ -58,6 +71,10 @@ status=$(compose exec -T db psql -U erplite -d erplite -X -qAt -v ON_ERROR_STOP=
      'raw_archives', (SELECT count(*) FROM amazon_report_documents),
      'snapshots', (SELECT count(*) FROM amazon_metric_snapshots),
      'analyses', (SELECT count(*) FROM amazon_analysis_results),
+     'ai_assessments', (SELECT count(*) FROM amazon_ai_strategy_assessments),
+     'business_knowledge', (SELECT count(*) FROM mantle_business_knowledge),
+     'product_mapping_revisions', (SELECT count(*) FROM amazon_product_mapping_revisions),
+     'provider_secrets', (SELECT count(*) FROM pilot_provider_secrets),
      'automatic_schedules', (SELECT count(*) FROM amazon_report_schedules WHERE enabled)
    ) FROM active")
 case "$status" in
@@ -73,6 +90,14 @@ case "$status" in
   *)
     compose stop backend frontend >/dev/null
     echo "restored pilot unexpectedly enabled an automatic schedule; application services stopped" >&2
+    exit 1
+    ;;
+esac
+case "$status" in
+  *'"provider_secrets": 0'*) ;;
+  *)
+    compose stop backend frontend >/dev/null
+    echo "restored pilot unexpectedly contains provider credentials; application services stopped" >&2
     exit 1
     ;;
 esac

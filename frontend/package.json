@@ -7,10 +7,12 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "test:pilot:e2e": "playwright test --project=chromium",
-    "lint": "oxlint",
+    "lint": "oxlint && npm run lint:design",
+    "lint:design": "simple-business-lint --rules icons src",
     "preview": "vite preview"
   },
   "dependencies": {
+    "@itmitalles-de/simple-business-design-system": "https://github.com/itmitalles-de/simple-business-design-system/releases/download/v0.1.1/itmitalles-de-simple-business-design-system-0.1.1.tgz",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
     "react-router-dom": "^7.18.2"

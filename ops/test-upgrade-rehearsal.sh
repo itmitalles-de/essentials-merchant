@@ -17,10 +17,21 @@ docker run --rm -d --name "$container" \
     -p 127.0.0.1::5432 postgres:16-alpine@sha256:cf78e76683b9ca8c5733cbbdce6c9262b45b6767934dd0a95e671f9a0fc20685 >/dev/null
 
 attempt=0
+until docker logs "$container" 2>&1 \
+    | grep -Fq 'PostgreSQL init process complete; ready for start up.'; do
+    attempt=$((attempt + 1))
+    if [ "$attempt" -ge 100 ]; then
+        echo 'upgrade rehearsal database initialization did not complete' >&2
+        exit 1
+    fi
+    sleep 0.2
+done
+
+attempt=0
 until docker exec "$container" pg_isready -U merchant_upgrade -d merchant_upgrade >/dev/null 2>&1; do
     attempt=$((attempt + 1))
     if [ "$attempt" -ge 100 ]; then
-        echo 'upgrade rehearsal database did not become ready' >&2
+        echo 'upgrade rehearsal database did not become ready after initialization' >&2
         exit 1
     fi
     sleep 0.2
@@ -106,11 +117,43 @@ BEGIN
             WHERE raw_content = decoded_content AND sha256 = decoded_sha256) <> 1 THEN
         RAISE EXCEPTION 'marketplace raw archive was not migrated losslessly';
     END IF;
-    IF (SELECT max(version) FROM _sqlx_migrations) <> 15 THEN
+    IF (SELECT max(version) FROM _sqlx_migrations) <> 22 THEN
         RAISE EXCEPTION 'unexpected final migration version';
+    END IF;
+    IF to_regclass('public.amazon_ai_strategy_assessments') IS NULL THEN
+        RAISE EXCEPTION 'AI strategy assessment store was not created';
+    END IF;
+    IF to_regclass('public.uq_amazon_ai_strategy_assessments_week') IS NULL THEN
+        RAISE EXCEPTION 'weekly AI strategy uniqueness boundary was not created';
+    END IF;
+    IF to_regclass('public.pilot_provider_secrets') IS NULL THEN
+        RAISE EXCEPTION 'write-only provider credential store was not created';
+    END IF;
+    IF NOT EXISTS (
+        SELECT 1
+        FROM pg_constraint
+        WHERE conname = 'amazon_manual_report_imports_report_type_check'
+          AND pg_get_constraintdef(oid) LIKE '%AMAZON_ADS_SPONSORED_PRODUCTS_CAMPAIGN_REPORT%'
+    ) THEN
+        RAISE EXCEPTION 'manual Ads report boundary was not created';
+    END IF;
+    IF to_regclass('public.mantle_business_knowledge') IS NULL THEN
+        RAISE EXCEPTION 'immutable business-knowledge store was not created';
+    END IF;
+    IF to_regclass('public.amazon_product_mapping_revisions') IS NULL THEN
+        RAISE EXCEPTION 'append-only product-mapping store was not created';
+    END IF;
+    IF NOT EXISTS (
+        SELECT 1
+        FROM pg_trigger
+        WHERE tgname = 'trg_prevent_amazon_product_mapping_revision_mutation'
+          AND tgrelid = 'amazon_product_mapping_revisions'::regclass
+          AND NOT tgisinternal
+    ) THEN
+        RAISE EXCEPTION 'product-mapping append-only trigger was not created';
     END IF;
 END $$;
 SELECT 'upgrade-rehearsal-ok';
 SQL
 
-echo 'Upgrade rehearsal passed: v10 synthetic data migrated losslessly through the current schema.'
+echo 'Upgrade rehearsal passed: v10 synthetic data migrated losslessly through schema v22.'

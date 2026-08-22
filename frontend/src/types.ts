@@ -390,11 +390,212 @@ export interface AmazonReportRun {
   updated_at: string;
 }
 
+export interface MarketplaceImportMetric {
+  metric_name: string;
+  dimension_type: string;
+  dimension_key: string;
+  value_numeric: string | number;
+  unit: string;
+  currency_code: string | null;
+}
+
+export interface MarketplaceImportPreview {
+  sha256: string;
+  raw_bytes: number;
+  detected_format: string;
+  report_type: string;
+  parser_version: string;
+  marketplace_id: string;
+  period_start: string;
+  period_end: string;
+  granularity: string;
+  timezone: string;
+  currency_code: string;
+  data_freshness: string | null;
+  confirmation_required: boolean;
+  operator_confirmed: string[];
+  metadata_provenance: Record<string, "report" | "operator_confirmed" | "missing">;
+  missing_fields: string[];
+  warnings: string[];
+  metrics: MarketplaceImportMetric[];
+}
+
+export interface MarketplaceImportResult {
+  outcome: "imported" | "already_imported";
+  run_id: string;
+  analysis_id: string | null;
+  comparison_generated: boolean;
+  preview: MarketplaceImportPreview;
+}
+
+export interface MarketplaceAdsImportPreview extends MarketplaceImportPreview {
+  ad_product: "SPONSORED_PRODUCTS";
+  report_level: "campaign";
+  attribution_window_days: 7 | 14 | 30 | null;
+}
+
+export interface MarketplaceAdsImportResult extends Omit<MarketplaceImportResult, "preview"> {
+  preview: MarketplaceAdsImportPreview;
+}
+
+export interface MarketplaceAnalysisSummary {
+  id: string;
+  job_id: string;
+  strategy: string;
+  model_name: string | null;
+  prompt_version: string;
+  payload_sha256: string;
+  result: Record<string, unknown>;
+  created_at: string;
+}
+
+export interface MarketplaceStrategyStatus {
+  available: boolean;
+  reason: "feature_disabled" | "api_key_missing" | null;
+  provider: "openai";
+  model: string;
+  prompt_version: string;
+  response_storage: "store_false";
+  input_boundary: "separate_public_research_then_curated_business_context_identifier_free_product_aggregates_history_and_handover";
+  cadence: "manual_weekly";
+  calendar_timezone: "Europe/Berlin";
+  automatic_execution: false;
+  mutation_capability: false;
+  public_web_research: true;
+  max_web_search_calls: number;
+}
+
+export interface MarketplaceStrategyFinding {
+  title: string;
+  rationale: string;
+  confidence: "low" | "medium" | "high";
+  evidence_refs: string[];
+}
+
+export interface MarketplaceStrategyHypothesis {
+  statement: string;
+  rationale: string;
+  confidence: "low" | "medium" | "high";
+  evidence_needed: string[];
+  evidence_refs: string[];
+}
+
+export interface MarketplaceStrategyAction {
+  title: string;
+  rationale: string;
+  priority: "now" | "next" | "later";
+  expected_signal: string;
+  risks: string[];
+  evidence_refs: string[];
+}
+
+export interface MarketplaceStrategyPublicSignal {
+  title: string;
+  observed_fact: string;
+  possible_consumption_impact: string;
+  confidence: "low" | "medium" | "high";
+  uncertainty: string;
+  evidence_refs: string[];
+}
+
+export interface MarketplaceStrategyPublicSource {
+  ref: string;
+  title: string;
+  url: string;
+}
+
+export interface MarketplaceStrategyAssessment {
+  executive_summary: string;
+  assessment: string;
+  opportunities: MarketplaceStrategyFinding[];
+  risks: MarketplaceStrategyFinding[];
+  hypotheses: MarketplaceStrategyHypothesis[];
+  recommended_actions: MarketplaceStrategyAction[];
+  public_context?: {
+    competitor_signals: MarketplaceStrategyPublicSignal[];
+    category_trends: MarketplaceStrategyPublicSignal[];
+    global_events_and_crises: MarketplaceStrategyPublicSignal[];
+  };
+  public_sources?: MarketplaceStrategyPublicSource[];
+  open_questions: string[];
+  limitations: string[];
+  handover: {
+    continuity_summary: string;
+    priorities_until_next_run: string[];
+    evidence_for_next_run: string[];
+    next_run_checks: string[];
+  };
+}
+
+export interface MarketplaceStrategyView {
+  anchor_analysis_id: string | null;
+  current_payload_sha256: string | null;
+  assessment_payload_sha256: string | null;
+  status: MarketplaceStrategyStatus;
+  can_run: boolean;
+  block_reason: "weekly_limit_reached" | "business_knowledge_missing" | "no_analysis_data" | "feature_disabled" | "api_key_missing" | null;
+  week_start: string;
+  next_available_at: string;
+  source_analysis_count: number;
+  product_observed_count: number;
+  product_mapped_count: number;
+  product_context_count: number;
+  business_knowledge_imported: boolean;
+  business_knowledge_source_count: number;
+  business_knowledge_entry_count: number;
+  business_knowledge_sha256: string | null;
+  previous_run_context: boolean;
+  cached: boolean;
+  assessment: MarketplaceStrategyAssessment | null;
+  assessment_week_start: string | null;
+  assessment_model?: string | null;
+  assessment_prompt_version?: string | null;
+  provider_request_id_redacted: string | null;
+  input_tokens: number | null;
+  output_tokens: number | null;
+  created_at: string | null;
+}
+
+export interface AmazonProductMapping {
+  id: string;
+  connection_id: string;
+  marketplace_id: string;
+  child_asin: string;
+  revision: number;
+  brand: "mantle" | "sphagnum" | "shared" | "other";
+  product_family: string;
+  variant: string;
+  pack_size: string | null;
+  sku: string | null;
+  evidence_source: "mantle_wiki" | "seller_central" | "operator_confirmed";
+  enabled: boolean;
+  created_at: string;
+}
+
+export interface ObservedAmazonProduct {
+  connection_id: string;
+  marketplace_id: string;
+  child_asin: string;
+  first_seen: string | null;
+  last_seen: string | null;
+  period_count: number;
+}
+
+export interface AmazonProductMappingView {
+  coverage: {
+    observed_products: number;
+    mapped_products: number;
+    enabled_mapped_products: number;
+  };
+  mappings: AmazonProductMapping[];
+  observed: ObservedAmazonProduct[];
+}
+
 export interface MarketplaceOverview {
   connections: AmazonConnectionSummary[];
   schedules: AmazonReportSchedule[];
   recent_runs: AmazonReportRun[];
-  analyses: Array<{ id: string; job_id: string; strategy: string; model_name: string | null; prompt_version: string; payload_sha256: string; result: Record<string, unknown>; created_at: string }>;
+  analyses: MarketplaceAnalysisSummary[];
   report_types: AmazonReportDefinition[];
 }
 
@@ -426,4 +627,18 @@ export interface AmazonPilotStatus {
     details: Record<string, unknown>;
     verified_at: string;
   } | null;
+}
+
+export interface ProviderCredentialStatus {
+  configured: boolean;
+  configured_fields: string[];
+  read_only_approved: boolean;
+  updated_at: string | null;
+}
+
+export interface PilotProviderSecretsStatus {
+  storage_available: boolean;
+  values_are_write_only: true;
+  openai: ProviderCredentialStatus;
+  amazon: ProviderCredentialStatus;
 }

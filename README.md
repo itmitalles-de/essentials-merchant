@@ -1,7 +1,8 @@
 # Essentials+ Merchant
 
 Essentials+ Merchant is currently scoped to one internal pilot: **read-only Amazon Marketplace
-Intelligence**. It acquires approved Amazon Reports data, preserves immutable raw evidence, creates
+Intelligence**. It imports official Amazon Reports manually without credentials, can optionally
+acquire the same report through an approved SP-API gate, preserves immutable raw evidence, creates
 versioned deterministic snapshots and analyses, and exports only PII-minimized aggregates.
 
 The retained ERP and Commerce implementation remains in this repository and stays covered by its
@@ -37,13 +38,16 @@ Admin UI  ->  Core API  ->  PostgreSQL + immutable Amazon archive
                  +---- LWA + Amazon Reports API only (explicit live gate)
 ```
 
-Vendure, Storefront, payment, shipping, carrier, and DATEV services are absent from
-`compose.amazon-pilot.yml`. Their code, databases, compatibility identifiers, ports, fakes, and
-tests remain available to the retained full-stack test topology.
+Vendure, Storefront, payment, shipping, carrier, and DATEV services are absent from both
+`compose.amazon-pilot.yml` and the Mantle live definition `compose.mantle-amazon.yml`. Their code,
+databases, compatibility identifiers, ports, fakes, and tests remain available to the retained
+full-stack test topology.
 
 ## Safe local start
 
-Prepare a local ignored environment from `.env.amazon-pilot.example`. The launcher defaults to a
+Prepare a local ignored environment from `.env.amazon-pilot.example`, including
+a unique 32-byte key encoded as 64 lowercase hexadecimal characters for
+`PILOT_SECRETS_KEY`. The launcher defaults to a
 dry configuration check, fixes the Compose project name to
 `essentials-merchant-amazon-pilot`, prints no secrets, and never deletes data:
 
@@ -56,6 +60,29 @@ service set and persisted module state as machine-readable JSON. It stops the ap
 and exits nonzero if a Commerce, payment, shipping, or DATEV service/module is unexpectedly active
 or an Amazon schedule exists. Full operating instructions are in
 [docs/OPERATIONS.md](docs/OPERATIONS.md).
+
+The Mantle deployment uses the separate fixed project `essentials-merchant-amazon`, exact
+Git-SHA image tags, and a loopback-only frontend port. Its launcher is
+`scripts/start-mantle-amazon.sh`; operator and data-handling details are in
+[the Mantle pilot guide](docs/MANTLE_AMAZON_PILOT.md) and
+[the manual import guide](docs/MANUAL_REPORT_IMPORT.md).
+
+## Manual report path
+
+The immediately usable path accepts official `GET_SALES_AND_TRAFFIC_REPORT` and aggregate
+Sponsored Products campaign-report JSON, CSV, or TSV up to 10 MiB. Preview is side-effect-free and
+exposes the detected format, SHA-256, report type, period, marketplace, granularity, timezone,
+currency, parser version, missing fields, and aggregate metrics. Ads imports additionally require
+an explicit 7-, 14-, or 30-day attribution window. The operator confirms those values before one
+atomic transaction stores the immutable raw bytes, provenance, snapshot, metrics, and analysis
+job. Search-term, keyword, targeting, ASIN, SKU, and product-level Ads reports are rejected;
+campaign identifiers never leave the raw archive.
+
+Byte-identical retries return the original run. Different bytes for the same semantic period are
+rejected as a conflict. Two non-overlapping periods compare only when marketplace, report type,
+granularity, parser, timezone, currency, and period length match. Aggregate JSON, Markdown, and CSV
+exports visibly separate facts, supported derivations, hypotheses, possible measures,
+uncertainty, missing evidence, and open questions. ZIP is intentionally unsupported.
 
 ## Amazon transport boundary
 
@@ -81,7 +108,8 @@ of an analytical read model.
 ## Reports, archive, and analysis
 
 The retained registry and fixture parser support several historical report fixtures, but the first
-allowed live request is only `GET_SALES_AND_TRAFFIC_REPORT`. Live execution additionally requires:
+allowed live **network request** is only `GET_SALES_AND_TRAFFIC_REPORT`. SP-API execution
+additionally requires:
 
 - administrator role and a manual one-shot request;
 - one explicitly approved seller hash, region, and marketplace;
@@ -98,14 +126,15 @@ uncertainty, missing data, and evidence references. Actions are suggestions only
 executed.
 
 The admin banner reads **Essentials+ Merchant - Amazon Intelligence Pilot - Read-only**. The UI
-shows exact active/disabled modules, redacted seller ID, region, marketplaces, role status, recent
-report/retry/rate-limit state, archive hashes and sizes, parser/snapshot compatibility, missing
-data, analyses, and the most recent backup verification. It never displays tokens, client secrets,
-refresh tokens, buyer data, or full Amazon payloads.
+implements upload, preview, confirmation, atomic import, second-period comparison, and three
+aggregate export formats. It also shows exact active/disabled modules, redacted seller ID, region,
+marketplaces, role status, report/retry/rate-limit state, archive hashes and sizes,
+parser/snapshot compatibility, missing data, analyses, and the most recent backup verification. It
+never displays tokens, client secrets, refresh tokens, buyer data, or full Amazon payloads.
 
 Synthetic fixtures and the fake SP-API prove repository behavior only. The real staging gate is
 currently **BLOCKED** until approved credentials, seller roles, marketplace participation, and
-encrypted archive storage are supplied. See
+encrypted archive storage are supplied. This does not block manual upload. See
 [Amazon staging gate](docs/operations/AMAZON_STAGING_GATE.md). Raw reports and business metrics must
 never be committed or copied into a general PR description.
 
@@ -118,10 +147,25 @@ correction invoices, immutable accounting entries, provider-neutral payment/ship
 synthetic providers remain implemented and tested.
 
 None of those retained mutation paths is part of the pilot. Stripe adapters/webhooks, DHL and DPD
-adapters/labels, DATEV activation, additional marketplaces, external AI, automated procurement,
+adapters/labels, DATEV activation, additional marketplaces, automated procurement,
 multi-tenancy, and Kubernetes are explicitly frozen for this milestone. See
 [deferred external gates](docs/DEFERRED_EXTERNAL_GATES.md) and
 [deferred capabilities](docs/NICE_TO_HAVE.md).
+
+The Mantle AI-first view exposes one `Analyse` button without a login form. Its
+short-lived session is restricted to Amazon pilot routes. With approved SP-API
+credentials, the click first requests one seven-day Sales and Traffic report;
+otherwise it uses manual imports. It sends only a hash-confirmed closed
+aggregate-history DTO, carries the last validated handover forward, and permits
+one successful Europe/Berlin calendar-week run. A separate first Responses call
+uses at most three built-in web-search calls with only Mantle's public category
+brief to research competitors, category demand, global trends, and crises. The
+second, tool-free call combines the server-validated public sources with the
+closed aggregate history. Internal Amazon evidence never enters a web query,
+and neither call can mutate Amazon or Merchant. Provider values are entered
+write-only and encrypted under a host-only key. A separately billed project API
+key is required; a ChatGPT subscription is not an API credential. See
+[the strategy AI gate](docs/STRATEGY_AI_GATE.md).
 
 ## Verification
 
@@ -131,6 +175,7 @@ disposable PostgreSQL user able to create test databases:
 ```bash
 cd backend
 cargo fmt --all -- --check
+cargo audit
 SQLX_OFFLINE=true cargo clippy --locked --workspace --all-targets -- -D warnings
 DATABASE_URL=postgres://USER:PASSWORD@HOST/DISPOSABLE_DB SQLX_OFFLINE=false cargo sqlx migrate run --source crates/db/migrations
 DATABASE_URL=postgres://USER:PASSWORD@HOST/DISPOSABLE_DB SQLX_OFFLINE=false cargo sqlx prepare --workspace --check
@@ -156,12 +201,15 @@ node scripts/check-amazon-operation-allowlist.mjs
 node scripts/check-dependency-audit.mjs artifacts/security/dependency-audit.json
 node scripts/scan-secrets.mjs
 npm --prefix frontend run test:pilot:e2e
+node scripts/verify-manual-amazon-import.mjs
 ops/test-amazon-pilot-backup-restore.sh
 ```
 
-The Playwright/axe flow logs in as administrator, verifies the banner and exact module state, runs a
-fake report through polling/snapshot/analysis/export, probes disabled mutation routes, and rejects
-serious/critical accessibility findings. It does not start or test the Storefront. Existing clean
+The Playwright/axe flow obtains the scoped no-login pilot session, verifies its
+ERP-route denial and the exact pilot state, runs both the fake transport and the
+in-memory two-period manual UI workflow through analysis/export,
+probes disabled mutation routes, and rejects serious/critical accessibility findings. It does not
+start or test the Storefront. Existing clean
 vertical, failure/recovery, full backup/restore, and upgrade rehearsals remain required and are not
 weakened. See the [verification matrix](docs/VERIFICATION_MATRIX.md) and
 [failure matrix](docs/FAILURE_MATRIX.md).
@@ -170,8 +218,9 @@ weakened. See the [verification matrix](docs/VERIFICATION_MATRIX.md) and
 
 The pilot backup contains the Core schema, allowlisted module/audit records, immutable Amazon raw
 archives, normalized snapshots, analyses, parser versions, transport hashes, document subtree,
-Git commit, and image digests. It explicitly excludes LWA refresh tokens, client/access secrets,
-buyer data, and all retained Commerce/payment/shipping business tables.
+Git commit, and image digests. It explicitly excludes the encrypted provider
+credential rows as well as LWA refresh tokens, client/access secrets, buyer
+data, and all retained Commerce/payment/shipping business tables.
 
 Restore refuses any non-empty target project. The synthetic rehearsal uses a raw report larger
 than 2 MiB and compares report inventory, raw hashes, parser versions, snapshots, analysis,
@@ -193,7 +242,8 @@ and review date is recorded in [docs/security/VENDURE_ADVISORIES.md](docs/securi
 
 ## Next safe external action
 
-After an authorized operator supplies the ignored secret and approval files, run the staging gate
-in validation mode. Only after every local and authorization check passes may that operator invoke
-one explicit manual Sales & Traffic request. A second compatible snapshot is permitted only after
-the first real job succeeds; no scheduler or write integration is enabled.
+Use the manual Sales & Traffic and aggregate Sponsored Products campaign-report imports
+immediately. If an authorized operator later supplies the ignored SP-API secret and approval files,
+run the staging gate in validation mode. Only after every local and authorization check passes may
+that operator invoke one explicit network request. Amazon Ads API access is a separate future gate;
+the current Ads path is manual report evidence only. No scheduler or write integration is enabled.

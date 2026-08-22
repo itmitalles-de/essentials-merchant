@@ -114,16 +114,19 @@ analyses, transport observations, and backup verifications. It archives only the
 document subtree and records file hashes, Git revision, parser versions, and declared image
 digests. Its manifest explicitly excludes Amazon tokens/secrets, customer/order/invoice/payment/
 shipping data, buyer data, Vendure data, and Storefront data.
+`pilot_provider_secrets` schema is present, but its data is explicitly excluded
+even though it is encrypted. Restore acceptance requires the table to be empty;
+OpenAI and Amazon credentials must be deliberately entered again afterward.
 
 Before quiescing services, the backup fails closed if a live connection contains anything other
 than a constrained logical secret-reference name or if a raw archive belongs to a report type
-outside the aggregate Sales & Traffic pilot. It does not silently copy a historical potential-PII
-archive into a pilot backup.
+outside the exact Sales & Traffic and aggregate Sponsored Products campaign allowlist. It does not
+silently copy a historical potential-PII archive into a pilot backup.
 
 `ops/restore-amazon-pilot.sh` refuses a non-empty destination project. The automated rehearsal
-seeds a report larger than 2 MiB, restores into an empty project, and compares report inventory,
-raw hashes, parser/snapshot/analysis fingerprints, audit, exact module state, schedule state, and
-the read-only pilot profile:
+seeds a Sales & Traffic report larger than 2 MiB plus an aggregate Ads campaign report, restores
+into an empty project, and compares report inventory, both raw hashes, parser/snapshot/analysis
+fingerprints, audit, exact module state, schedule state, and the read-only pilot profile:
 
 ```bash
 ops/test-amazon-pilot-backup-restore.sh
@@ -146,10 +149,14 @@ migrations and Core events are separate. Keep `synchronize: false` in every envi
 ## Marketplace operations
 
 The pilot profile enables the Marketplace Intelligence module, but no acquisition runs without an
-administrator-created connection and explicit manual request. Automatic schedules remain disabled.
+explicit operator action. Automatic schedules remain disabled.
 The synthetic demo uses `fixture:*` references and never accesses the environment secret mechanism.
-A live secret reference resolves only server-side from
-`AMAZON_SECRET_<NORMALIZED_REFERENCE>` and contains LWA refresh token, client ID, and client secret.
+A Mantle live connection is created atomically when the write-only GUI stores
+LWA refresh token, client ID, client secret, seller, marketplace, and region.
+The three LWA values are AES-256-GCM encrypted under the host-only
+`PILOT_SECRETS_KEY`; the database sees only ciphertext and the browser cannot
+read it back. `AMAZON_SECRET_<NORMALIZED_REFERENCE>` remains a legacy host-only
+fallback for non-Mantle deployments.
 
 The required external staging gate is:
 
@@ -169,10 +176,218 @@ archive attestation, exact seller/region/marketplace approval, and a manual `--e
 automatic scheduler is used. Until those external facts are provided, the gate is `BLOCKED` and no
 fixture or local run may be described as Amazon staging.
 
+### Weekly AI analysis
+
+The AI-first dashboard exposes one `Analyse` button. If the approved live Amazon
+connection is configured, the click first requests exactly one Sales and
+Traffic report for the last seven completed UTC days and waits for the bounded
+worker pipeline. Otherwise it uses existing manual imports. It then reads every
+currently eligible bounded aggregate analysis, includes the last validated AI
+handover, and runs two separated requests against the fixed OpenAI Responses
+endpoint. The first can make at most three built-in web-search calls and sees
+only Mantle's public company/category brief. The second has no tools and
+receives the closed internal aggregate DTO plus the bounded, cited public
+research. A successful row
+sets the Europe/Berlin Monday `week_start`; the database unique index and UI
+then disable another successful run until the next Monday 00:00 local time.
+Provider failures create no row and leave retry possible.
+
+The aggregate synthesis window is a maximum of thirteen newest-first weekly
+periods. A full-baseline run can therefore use the complete 91-day history
+held by the service; every later weekly run adds current evidence and the last
+validated handover, so the workflow remains incremental without a second
+button or scheduler.
+
+The settings page also lists Child ASINs observed in live Sales and Traffic
+snapshots. An administrator may assign a reviewed business area, product
+family, variant, optional pack size, optional internal SKU, evidence source,
+and enabled state. Saving requires the confirmation checkbox and creates an
+append-only revision. Verify the coverage count before a paid run. Child ASIN
+and SKU are for internal lookup only; the synthesis payload contains the
+reviewed labels and aggregate metrics, never either identifier. This is a
+local Merchant metadata write and does not call or mutate Amazon.
+
+Before the first paid run, import the reviewed Mantle/Sphagnum business bundle
+exactly once through `POST /api/marketplace/strategy/knowledge`. The JSON body
+must contain `confirmed_business_only: true`,
+`confirmed_no_secrets_or_pii: true`, and the bounded typed `knowledge` object
+described in `DATA_HANDLING.md`. Keep the generated bundle outside Git and send
+it directly to the internal HTTPS endpoint; do not print its contents or the
+pilot bearer token. Confirm with `GET /api/marketplace/strategy/knowledge` that
+`imported` is true, `raw_documents_stored` and `mutable` are false, and the
+expected source/entry counts and hash are present. An identical second POST
+must return `cached: true`; a different baseline must return conflict.
+
+The dashboard's terminal-style activity view contains only fixed, sanitized
+phase events, aggregate counts/hash prefixes, provider token counts, and the
+validated result state. It never renders report rows, secrets, signed URLs,
+provider request bodies, or hidden model reasoning. Provider-response failures
+distinguish public-research validation from final-assessment validation, and
+neither failure consumes the weekly success window.
+Each provider request has a 120-second ceiling. Only the exact weekly endpoint
+has a 270-second frontend-proxy read timeout so both sequential calls can
+finish; all other API routes retain the shorter proxy default.
+
+Set `OPENAI_STRATEGY_ENABLED=true`, keep the 32-byte provider master key only in
+the mode-0600 host environment, then enter the project-scoped pay-per-use key
+through the write-only GUI. Before the first provider call, verify that a stack
+containing only `SYNTHETIC-` acceptance marketplaces reports
+`no_analysis_data`; synthetic evidence is never eligible provider context.
+Then use one explicitly authorized real aggregate analysis to verify the status
+endpoint, the disabled same-week button, idempotent repeat response, fixed
+KPI/strategy/public-context/source/handover structure, redacted logs, and the
+immutable business baseline plus weekly row. One weekly click can incur two Responses requests plus up
+to three web-search tool calls, so set the OpenAI project budget accordingly.
+Never print the environment or key. Without Amazon SP-API credentials, new
+Seller Central data still enters through manual import.
+
+## Mantle Amazon live deployment
+
+The Mantle service uses Compose project `essentials-merchant-amazon` and
+`compose.mantle-amazon.yml`. Its service allowlist is exactly `db`, `backend`,
+and `frontend`. Backend and frontend image tags must equal the full deployed Git
+SHA; the PostgreSQL image is pinned by digest. The frontend binds only to
+`127.0.0.1:18090` by default and additionally joins the existing external
+`proxy_net` so Caddy can reach the unique alias
+`essentials-merchant-amazon-frontend`. Publish
+it only through a Caddy route restricted to private/LAN/VPN source ranges.
+An empty-target restore automatically substitutes a project-specific proxy
+alias, so the live Caddy upstream cannot resolve to the acceptance stack.
+
+The active Mantle route is `https://merchant.mantle-climbing.de`; the AI-first
+target is `https://ai-marketing.mantle-climbing.de`. Both must use internal DNS
+A records for `192.168.178.15`; public DNS must not publish that private address.
+The AI hostname and normal HTTPS resolution were verified during the 2026-08-20
+live acceptance. Both routes target the same frontend alias and use the same
+LAN/VPN-only Caddy matcher. The AI hostname shows no login. Its same-origin
+frontend obtains a 12-hour Amazon-only token, always replaces stale browser
+tokens, and cannot reach ERP or raw-report routes. The normal login endpoint is
+disabled while `MANTLE_PILOT_NO_LOGIN=true`. This means every LAN/VPN client
+allowed by Caddy can run analysis and replace write-only credentials. The
+private runtime environment is
+`/opt/essentials-merchant-amazon/.env.mantle-amazon` with the same mode.
+
+The Mantle Homer dashboard may link an `AI Amazon Marketing` tile in its existing
+E-Commerce group to the AI-first route. Its config is a live bind mount, so the
+tile does not require a dashboard-container restart. The accepted tile points to
+`https://ai-marketing.mantle-climbing.de`; the working fallback remains
+`https://merchant.mantle-climbing.de/ai-marketing`.
+
+Before every deployment, capture without rendering environment values:
+
+- `docker compose ls`;
+- all container IDs, image IDs, creation times, status, and restart counts;
+- mounts belonging to the target project;
+- `df -h` and `docker system df`;
+- current images for the three target services;
+- the active Caddy route and its container/process ID;
+- other running build, pull, update, or deployment processes.
+
+Do not continue while another deployment is changing the target project. Never
+use `docker compose down -v`, `docker system prune`, a restart of all containers,
+or a blanket Caddy restart. Only `essentials-merchant-amazon` resources may be
+changed. Validate Caddy configuration first, then use its graceful reload
+mechanism; compare all non-target container IDs and restart counts afterwards.
+
+The private `.env.mantle-amazon` must have mode `0600` and a
+`MERCHANT_GIT_SHA` equal to the checked-out commit. It deliberately has no
+placeholder Amazon or OpenAI credential. It must contain one random 64-hex
+`PILOT_SECRETS_KEY`; provider values are entered in the GUI and are not printed.
+Configuration validation is the default:
+
+```bash
+scripts/start-mantle-amazon.sh --check --env-file .env.mantle-amazon
+```
+
+An explicitly authorized deployment uses:
+
+```bash
+scripts/start-mantle-amazon.sh --start --env-file .env.mantle-amazon
+```
+
+The script builds only the allowlisted images, waits for health, checks the
+persisted module allowlist, and verifies that automatic Amazon schedules equal
+zero. It stops only the target application services if the profile fails closed.
+
+The pilot backup and restore scripts do not require a system-wide Node.js
+installation. `ops/run-node-tool.sh` uses the host runtime when available and
+otherwise runs the manifest tools in the digest-pinned Node 22 image with no
+network, a read-only root filesystem, the repository mounted read-only, and
+only the selected backup directory mounted with the required access. Set
+`MERCHANT_NODE_RUNTIME=container` in a rehearsal to exercise that fallback
+explicitly; it is not a production secret or application setting.
+
+### Live backup
+
+Create a new host-restricted directory and run the pilot backup against the live
+Compose file:
+
+```bash
+COMPOSE_PROJECT_NAME=essentials-merchant-amazon \
+COMPOSE_ENV_FILE=.env.mantle-amazon \
+PILOT_COMPOSE_FILE=compose.mantle-amazon.yml \
+ops/backup-amazon-pilot.sh /secure/new/path/mantle-amazon-backup-YYYYMMDD
+```
+
+The backup briefly stops only this project's backend and frontend; PostgreSQL
+stays up. The trap restarts those two services even if backup validation fails.
+
+### Empty-target restore acceptance
+
+Use a never-before-used project name and an unused loopback port. The restore
+script refuses existing containers or volumes and never overwrites production:
+
+```bash
+COMPOSE_PROJECT_NAME=essentials-merchant-amazon-restore-YYYYMMDD \
+COMPOSE_ENV_FILE=.env.mantle-amazon \
+PILOT_COMPOSE_FILE=compose.mantle-amazon.yml \
+RESTORE_FRONTEND_PORT=18091 \
+ops/restore-amazon-pilot.sh /secure/path/mantle-amazon-backup-YYYYMMDD
+```
+
+Acceptance compares raw SHA-256, run/snapshot/metric/analysis counts, parser
+versions, module state, zero schedules, and HTTP readiness. Retain or remove the
+isolated restore project only under a separate, explicit data-destruction
+decision; the restore procedure itself does not delete volumes.
+
+### Synthetic live acceptance
+
+The first live data path uses two in-memory JSON comparison reports plus one
+CSV and one TSV probe, all marked as synthetic. It must verify the first import
+is idempotent, produce a comparison, and generate JSON, Markdown, and CSV
+exports without writing raw report bytes to disk. Record only hashes, run IDs,
+aggregate test values, export hashes, and the deployed Git/image IDs.
+
+Also import two in-memory synthetic Sponsored Products campaign CSV periods,
+confirm the attribution window, verify derived CTR/CPC/ROAS/ACOS, generate a
+comparison, and repeat the second byte stream to prove idempotence. Confirm that
+the UI and summary payload contain no campaign name/ID and that search-term or
+product-level reports are rejected. This manual Ads acceptance must not call an
+Ads API or require Ads credentials.
+
+Run `scripts/verify-manual-amazon-import.mjs` with the internal base URL. It
+obtains the same scoped no-login pilot session first and only falls back to
+administrator credentials on non-Mantle deployments. The script imports the
+newer JSON period first, verifies an
+idempotent retry, creates the comparison after the older period, imports the
+CSV/TSV probes, hashes all three summary formats, and confirms that raw download
+and business mutations are blocked. It never writes report bytes or credentials
+to disk or stdout.
+
+The Mantle pilot completed one authorized real Sales and Traffic acquisition
+after this acceptance. Its local path, raw bytes, ASIN/SKU values, and business
+metrics were not recorded in Git or deployment logs. Future environments must
+still stop after the synthetic run unless their own authorization is proven.
+
 ## External validation gates
 
-- Amazon: no approved seller credentials, roles, or marketplace participation were supplied; no
-  real request has run.
+- Amazon: Mantle's approved private-app credentials and one marketplace are
+  configured in the encrypted write-only store. One bounded Sales and Traffic
+  request completed through analysis on 2026-08-20. No scheduler, Buyer/Order
+  PII, Ads API, or mutation client was enabled.
+- OpenAI: one paid aggregate assessment completed successfully. The dedicated
+  project budget and applicable provider data-control/retention policy remain
+  operator-owned administrative checks.
 - Stripe, payment webhooks, DHL, DPD, and carrier labels: ports/fakes are retained, but all adapters
   and account work are frozen until after a successful Amazon pilot.
 - DATEV: retained renderer stays disabled; checking-program/test-client work is frozen for this

@@ -4,7 +4,7 @@
 
 use std::collections::BTreeMap;
 
-use chrono::{DateTime, Duration, Utc};
+use chrono::{DateTime, Duration, NaiveDate, Utc};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -13,6 +13,7 @@ use sqlx::{PgPool, Postgres, Transaction};
 use uuid::Uuid;
 
 pub const SALES_AND_TRAFFIC: &str = "GET_SALES_AND_TRAFFIC_REPORT";
+pub const ADS_SPONSORED_PRODUCTS_CAMPAIGN: &str = "AMAZON_ADS_SPONSORED_PRODUCTS_CAMPAIGN_REPORT";
 pub const INVENTORY_PLANNING: &str = "GET_FBA_INVENTORY_PLANNING_DATA";
 pub const FBA_RETURNS: &str = "GET_FBA_FULFILLMENT_CUSTOMER_RETURNS_DATA";
 pub const SETTLEMENT_V2: &str = "GET_V2_SETTLEMENT_REPORT_DATA_FLAT_FILE_V2";
@@ -305,6 +306,71 @@ pub struct NormalizedMetric {
     pub evidence: Value,
 }
 
+#[derive(Debug, Clone, Serialize, sqlx::FromRow)]
+pub struct AmazonProductMapping {
+    pub id: Uuid,
+    pub connection_id: Uuid,
+    pub marketplace_id: String,
+    pub child_asin: String,
+    pub revision: i32,
+    pub brand: String,
+    pub product_family: String,
+    pub variant: String,
+    pub pack_size: Option<String>,
+    pub sku: Option<String>,
+    pub evidence_source: String,
+    pub enabled: bool,
+    pub confirmed_by: Uuid,
+    pub created_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone)]
+pub struct AmazonProductMappingInput<'a> {
+    pub connection_id: Uuid,
+    pub marketplace_id: &'a str,
+    pub child_asin: &'a str,
+    pub brand: &'a str,
+    pub product_family: &'a str,
+    pub variant: &'a str,
+    pub pack_size: Option<&'a str>,
+    pub sku: Option<&'a str>,
+    pub evidence_source: &'a str,
+    pub enabled: bool,
+    pub confirmed_by: Uuid,
+}
+
+#[derive(Debug, Clone, Serialize, sqlx::FromRow)]
+pub struct ObservedAmazonProduct {
+    pub connection_id: Uuid,
+    pub marketplace_id: String,
+    pub child_asin: String,
+    pub first_seen: Option<DateTime<Utc>>,
+    pub last_seen: Option<DateTime<Utc>>,
+    pub period_count: i64,
+}
+
+#[derive(Debug, Clone, sqlx::FromRow)]
+pub struct ProductStrategyMetric {
+    pub mapping_id: Uuid,
+    pub brand: String,
+    pub product_family: String,
+    pub variant: String,
+    pub pack_size: Option<String>,
+    pub period_start: DateTime<Utc>,
+    pub period_end: DateTime<Utc>,
+    pub metric_name: String,
+    pub value_numeric: Decimal,
+    pub unit: String,
+    pub currency_code: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, sqlx::FromRow)]
+pub struct ProductMappingCoverage {
+    pub observed_products: i64,
+    pub mapped_products: i64,
+    pub enabled_mapped_products: i64,
+}
+
 #[derive(Debug, Clone)]
 pub struct ParsedMetric {
     pub metric_name: String,
@@ -325,6 +391,41 @@ pub struct ParsedSnapshot {
     pub comparability_key: String,
     pub summary: Value,
     pub metrics: Vec<ParsedMetric>,
+}
+
+#[derive(Debug, Clone)]
+pub struct ManualImportStoreInput<'a> {
+    pub uploaded_by: Uuid,
+    pub raw_sha256: &'a str,
+    pub raw_content: &'a [u8],
+    pub content_type: &'a str,
+    pub detected_format: &'a str,
+    pub marketplace_id: &'a str,
+    pub report_type: &'a str,
+    pub date_granularity: &'a str,
+    pub source_timezone: &'a str,
+    pub currency_code: Option<&'a str>,
+    pub parsed: &'a ParsedSnapshot,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct ManualImportStoreOutcome {
+    pub run_id: Uuid,
+    pub analysis_job_id: Uuid,
+    pub comparison_generated: bool,
+    pub imported: bool,
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum ManualImportStoreError {
+    #[error("manual import input is invalid: {0}")]
+    InvalidInput(String),
+    #[error("the same raw bytes were already archived with different confirmed metadata")]
+    MetadataConflict,
+    #[error("a different raw report already represents this exact comparison period")]
+    DuplicatePeriod,
+    #[error(transparent)]
+    Database(#[from] sqlx::Error),
 }
 
 #[derive(Debug, Clone, Serialize, sqlx::FromRow)]
@@ -354,6 +455,59 @@ pub struct AnalysisResult {
     pub payload_sha256: String,
     pub result: Value,
     pub created_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, Serialize, sqlx::FromRow)]
+pub struct AiStrategyAssessment {
+    pub id: Uuid,
+    pub analysis_id: Uuid,
+    pub payload_sha256: String,
+    pub model_name: String,
+    pub prompt_version: String,
+    pub result: Value,
+    pub provider_request_id_redacted: Option<String>,
+    pub input_tokens: Option<i64>,
+    pub output_tokens: Option<i64>,
+    pub week_start: Option<NaiveDate>,
+    pub previous_assessment_id: Option<Uuid>,
+    pub created_by: Uuid,
+    pub created_at: DateTime<Utc>,
+}
+
+pub struct StoreAiStrategyAssessment<'a> {
+    pub analysis_id: Uuid,
+    pub payload_sha256: &'a str,
+    pub model_name: &'a str,
+    pub prompt_version: &'a str,
+    pub result: &'a Value,
+    pub provider_request_id_redacted: Option<&'a str>,
+    pub input_tokens: Option<i64>,
+    pub output_tokens: Option<i64>,
+    pub week_start: Option<NaiveDate>,
+    pub previous_assessment_id: Option<Uuid>,
+    pub created_by: Uuid,
+}
+
+#[derive(Debug, Clone, Serialize, sqlx::FromRow)]
+pub struct MantleBusinessKnowledge {
+    pub id: Uuid,
+    pub scope: String,
+    pub source_manifest_sha256: String,
+    pub content_sha256: String,
+    pub source_count: i32,
+    pub entry_count: i32,
+    pub knowledge: Value,
+    pub created_by: Uuid,
+    pub created_at: DateTime<Utc>,
+}
+
+pub struct StoreMantleBusinessKnowledge<'a> {
+    pub source_manifest_sha256: &'a str,
+    pub content_sha256: &'a str,
+    pub source_count: i32,
+    pub entry_count: i32,
+    pub knowledge: &'a Value,
+    pub created_by: Uuid,
 }
 
 #[derive(Debug, Clone, Serialize, sqlx::FromRow)]
@@ -1170,6 +1324,332 @@ pub async fn store_snapshot(
     Ok(snapshot)
 }
 
+/// Stores a fully validated manual report in one transaction. Parsing happens
+/// before this boundary, so a schema error cannot leave a run, raw archive, or
+/// partial metric set behind. A transaction-scoped advisory lock serializes
+/// concurrent uploads of the same bytes and makes retries idempotent.
+pub async fn store_manual_import(
+    pool: &PgPool,
+    input: &ManualImportStoreInput<'_>,
+) -> Result<ManualImportStoreOutcome, ManualImportStoreError> {
+    if !matches!(
+        input.report_type,
+        SALES_AND_TRAFFIC | ADS_SPONSORED_PRODUCTS_CAMPAIGN
+    ) || !matches!(input.detected_format, "json" | "csv" | "tsv")
+        || !matches!(input.date_granularity, "DAY" | "WEEK" | "MONTH" | "PERIOD")
+        || input.marketplace_id.len() < 2
+        || input.marketplace_id.len() > 64
+        || !input
+            .marketplace_id
+            .bytes()
+            .all(|byte| byte.is_ascii_uppercase() || byte.is_ascii_digit() || byte == b'-')
+        || !input
+            .marketplace_id
+            .bytes()
+            .next()
+            .is_some_and(|byte| byte.is_ascii_uppercase() || byte.is_ascii_digit())
+        || input.raw_sha256 != sha256(input.raw_content)
+        || input.currency_code.is_none()
+        || input.parsed.period_start.is_none()
+        || input.parsed.period_end.is_none()
+        || input.parsed.comparability_key.trim().is_empty()
+    {
+        return Err(ManualImportStoreError::InvalidInput(
+            "metadata did not pass the storage boundary".to_owned(),
+        ));
+    }
+    let period_start = input.parsed.period_start.expect("checked above");
+    let period_end = input.parsed.period_end.expect("checked above");
+    if period_start > period_end {
+        return Err(ManualImportStoreError::InvalidInput(
+            "report period is inverted".to_owned(),
+        ));
+    }
+
+    let mut tx = pool.begin().await?;
+    sqlx::query("SELECT pg_advisory_xact_lock(hashtextextended($1, 0))")
+        .bind(input.raw_sha256)
+        .execute(&mut *tx)
+        .await?;
+    if let Some(existing) = sqlx::query_as::<
+        _,
+        (
+            Uuid,
+            Uuid,
+            String,
+            String,
+            DateTime<Utc>,
+            DateTime<Utc>,
+            String,
+            String,
+            Option<String>,
+            String,
+            String,
+            String,
+        ),
+    >(
+        "SELECT imported.run_id, imported.analysis_job_id, imported.report_type,
+                imported.marketplace_id, imported.period_start, imported.period_end,
+                imported.granularity, imported.source_timezone, imported.currency_code,
+                imported.parser_version, imported.comparability_key, job.analysis_type
+         FROM amazon_manual_report_imports imported
+         JOIN amazon_analysis_jobs job ON job.id = imported.analysis_job_id
+         WHERE imported.raw_sha256 = $1",
+    )
+    .bind(input.raw_sha256)
+    .fetch_optional(&mut *tx)
+    .await?
+    {
+        let metadata_matches = existing.2 == input.report_type
+            && existing.3 == input.marketplace_id
+            && existing.4 == period_start
+            && existing.5 == period_end
+            && existing.6 == input.date_granularity
+            && existing.7 == input.source_timezone
+            && existing.8.as_deref() == input.currency_code
+            && existing.9 == input.parsed.parser_version
+            && existing.10 == input.parsed.comparability_key;
+        if !metadata_matches {
+            return Err(ManualImportStoreError::MetadataConflict);
+        }
+        tx.commit().await?;
+        return Ok(ManualImportStoreOutcome {
+            run_id: existing.0,
+            analysis_job_id: existing.1,
+            comparison_generated: existing.11 == "manual_comparison",
+            imported: false,
+        });
+    }
+
+    let semantic_key = format!(
+        "{}:{}:{}:{}:{}:{}",
+        input.marketplace_id,
+        input.report_type,
+        period_start,
+        period_end,
+        input.parsed.comparability_key,
+        input.parsed.parser_version,
+    );
+    sqlx::query("SELECT pg_advisory_xact_lock(hashtextextended($1, 1))")
+        .bind(&semantic_key)
+        .execute(&mut *tx)
+        .await?;
+    let duplicate_period = sqlx::query_scalar::<_, bool>(
+        "SELECT EXISTS(
+           SELECT 1 FROM amazon_manual_report_imports
+           WHERE marketplace_id = $1 AND report_type = $2
+             AND period_start = $3 AND period_end = $4
+             AND comparability_key = $5 AND parser_version = $6
+         )",
+    )
+    .bind(input.marketplace_id)
+    .bind(input.report_type)
+    .bind(period_start)
+    .bind(period_end)
+    .bind(&input.parsed.comparability_key)
+    .bind(&input.parsed.parser_version)
+    .fetch_one(&mut *tx)
+    .await?;
+    if duplicate_period {
+        return Err(ManualImportStoreError::DuplicatePeriod);
+    }
+
+    let connection_id = sqlx::query_scalar::<_, Uuid>(
+        "SELECT id FROM amazon_connections
+         WHERE seller_id = 'manual-report-import' AND region = 'eu'
+           AND secret_ref = 'fixture:manual-report-import' AND mode = 'fixture'",
+    )
+    .fetch_one(&mut *tx)
+    .await?;
+    sqlx::query(
+        "INSERT INTO amazon_marketplaces (connection_id, marketplace_id)
+         VALUES ($1, $2)
+         ON CONFLICT (connection_id, marketplace_id) DO UPDATE SET enabled = true",
+    )
+    .bind(connection_id)
+    .bind(input.marketplace_id)
+    .execute(&mut *tx)
+    .await?;
+
+    let run_id = Uuid::new_v4();
+    let run_options = json!({
+        "source": "manual_upload",
+        "detectedFormat": input.detected_format,
+        "dateGranularity": input.date_granularity,
+        "sourceTimezone": input.source_timezone,
+        "parserVersion": input.parsed.parser_version,
+    });
+    sqlx::query(
+        "INSERT INTO amazon_report_runs
+             (id, connection_id, marketplace_id, report_type, data_start_time, data_end_time,
+              report_options, trigger_source, idempotency_key, status,
+              amazon_report_document_id, requested_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, 'manual', $8, 'analysing', $9, now())",
+    )
+    .bind(run_id)
+    .bind(connection_id)
+    .bind(input.marketplace_id)
+    .bind(input.report_type)
+    .bind(period_start)
+    .bind(period_end)
+    .bind(&run_options)
+    .bind(format!("amazon-manual-report:{}", input.raw_sha256))
+    .bind(format!("manual-upload:{}", &input.raw_sha256[..16]))
+    .execute(&mut *tx)
+    .await?;
+
+    sqlx::query(
+        "INSERT INTO amazon_report_documents
+             (run_id, amazon_report_document_id, sha256, content_type, compression_algorithm,
+              raw_content, decoded_content, decoded_sha256, parser_version, import_status)
+         VALUES ($1, $2, $3, $4, 'NONE', $5, $5, $3, $6, 'parsed')",
+    )
+    .bind(run_id)
+    .bind(format!("manual-upload:{}", &input.raw_sha256[..16]))
+    .bind(input.raw_sha256)
+    .bind(input.content_type)
+    .bind(input.raw_content)
+    .bind(&input.parsed.parser_version)
+    .execute(&mut *tx)
+    .await?;
+
+    let snapshot_id = Uuid::new_v4();
+    sqlx::query(
+        "INSERT INTO amazon_metric_snapshots
+             (id, run_id, connection_id, marketplace_id, report_type, parser_version,
+              period_start, period_end, granularity, comparability_key, summary)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)",
+    )
+    .bind(snapshot_id)
+    .bind(run_id)
+    .bind(connection_id)
+    .bind(input.marketplace_id)
+    .bind(input.report_type)
+    .bind(&input.parsed.parser_version)
+    .bind(period_start)
+    .bind(period_end)
+    .bind(input.date_granularity)
+    .bind(&input.parsed.comparability_key)
+    .bind(&input.parsed.summary)
+    .execute(&mut *tx)
+    .await?;
+    for metric in &input.parsed.metrics {
+        sqlx::query(
+            "INSERT INTO amazon_normalized_metrics
+                 (snapshot_id, metric_name, dimension_type, dimension_key, value_numeric,
+                  unit, currency_code, evidence)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8)",
+        )
+        .bind(snapshot_id)
+        .bind(&metric.metric_name)
+        .bind(&metric.dimension_type)
+        .bind(&metric.dimension_key)
+        .bind(metric.value_numeric)
+        .bind(&metric.unit)
+        .bind(&metric.currency_code)
+        .bind(&metric.evidence)
+        .execute(&mut *tx)
+        .await?;
+    }
+
+    let comparison = sqlx::query_as::<_, (Uuid, DateTime<Utc>, DateTime<Utc>)>(
+        "SELECT run_id, period_start, period_end
+         FROM amazon_metric_snapshots
+         WHERE connection_id = $1 AND marketplace_id = $2 AND report_type = $3
+           AND comparability_key = $4 AND parser_version = $5 AND id <> $6
+           AND (period_end < $7 OR period_start > $8)
+         ORDER BY CASE WHEN period_end < $7 THEN $7 - period_end
+                       ELSE period_start - $8 END,
+                  created_at DESC
+         LIMIT 1",
+    )
+    .bind(connection_id)
+    .bind(input.marketplace_id)
+    .bind(input.report_type)
+    .bind(&input.parsed.comparability_key)
+    .bind(&input.parsed.parser_version)
+    .bind(snapshot_id)
+    .bind(period_start)
+    .bind(period_end)
+    .fetch_optional(&mut *tx)
+    .await?;
+    let analysis_job_id = Uuid::new_v4();
+    let (analysis_type, analysis_start, analysis_end) = comparison
+        .map(|(_, other_start, other_end)| {
+            (
+                "manual_comparison",
+                period_start.min(other_start),
+                period_end.max(other_end),
+            )
+        })
+        .unwrap_or(("delta", period_start, period_end));
+    sqlx::query(
+        "INSERT INTO amazon_analysis_jobs
+             (id, run_id, connection_id, marketplace_id, report_type, analysis_type,
+              period_start, period_end)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)",
+    )
+    .bind(analysis_job_id)
+    .bind(run_id)
+    .bind(connection_id)
+    .bind(input.marketplace_id)
+    .bind(input.report_type)
+    .bind(analysis_type)
+    .bind(analysis_start)
+    .bind(analysis_end)
+    .execute(&mut *tx)
+    .await?;
+    sqlx::query(
+        "INSERT INTO amazon_manual_report_imports
+             (run_id, analysis_job_id, raw_sha256, detected_format, report_type, marketplace_id,
+              period_start, period_end, granularity, source_timezone, currency_code,
+              parser_version, comparability_key, uploaded_by, metadata)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)",
+    )
+    .bind(run_id)
+    .bind(analysis_job_id)
+    .bind(input.raw_sha256)
+    .bind(input.detected_format)
+    .bind(input.report_type)
+    .bind(input.marketplace_id)
+    .bind(period_start)
+    .bind(period_end)
+    .bind(input.date_granularity)
+    .bind(input.source_timezone)
+    .bind(input.currency_code)
+    .bind(&input.parsed.parser_version)
+    .bind(&input.parsed.comparability_key)
+    .bind(input.uploaded_by)
+    .bind(json!({
+        "archive": "postgresql_immutable",
+        "raw_bytes": input.raw_content.len(),
+        "partial_imports": "transactionally_prevented",
+    }))
+    .execute(&mut *tx)
+    .await?;
+    append_run_event(
+        &mut tx,
+        run_id,
+        "archived",
+        Some("Manual raw report archived with SHA-256 checksum"),
+    )
+    .await?;
+    append_run_event(
+        &mut tx,
+        run_id,
+        "analysing",
+        Some("Manual report validated and normalized atomically"),
+    )
+    .await?;
+    tx.commit().await?;
+    Ok(ManualImportStoreOutcome {
+        run_id,
+        analysis_job_id,
+        comparison_generated: analysis_type == "manual_comparison",
+        imported: true,
+    })
+}
+
 async fn mark_document_import_tx(
     tx: &mut Transaction<'_, Postgres>,
     run_id: Uuid,
@@ -1410,6 +1890,281 @@ pub async fn metrics_for_snapshot(
     .await
 }
 
+pub async fn active_product_mappings(
+    pool: &PgPool,
+) -> Result<Vec<AmazonProductMapping>, sqlx::Error> {
+    sqlx::query_as::<_, AmazonProductMapping>(
+        "SELECT mapping.id, mapping.connection_id, mapping.marketplace_id,
+                mapping.child_asin, mapping.revision, mapping.brand,
+                mapping.product_family, mapping.variant, mapping.pack_size,
+                mapping.sku, mapping.evidence_source, mapping.enabled,
+                mapping.confirmed_by, mapping.created_at
+         FROM (
+             SELECT DISTINCT ON (revision.connection_id, revision.marketplace_id,
+                                 revision.child_asin)
+                    revision.*
+             FROM amazon_product_mapping_revisions revision
+             JOIN amazon_connections connection ON connection.id = revision.connection_id
+             WHERE connection.mode = 'live'
+               AND NOT starts_with(revision.marketplace_id, 'SYNTHETIC-')
+             ORDER BY revision.connection_id, revision.marketplace_id,
+                      revision.child_asin, revision.revision DESC
+         ) mapping
+         ORDER BY mapping.brand, mapping.product_family, mapping.variant,
+                  mapping.child_asin",
+    )
+    .fetch_all(pool)
+    .await
+}
+
+pub async fn observed_products(pool: &PgPool) -> Result<Vec<ObservedAmazonProduct>, sqlx::Error> {
+    sqlx::query_as::<_, ObservedAmazonProduct>(
+        "SELECT snapshot.connection_id, snapshot.marketplace_id,
+                metric.evidence->>'dimension' AS child_asin,
+                min(snapshot.period_start) AS first_seen,
+                max(snapshot.period_end) AS last_seen,
+                count(DISTINCT snapshot.id)::bigint AS period_count
+         FROM amazon_normalized_metrics metric
+         JOIN amazon_metric_snapshots snapshot ON snapshot.id = metric.snapshot_id
+         JOIN amazon_connections connection ON connection.id = snapshot.connection_id
+         WHERE connection.mode = 'live'
+           AND NOT starts_with(snapshot.marketplace_id, 'SYNTHETIC-')
+           AND metric.dimension_type = 'child_period'
+           AND metric.evidence->>'dimension' ~ '^[A-Z0-9]{10}$'
+         GROUP BY snapshot.connection_id, snapshot.marketplace_id,
+                  metric.evidence->>'dimension'
+         ORDER BY max(snapshot.period_end) DESC, metric.evidence->>'dimension'",
+    )
+    .fetch_all(pool)
+    .await
+}
+
+pub async fn observed_product_exists(
+    pool: &PgPool,
+    connection_id: Uuid,
+    marketplace_id: &str,
+    child_asin: &str,
+) -> Result<bool, sqlx::Error> {
+    sqlx::query_scalar(
+        "SELECT EXISTS (
+             SELECT 1
+             FROM amazon_normalized_metrics metric
+             JOIN amazon_metric_snapshots snapshot ON snapshot.id = metric.snapshot_id
+             JOIN amazon_connections connection ON connection.id = snapshot.connection_id
+             WHERE snapshot.connection_id = $1
+               AND snapshot.marketplace_id = $2
+               AND connection.mode = 'live'
+               AND NOT starts_with(snapshot.marketplace_id, 'SYNTHETIC-')
+               AND metric.dimension_type = 'child_period'
+               AND metric.evidence->>'dimension' = $3
+         )",
+    )
+    .bind(connection_id)
+    .bind(marketplace_id)
+    .bind(child_asin)
+    .fetch_one(pool)
+    .await
+}
+
+pub async fn store_product_mapping_revision(
+    pool: &PgPool,
+    input: &AmazonProductMappingInput<'_>,
+) -> Result<(AmazonProductMapping, bool), sqlx::Error> {
+    let mut tx = pool.begin().await?;
+    sqlx::query("SELECT id FROM amazon_connections WHERE id = $1 FOR UPDATE")
+        .bind(input.connection_id)
+        .fetch_one(&mut *tx)
+        .await?;
+    let current = sqlx::query_as::<_, AmazonProductMapping>(
+        "SELECT id, connection_id, marketplace_id, child_asin, revision, brand,
+                product_family, variant, pack_size, sku, evidence_source, enabled,
+                confirmed_by, created_at
+         FROM amazon_product_mapping_revisions
+         WHERE connection_id = $1 AND marketplace_id = $2 AND child_asin = $3
+         ORDER BY revision DESC LIMIT 1",
+    )
+    .bind(input.connection_id)
+    .bind(input.marketplace_id)
+    .bind(input.child_asin)
+    .fetch_optional(&mut *tx)
+    .await?;
+    if let Some(mapping) = current.as_ref() {
+        let unchanged = mapping.brand == input.brand
+            && mapping.product_family == input.product_family
+            && mapping.variant == input.variant
+            && mapping.pack_size.as_deref() == input.pack_size
+            && mapping.sku.as_deref() == input.sku
+            && mapping.evidence_source == input.evidence_source
+            && mapping.enabled == input.enabled;
+        if unchanged {
+            let mapping = mapping.clone();
+            tx.commit().await?;
+            return Ok((mapping, false));
+        }
+    }
+    let revision = current.map_or(1, |mapping| mapping.revision + 1);
+    let mapping = sqlx::query_as::<_, AmazonProductMapping>(
+        "INSERT INTO amazon_product_mapping_revisions
+             (connection_id, marketplace_id, child_asin, revision, brand,
+              product_family, variant, pack_size, sku, evidence_source, enabled,
+              confirmed_by)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+         RETURNING id, connection_id, marketplace_id, child_asin, revision, brand,
+                   product_family, variant, pack_size, sku, evidence_source, enabled,
+                   confirmed_by, created_at",
+    )
+    .bind(input.connection_id)
+    .bind(input.marketplace_id)
+    .bind(input.child_asin)
+    .bind(revision)
+    .bind(input.brand)
+    .bind(input.product_family)
+    .bind(input.variant)
+    .bind(input.pack_size)
+    .bind(input.sku)
+    .bind(input.evidence_source)
+    .bind(input.enabled)
+    .bind(input.confirmed_by)
+    .fetch_one(&mut *tx)
+    .await?;
+    sqlx::query(
+        "INSERT INTO administrative_audit_log
+             (actor_user_id, action, target_type, target_id, idempotency_key, details)
+         VALUES ($1, 'amazon.product_mapping_revised', 'amazon_product_mapping',
+                 $2, $3, $4)
+         ON CONFLICT (action, idempotency_key) DO NOTHING",
+    )
+    .bind(input.confirmed_by)
+    .bind(mapping.id.to_string())
+    .bind(format!("amazon-product-mapping:{}", mapping.id))
+    .bind(json!({
+        "connection_id": input.connection_id,
+        "marketplace_id": input.marketplace_id,
+        "revision": revision,
+        "brand": input.brand,
+        "evidence_source": input.evidence_source,
+        "enabled": input.enabled,
+        "amazon_mutation": false,
+    }))
+    .execute(&mut *tx)
+    .await?;
+    tx.commit().await?;
+    Ok((mapping, true))
+}
+
+pub async fn product_mapping_coverage(
+    pool: &PgPool,
+) -> Result<ProductMappingCoverage, sqlx::Error> {
+    sqlx::query_as::<_, ProductMappingCoverage>(
+        "WITH observed AS (
+             SELECT DISTINCT snapshot.connection_id, snapshot.marketplace_id,
+                    metric.evidence->>'dimension' AS child_asin
+             FROM amazon_normalized_metrics metric
+             JOIN amazon_metric_snapshots snapshot ON snapshot.id = metric.snapshot_id
+             JOIN amazon_connections connection ON connection.id = snapshot.connection_id
+             WHERE connection.mode = 'live'
+               AND NOT starts_with(snapshot.marketplace_id, 'SYNTHETIC-')
+               AND metric.dimension_type = 'child_period'
+               AND metric.evidence->>'dimension' ~ '^[A-Z0-9]{10}$'
+         ), current_mapping AS (
+             SELECT DISTINCT ON (connection_id, marketplace_id, child_asin)
+                    connection_id, marketplace_id, child_asin, enabled
+             FROM amazon_product_mapping_revisions
+             ORDER BY connection_id, marketplace_id, child_asin, revision DESC
+         )
+         SELECT count(*)::bigint AS observed_products,
+                count(mapping.child_asin)::bigint AS mapped_products,
+                count(mapping.child_asin) FILTER (WHERE mapping.enabled)::bigint
+                    AS enabled_mapped_products
+         FROM observed
+         LEFT JOIN current_mapping mapping USING (connection_id, marketplace_id, child_asin)",
+    )
+    .fetch_one(pool)
+    .await
+}
+
+pub async fn recent_product_strategy_metrics(
+    pool: &PgPool,
+    period_limit: i64,
+    product_limit: i64,
+) -> Result<Vec<ProductStrategyMetric>, sqlx::Error> {
+    sqlx::query_as::<_, ProductStrategyMetric>(
+        "WITH ranked_snapshots AS (
+             SELECT snapshot.*,
+                    row_number() OVER (
+                        PARTITION BY snapshot.connection_id, snapshot.marketplace_id,
+                                     snapshot.report_type, snapshot.period_start,
+                                     snapshot.period_end
+                        ORDER BY snapshot.created_at DESC
+                    ) AS duplicate_rank
+             FROM amazon_metric_snapshots snapshot
+             JOIN amazon_connections connection ON connection.id = snapshot.connection_id
+             WHERE connection.mode = 'live'
+               AND NOT starts_with(snapshot.marketplace_id, 'SYNTHETIC-')
+               AND snapshot.report_type = 'GET_SALES_AND_TRAFFIC_REPORT'
+               AND snapshot.period_start IS NOT NULL
+               AND snapshot.period_end IS NOT NULL
+         ), recent_snapshots AS (
+             SELECT * FROM ranked_snapshots
+             WHERE duplicate_rank = 1
+             ORDER BY period_end DESC, created_at DESC
+             LIMIT $1
+         ), current_mapping AS (
+             SELECT * FROM (
+                 SELECT DISTINCT ON (revision.connection_id, revision.marketplace_id,
+                                     revision.child_asin)
+                        revision.*
+                 FROM amazon_product_mapping_revisions revision
+                 ORDER BY revision.connection_id, revision.marketplace_id,
+                          revision.child_asin, revision.revision DESC
+             ) latest
+             WHERE latest.enabled
+         ), mapping_totals AS (
+             SELECT mapping.id AS mapping_id,
+                    COALESCE(sum(metric.value_numeric) FILTER (
+                        WHERE metric.metric_name = 'ordered_product_sales'
+                    ), 0) AS total_sales
+             FROM current_mapping mapping
+             JOIN recent_snapshots snapshot
+               ON snapshot.connection_id = mapping.connection_id
+              AND snapshot.marketplace_id = mapping.marketplace_id
+             JOIN amazon_normalized_metrics metric ON metric.snapshot_id = snapshot.id
+              AND metric.dimension_type = 'child_period'
+              AND metric.evidence->>'dimension' = mapping.child_asin
+             GROUP BY mapping.id
+         ), selected_mapping AS (
+             SELECT mapping_id FROM mapping_totals
+             ORDER BY total_sales DESC, mapping_id
+             LIMIT $2
+         )
+         SELECT mapping.id AS mapping_id, mapping.brand, mapping.product_family,
+                mapping.variant, mapping.pack_size,
+                snapshot.period_start, snapshot.period_end, metric.metric_name,
+                sum(metric.value_numeric) AS value_numeric, metric.unit,
+                metric.currency_code
+         FROM current_mapping mapping
+         JOIN selected_mapping selected ON selected.mapping_id = mapping.id
+         JOIN recent_snapshots snapshot
+           ON snapshot.connection_id = mapping.connection_id
+          AND snapshot.marketplace_id = mapping.marketplace_id
+         JOIN amazon_normalized_metrics metric ON metric.snapshot_id = snapshot.id
+          AND metric.dimension_type = 'child_period'
+          AND metric.evidence->>'dimension' = mapping.child_asin
+         WHERE metric.metric_name IN (
+             'ordered_product_sales', 'units_ordered', 'sessions', 'page_views'
+         )
+         GROUP BY mapping.id, mapping.brand, mapping.product_family, mapping.variant,
+                  mapping.pack_size, snapshot.period_start, snapshot.period_end,
+                  metric.metric_name, metric.unit, metric.currency_code
+         ORDER BY snapshot.period_end DESC, mapping.brand, mapping.product_family,
+                  mapping.variant, metric.metric_name",
+    )
+    .bind(period_limit.clamp(1, 13))
+    .bind(product_limit.clamp(1, 24))
+    .fetch_all(pool)
+    .await
+}
+
 pub async fn previous_compatible_snapshot(
     pool: &PgPool,
     snapshot: &MetricSnapshot,
@@ -1507,6 +2262,20 @@ pub async fn complete_analysis(
         .await?;
     }
     tx.commit().await
+}
+
+pub async fn analysis_result_for_job(
+    pool: &PgPool,
+    job_id: Uuid,
+) -> Result<Option<AnalysisResult>, sqlx::Error> {
+    sqlx::query_as::<_, AnalysisResult>(
+        "SELECT id, job_id, strategy, model_name, prompt_version, payload_sha256,
+                result, created_at
+         FROM amazon_analysis_results WHERE job_id = $1",
+    )
+    .bind(job_id)
+    .fetch_optional(pool)
+    .await
 }
 
 pub async fn fail_analysis(pool: &PgPool, job_id: Uuid, message: &str) -> Result<(), sqlx::Error> {
@@ -1625,10 +2394,286 @@ pub async fn analysis_result(
     .await
 }
 
+/// Return a bounded newest-first history for the weekly aggregate strategy
+/// input. The provider boundary applies its own closed field allowlist and
+/// never receives these database IDs or the raw result document. Synthetic
+/// acceptance marketplaces use the reserved `SYNTHETIC-` prefix and must
+/// never become evidence for a real strategy assessment.
+pub async fn recent_analysis_results_for_strategy(
+    pool: &PgPool,
+) -> Result<Vec<AnalysisResult>, sqlx::Error> {
+    sqlx::query_as::<_, AnalysisResult>(
+        "SELECT result.id, result.job_id, result.strategy, result.model_name,
+                result.prompt_version, result.payload_sha256, result.result, result.created_at
+         FROM amazon_analysis_results result
+         JOIN amazon_analysis_jobs job ON job.id = result.job_id
+         WHERE NOT starts_with(job.marketplace_id, 'SYNTHETIC-')
+         ORDER BY result.created_at DESC
+         LIMIT 20",
+    )
+    .fetch_all(pool)
+    .await
+}
+
+/// Mantle's weekly boundary follows the local operator calendar: Monday
+/// 00:00 Europe/Berlin through the following Monday. PostgreSQL performs the
+/// timezone conversion so DST transitions produce the correct UTC instant.
+pub async fn current_mantle_strategy_week(
+    pool: &PgPool,
+) -> Result<(NaiveDate, DateTime<Utc>), sqlx::Error> {
+    sqlx::query_as::<_, (NaiveDate, DateTime<Utc>)>(
+        "SELECT date_trunc('week', now() AT TIME ZONE 'Europe/Berlin')::date,
+                (date_trunc('week', now() AT TIME ZONE 'Europe/Berlin')
+                    + interval '7 days') AT TIME ZONE 'Europe/Berlin'",
+    )
+    .fetch_one(pool)
+    .await
+}
+
+pub async fn mantle_business_knowledge(
+    pool: &PgPool,
+) -> Result<Option<MantleBusinessKnowledge>, sqlx::Error> {
+    sqlx::query_as::<_, MantleBusinessKnowledge>(
+        "SELECT id, scope, source_manifest_sha256, content_sha256, source_count,
+                entry_count, knowledge, created_by, created_at
+         FROM mantle_business_knowledge
+         WHERE scope = 'mantle_sphagnum'",
+    )
+    .fetch_optional(pool)
+    .await
+}
+
+/// Store the reviewed business baseline once. A repeated request with the same
+/// content is idempotent; a different baseline remains visible as a conflict at
+/// the route boundary instead of silently replacing accumulated context.
+pub async fn store_mantle_business_knowledge(
+    pool: &PgPool,
+    input: &StoreMantleBusinessKnowledge<'_>,
+) -> Result<(MantleBusinessKnowledge, bool), sqlx::Error> {
+    let mut tx = pool.begin().await?;
+    let inserted = sqlx::query_as::<_, MantleBusinessKnowledge>(
+        "INSERT INTO mantle_business_knowledge
+             (scope, source_manifest_sha256, content_sha256, source_count,
+              entry_count, knowledge, created_by)
+         VALUES ('mantle_sphagnum', $1, $2, $3, $4, $5, $6)
+         ON CONFLICT DO NOTHING
+         RETURNING id, scope, source_manifest_sha256, content_sha256, source_count,
+                   entry_count, knowledge, created_by, created_at",
+    )
+    .bind(input.source_manifest_sha256)
+    .bind(input.content_sha256)
+    .bind(input.source_count)
+    .bind(input.entry_count)
+    .bind(input.knowledge)
+    .bind(input.created_by)
+    .fetch_optional(&mut *tx)
+    .await?;
+    let was_inserted = inserted.is_some();
+    let knowledge = match inserted {
+        Some(record) => record,
+        None => {
+            sqlx::query_as::<_, MantleBusinessKnowledge>(
+                "SELECT id, scope, source_manifest_sha256, content_sha256, source_count,
+                        entry_count, knowledge, created_by, created_at
+                 FROM mantle_business_knowledge
+                 WHERE scope = 'mantle_sphagnum'",
+            )
+            .fetch_one(&mut *tx)
+            .await?
+        }
+    };
+    if was_inserted {
+        sqlx::query(
+            "INSERT INTO administrative_audit_log
+                 (actor_user_id, action, target_type, target_id, idempotency_key, details)
+             VALUES ($1, 'mantle.business_knowledge_imported', 'business_knowledge', $2, $3, $4)
+             ON CONFLICT (action, idempotency_key) DO NOTHING",
+        )
+        .bind(input.created_by)
+        .bind(knowledge.id.to_string())
+        .bind(format!(
+            "mantle-business-knowledge:{}",
+            input.content_sha256
+        ))
+        .bind(json!({
+            "source_manifest_sha256": input.source_manifest_sha256,
+            "content_sha256": input.content_sha256,
+            "source_count": input.source_count,
+            "entry_count": input.entry_count,
+            "raw_documents_stored": false,
+            "secrets_or_pii_allowed": false,
+        }))
+        .execute(&mut *tx)
+        .await?;
+    }
+    tx.commit().await?;
+    Ok((knowledge, was_inserted))
+}
+
+pub async fn ai_strategy_assessment_for_week(
+    pool: &PgPool,
+    week_start: NaiveDate,
+) -> Result<Option<AiStrategyAssessment>, sqlx::Error> {
+    sqlx::query_as::<_, AiStrategyAssessment>(
+        "SELECT id, analysis_id, payload_sha256, model_name, prompt_version, result,
+                provider_request_id_redacted, input_tokens, output_tokens, week_start,
+                previous_assessment_id, created_by, created_at
+         FROM amazon_ai_strategy_assessments
+         WHERE week_start = $1",
+    )
+    .bind(week_start)
+    .fetch_optional(pool)
+    .await
+}
+
+pub async fn latest_ai_strategy_assessment_before_week(
+    pool: &PgPool,
+    week_start: NaiveDate,
+) -> Result<Option<AiStrategyAssessment>, sqlx::Error> {
+    sqlx::query_as::<_, AiStrategyAssessment>(
+        "SELECT id, analysis_id, payload_sha256, model_name, prompt_version, result,
+                provider_request_id_redacted, input_tokens, output_tokens, week_start,
+                previous_assessment_id, created_by, created_at
+         FROM amazon_ai_strategy_assessments
+         WHERE week_start IS NULL OR week_start < $1
+         ORDER BY created_at DESC
+         LIMIT 1",
+    )
+    .bind(week_start)
+    .fetch_optional(pool)
+    .await
+}
+
+pub async fn ai_strategy_assessment(
+    pool: &PgPool,
+    analysis_id: Uuid,
+    payload_sha256: &str,
+    model_name: &str,
+    prompt_version: &str,
+) -> Result<Option<AiStrategyAssessment>, sqlx::Error> {
+    sqlx::query_as::<_, AiStrategyAssessment>(
+        "SELECT id, analysis_id, payload_sha256, model_name, prompt_version, result,
+                provider_request_id_redacted, input_tokens, output_tokens, week_start,
+                previous_assessment_id, created_by, created_at
+         FROM amazon_ai_strategy_assessments
+         WHERE analysis_id = $1 AND payload_sha256 = $2
+           AND model_name = $3 AND prompt_version = $4",
+    )
+    .bind(analysis_id)
+    .bind(payload_sha256)
+    .bind(model_name)
+    .bind(prompt_version)
+    .fetch_optional(pool)
+    .await
+}
+
+/// Persist only the validated structured model result. The provider prompt,
+/// aggregate input document, authorization secret and raw provider response are
+/// intentionally absent from both this table and the administrative audit log.
+pub async fn store_ai_strategy_assessment(
+    pool: &PgPool,
+    input: &StoreAiStrategyAssessment<'_>,
+) -> Result<(AiStrategyAssessment, bool), sqlx::Error> {
+    let mut tx = pool.begin().await?;
+    let inserted = sqlx::query_as::<_, AiStrategyAssessment>(
+        "INSERT INTO amazon_ai_strategy_assessments
+             (analysis_id, payload_sha256, model_name, prompt_version, result,
+              provider_request_id_redacted, input_tokens, output_tokens, week_start,
+              previous_assessment_id, created_by)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+         ON CONFLICT DO NOTHING
+         RETURNING id, analysis_id, payload_sha256, model_name, prompt_version, result,
+                   provider_request_id_redacted, input_tokens, output_tokens, week_start,
+                   previous_assessment_id, created_by, created_at",
+    )
+    .bind(input.analysis_id)
+    .bind(input.payload_sha256)
+    .bind(input.model_name)
+    .bind(input.prompt_version)
+    .bind(input.result)
+    .bind(input.provider_request_id_redacted)
+    .bind(input.input_tokens)
+    .bind(input.output_tokens)
+    .bind(input.week_start)
+    .bind(input.previous_assessment_id)
+    .bind(input.created_by)
+    .fetch_optional(&mut *tx)
+    .await?;
+    let was_inserted = inserted.is_some();
+    let assessment = match inserted {
+        Some(assessment) => assessment,
+        None => {
+            if let Some(week_start) = input.week_start {
+                sqlx::query_as::<_, AiStrategyAssessment>(
+                    "SELECT id, analysis_id, payload_sha256, model_name, prompt_version, result,
+                            provider_request_id_redacted, input_tokens, output_tokens, week_start,
+                            previous_assessment_id, created_by, created_at
+                     FROM amazon_ai_strategy_assessments
+                     WHERE week_start = $1",
+                )
+                .bind(week_start)
+                .fetch_one(&mut *tx)
+                .await?
+            } else {
+                sqlx::query_as::<_, AiStrategyAssessment>(
+                    "SELECT id, analysis_id, payload_sha256, model_name, prompt_version, result,
+                            provider_request_id_redacted, input_tokens, output_tokens, week_start,
+                            previous_assessment_id, created_by, created_at
+                     FROM amazon_ai_strategy_assessments
+                     WHERE analysis_id = $1 AND payload_sha256 = $2
+                       AND model_name = $3 AND prompt_version = $4",
+                )
+                .bind(input.analysis_id)
+                .bind(input.payload_sha256)
+                .bind(input.model_name)
+                .bind(input.prompt_version)
+                .fetch_one(&mut *tx)
+                .await?
+            }
+        }
+    };
+    if was_inserted {
+        let idempotency_key = input.week_start.map_or_else(
+            || {
+                format!(
+                    "amazon-ai-strategy:{}:{}:{}:{}",
+                    input.analysis_id, input.payload_sha256, input.model_name, input.prompt_version
+                )
+            },
+            |week_start| format!("amazon-ai-weekly:{week_start}"),
+        );
+        sqlx::query(
+            "INSERT INTO administrative_audit_log
+                 (actor_user_id, action, target_type, target_id, idempotency_key, details)
+             VALUES ($1, 'amazon.ai_strategy_assessed', 'amazon_analysis', $2, $3, $4)
+             ON CONFLICT (action, idempotency_key) DO NOTHING",
+        )
+        .bind(input.created_by)
+        .bind(input.analysis_id.to_string())
+        .bind(idempotency_key)
+        .bind(json!({
+            "payload_sha256": input.payload_sha256,
+            "model_name": input.model_name,
+            "prompt_version": input.prompt_version,
+            "week_start": input.week_start,
+            "previous_run_context": input.previous_assessment_id.is_some(),
+            "aggregate_only": true,
+            "response_storage": "store_false",
+            "amazon_mutation": false,
+        }))
+        .execute(&mut *tx)
+        .await?;
+    }
+    tx.commit().await?;
+    Ok((assessment, was_inserted))
+}
+
 pub async fn overview(pool: &PgPool) -> Result<MarketplaceOverview, sqlx::Error> {
     let connections = sqlx::query_as::<_, AmazonConnection>(
         "SELECT id, seller_id, region, secret_ref, granted_roles, mode, enabled, created_at, updated_at
-         FROM amazon_connections ORDER BY created_at DESC",
+         FROM amazon_connections
+         WHERE seller_id <> 'manual-report-import'
+         ORDER BY enabled DESC, updated_at DESC, created_at DESC",
     )
     .fetch_all(pool)
     .await?;
@@ -1866,6 +2911,652 @@ mod tests {
                 .execute(&pool)
                 .await
                 .is_err()
+        );
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn manual_import_is_atomic_immutable_and_idempotent(pool: PgPool) {
+        let uploaded_by: Uuid = sqlx::query_scalar(
+            "INSERT INTO users (username, password_hash, role)
+             VALUES ('synthetic-manual-import-admin', 'synthetic-not-a-secret', 'administrator')
+             RETURNING id",
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        let raw = b"SYNTHETIC TEST DATA - valid bytes are parsed before this boundary";
+        let raw_sha256 = sha256(raw);
+        let start = "2026-07-01T00:00:00Z".parse().unwrap();
+        let end = "2026-07-07T23:59:59Z".parse().unwrap();
+        let parsed = ParsedSnapshot {
+            parser_version: "manual-sales-traffic-v1".to_owned(),
+            period_start: Some(start),
+            period_end: Some(end),
+            granularity: "day_child".to_owned(),
+            comparability_key: "sales-traffic:DAY:EUR:Europe/Berlin:7d".to_owned(),
+            summary: json!({
+                "data_freshness": "2026-07-07",
+                "missing_fields": [],
+                "timezone": "Europe/Berlin",
+                "currency_code": "EUR",
+            }),
+            metrics: vec![ParsedMetric {
+                metric_name: "ordered_product_sales".to_owned(),
+                dimension_type: "catalog".to_owned(),
+                dimension_key: String::new(),
+                value_numeric: Decimal::from(123),
+                unit: "currency".to_owned(),
+                currency_code: Some("EUR".to_owned()),
+                evidence: json!({ "source": "synthetic_test" }),
+            }],
+        };
+        let input = ManualImportStoreInput {
+            uploaded_by,
+            raw_sha256: &raw_sha256,
+            raw_content: raw,
+            content_type: "application/json",
+            detected_format: "json",
+            marketplace_id: "SYNTHETIC-MARKETPLACE",
+            report_type: SALES_AND_TRAFFIC,
+            date_granularity: "DAY",
+            source_timezone: "Europe/Berlin",
+            currency_code: Some("EUR"),
+            parsed: &parsed,
+        };
+
+        let first = store_manual_import(&pool, &input).await.unwrap();
+        let second = store_manual_import(&pool, &input).await.unwrap();
+        assert!(first.imported);
+        assert!(!second.imported);
+        assert_eq!(first.run_id, second.run_id);
+        let mut conflicting = input.clone();
+        conflicting.source_timezone = "UTC";
+        assert!(matches!(
+            store_manual_import(&pool, &conflicting).await,
+            Err(ManualImportStoreError::MetadataConflict)
+        ));
+        let different_raw = b"SYNTHETIC TEST DATA - same semantic period, different bytes";
+        let mut duplicate_period = input.clone();
+        let different_hash = sha256(different_raw);
+        duplicate_period.raw_content = different_raw;
+        duplicate_period.raw_sha256 = &different_hash;
+        assert!(matches!(
+            store_manual_import(&pool, &duplicate_period).await,
+            Err(ManualImportStoreError::DuplicatePeriod)
+        ));
+        assert_eq!(
+            sqlx::query_scalar::<_, i64>(
+                "SELECT count(*) FROM amazon_manual_report_imports WHERE raw_sha256 = $1",
+            )
+            .bind(&raw_sha256)
+            .fetch_one(&pool)
+            .await
+            .unwrap(),
+            1
+        );
+        let archived = raw_document(&pool, first.run_id).await.unwrap().unwrap();
+        assert_eq!(archived.content, raw);
+        assert!(
+            sqlx::query("DELETE FROM amazon_manual_report_imports WHERE run_id = $1")
+                .bind(first.run_id)
+                .execute(&pool)
+                .await
+                .is_err()
+        );
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn aggregate_ads_campaign_import_reuses_the_immutable_manual_boundary(pool: PgPool) {
+        let uploaded_by: Uuid = sqlx::query_scalar(
+            "INSERT INTO users (username, password_hash, role)
+             VALUES ('synthetic-ads-import-admin', 'synthetic-not-a-secret', 'administrator')
+             RETURNING id",
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        let raw = b"SYNTHETIC ADS CAMPAIGN REPORT - NO BUSINESS DATA";
+        let raw_sha256 = sha256(raw);
+        let parsed = ParsedSnapshot {
+            parser_version: "manual-ads-sp-campaign-v1".to_owned(),
+            period_start: Some("2026-07-01T00:00:00Z".parse().unwrap()),
+            period_end: Some("2026-07-07T23:59:59Z".parse().unwrap()),
+            granularity: "ads_campaign_period".to_owned(),
+            comparability_key:
+                "ads-sp-campaign:ads_campaign_period:7d:attribution=14d:currency=EUR:timezone=europe-berlin"
+                    .to_owned(),
+            summary: json!({
+                "report_family": "amazon_ads",
+                "attribution_window_days": 14,
+                "timezone": "Europe/Berlin",
+                "currency_code": "EUR",
+            }),
+            metrics: vec![ParsedMetric {
+                metric_name: "ads_spend".to_owned(),
+                dimension_type: "catalog".to_owned(),
+                dimension_key: String::new(),
+                value_numeric: Decimal::from(25),
+                unit: "currency".to_owned(),
+                currency_code: Some("EUR".to_owned()),
+                evidence: json!({ "source": "synthetic_test" }),
+            }],
+        };
+        let input = ManualImportStoreInput {
+            uploaded_by,
+            raw_sha256: &raw_sha256,
+            raw_content: raw,
+            content_type: "text/csv",
+            detected_format: "csv",
+            marketplace_id: "SYNTHETIC-MARKETPLACE",
+            report_type: ADS_SPONSORED_PRODUCTS_CAMPAIGN,
+            date_granularity: "PERIOD",
+            source_timezone: "Europe/Berlin",
+            currency_code: Some("EUR"),
+            parsed: &parsed,
+        };
+
+        let first = store_manual_import(&pool, &input).await.unwrap();
+        let retry = store_manual_import(&pool, &input).await.unwrap();
+        assert!(first.imported);
+        assert!(!retry.imported);
+        assert_eq!(first.run_id, retry.run_id);
+        assert_eq!(
+            raw_document(&pool, first.run_id)
+                .await
+                .unwrap()
+                .unwrap()
+                .content,
+            raw
+        );
+        let stored_type: String = sqlx::query_scalar(
+            "SELECT report_type FROM amazon_manual_report_imports WHERE run_id = $1",
+        )
+        .bind(first.run_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(stored_type, ADS_SPONSORED_PRODUCTS_CAMPAIGN);
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn manual_import_compares_periods_independent_of_upload_order(pool: PgPool) {
+        let uploaded_by: Uuid = sqlx::query_scalar(
+            "INSERT INTO users (username, password_hash, role)
+             VALUES ('synthetic-order-admin', 'synthetic-not-a-secret', 'administrator')
+             RETURNING id",
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        let make_snapshot = |start: &str, end: &str, revenue: i64| ParsedSnapshot {
+            parser_version: "manual-sales-traffic-v1".to_owned(),
+            period_start: Some(start.parse().unwrap()),
+            period_end: Some(end.parse().unwrap()),
+            granularity: "day_child".to_owned(),
+            comparability_key: "sales-traffic:DAY:EUR:Europe/Berlin:7d".to_owned(),
+            summary: json!({
+                "data_freshness": end,
+                "missing_fields": [],
+                "timezone": "Europe/Berlin",
+                "currency_code": "EUR",
+            }),
+            metrics: vec![ParsedMetric {
+                metric_name: "ordered_product_sales".to_owned(),
+                dimension_type: "catalog".to_owned(),
+                dimension_key: String::new(),
+                value_numeric: Decimal::from(revenue),
+                unit: "currency".to_owned(),
+                currency_code: Some("EUR".to_owned()),
+                evidence: json!({ "source": "synthetic_test" }),
+            }],
+        };
+        let newer_raw = b"SYNTHETIC NEWER REPORT";
+        let newer_hash = sha256(newer_raw);
+        let newer = make_snapshot("2026-08-08T00:00:00Z", "2026-08-14T23:59:59Z", 140);
+        let newer_input = ManualImportStoreInput {
+            uploaded_by,
+            raw_sha256: &newer_hash,
+            raw_content: newer_raw,
+            content_type: "application/json",
+            detected_format: "json",
+            marketplace_id: "SYNTHETIC-MARKETPLACE",
+            report_type: SALES_AND_TRAFFIC,
+            date_granularity: "DAY",
+            source_timezone: "Europe/Berlin",
+            currency_code: Some("EUR"),
+            parsed: &newer,
+        };
+        let newer_outcome = store_manual_import(&pool, &newer_input).await.unwrap();
+
+        let older_raw = b"SYNTHETIC OLDER REPORT";
+        let older_hash = sha256(older_raw);
+        let older = make_snapshot("2026-08-01T00:00:00Z", "2026-08-07T23:59:59Z", 100);
+        let older_input = ManualImportStoreInput {
+            uploaded_by,
+            raw_sha256: &older_hash,
+            raw_content: older_raw,
+            content_type: "application/json",
+            detected_format: "json",
+            marketplace_id: "SYNTHETIC-MARKETPLACE",
+            report_type: SALES_AND_TRAFFIC,
+            date_granularity: "DAY",
+            source_timezone: "Europe/Berlin",
+            currency_code: Some("EUR"),
+            parsed: &older,
+        };
+        let older_outcome = store_manual_import(&pool, &older_input).await.unwrap();
+        let duplicate = store_manual_import(&pool, &older_input).await.unwrap();
+
+        assert_ne!(newer_outcome.run_id, older_outcome.run_id);
+        assert_eq!(duplicate.analysis_job_id, older_outcome.analysis_job_id);
+        assert!(!duplicate.imported);
+        let comparison: (String, Uuid, DateTime<Utc>, DateTime<Utc>) = sqlx::query_as(
+            "SELECT analysis_type, run_id, period_start, period_end
+             FROM amazon_analysis_jobs WHERE id = $1",
+        )
+        .bind(older_outcome.analysis_job_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(comparison.0, "manual_comparison");
+        assert_eq!(comparison.1, older_outcome.run_id);
+        assert_eq!(comparison.2, older.period_start.unwrap());
+        assert_eq!(comparison.3, newer.period_end.unwrap());
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn mantle_business_knowledge_is_one_time_idempotent_and_immutable(pool: PgPool) {
+        let created_by: Uuid = sqlx::query_scalar(
+            "INSERT INTO users (username, password_hash, role)
+             VALUES ('synthetic-knowledge-admin', 'synthetic-not-a-secret', 'administrator')
+             RETURNING id",
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        let knowledge = json!({
+            "version": "mantle-sphagnum-business-context-v1",
+            "sources": [{"ref": "business:1", "sha256": "source-only"}],
+            "entries": [{"statement": "Synthetic business context"}],
+        });
+        let content_sha256 = "d".repeat(64);
+        let manifest_sha256 = "e".repeat(64);
+        let input = StoreMantleBusinessKnowledge {
+            source_manifest_sha256: &manifest_sha256,
+            content_sha256: &content_sha256,
+            source_count: 2,
+            entry_count: 1,
+            knowledge: &knowledge,
+            created_by,
+        };
+        let (first, first_inserted) = store_mantle_business_knowledge(&pool, &input)
+            .await
+            .unwrap();
+        let (second, second_inserted) = store_mantle_business_knowledge(&pool, &input)
+            .await
+            .unwrap();
+        assert!(first_inserted);
+        assert!(!second_inserted);
+        assert_eq!(first.id, second.id);
+        assert_eq!(first.knowledge, knowledge);
+
+        let different_hash = "f".repeat(64);
+        let different = StoreMantleBusinessKnowledge {
+            content_sha256: &different_hash,
+            ..input
+        };
+        let (existing, inserted) = store_mantle_business_knowledge(&pool, &different)
+            .await
+            .unwrap();
+        assert!(!inserted);
+        assert_eq!(existing.id, first.id);
+        assert_ne!(existing.content_sha256, different_hash);
+
+        assert!(
+            sqlx::query("UPDATE mantle_business_knowledge SET entry_count = 2 WHERE id = $1")
+                .bind(first.id)
+                .execute(&pool)
+                .await
+                .is_err()
+        );
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn live_product_mappings_are_observed_append_only_and_strategy_safe(pool: PgPool) {
+        let confirmed_by: Uuid = sqlx::query_scalar(
+            "INSERT INTO users (username, password_hash, role)
+             VALUES ('synthetic-product-admin', 'synthetic-not-a-secret', 'administrator')
+             RETURNING id",
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        let connection = upsert_connection(
+            &pool,
+            &AmazonConnectionInput {
+                seller_id: "SYNTHETIC-LIVE-SELLER".to_owned(),
+                region: "eu".to_owned(),
+                secret_ref: "synthetic-live-provider".to_owned(),
+                granted_roles: vec!["Brand Analytics".to_owned()],
+                marketplace_ids: vec!["A1PA6795UKMFR9".to_owned()],
+                mode: "live".to_owned(),
+                enabled: true,
+            },
+        )
+        .await
+        .unwrap();
+        let child_asin = "B000000001";
+        let first_period: DateTime<Utc> = "2026-07-01T00:00:00Z".parse().unwrap();
+        for period_index in 0..2 {
+            let period_start = first_period + chrono::Duration::days(period_index * 7);
+            let period_end =
+                period_start + chrono::Duration::days(7) - chrono::Duration::seconds(1);
+            let run_id: Uuid = sqlx::query_scalar(
+                "INSERT INTO amazon_report_runs (
+                     connection_id, marketplace_id, report_type, trigger_source,
+                     idempotency_key, status, completed_at
+                 ) VALUES ($1, 'A1PA6795UKMFR9', $2, 'manual', $3, 'succeeded', now())
+                 RETURNING id",
+            )
+            .bind(connection.id)
+            .bind(SALES_AND_TRAFFIC)
+            .bind(format!("synthetic-product-period-{period_index}"))
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+            let snapshot_id: Uuid = sqlx::query_scalar(
+                "INSERT INTO amazon_metric_snapshots (
+                     run_id, connection_id, marketplace_id, report_type, parser_version,
+                     period_start, period_end, granularity, comparability_key, summary
+                 ) VALUES ($1, $2, 'A1PA6795UKMFR9', $3, 'synthetic-parser-v1',
+                     $4, $5, 'day_child', 'synthetic-product:7d', '{}')
+                 RETURNING id",
+            )
+            .bind(run_id)
+            .bind(connection.id)
+            .bind(SALES_AND_TRAFFIC)
+            .bind(period_start)
+            .bind(period_end)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+            for (metric_name, value_numeric, unit, currency_code) in [
+                (
+                    "ordered_product_sales",
+                    Decimal::from(100 + period_index),
+                    "currency",
+                    Some("EUR"),
+                ),
+                (
+                    "units_ordered",
+                    Decimal::from(10 + period_index),
+                    "units",
+                    None,
+                ),
+                ("sessions", Decimal::from(100 + period_index), "count", None),
+                (
+                    "page_views",
+                    Decimal::from(150 + period_index),
+                    "count",
+                    None,
+                ),
+            ] {
+                sqlx::query(
+                    "INSERT INTO amazon_normalized_metrics (
+                         snapshot_id, metric_name, dimension_type, dimension_key,
+                         value_numeric, unit, currency_code, evidence
+                     ) VALUES ($1, $2, 'child_period', 'synthetic-child-key',
+                         $3, $4, $5, $6)",
+                )
+                .bind(snapshot_id)
+                .bind(metric_name)
+                .bind(value_numeric)
+                .bind(unit)
+                .bind(currency_code)
+                .bind(json!({"dimension": child_asin, "source": "synthetic_test"}))
+                .execute(&pool)
+                .await
+                .unwrap();
+            }
+        }
+
+        assert!(
+            observed_product_exists(&pool, connection.id, "A1PA6795UKMFR9", child_asin,)
+                .await
+                .unwrap()
+        );
+        assert!(
+            !observed_product_exists(&pool, connection.id, "A1PA6795UKMFR9", "B000000002",)
+                .await
+                .unwrap()
+        );
+        let observed = observed_products(&pool).await.unwrap();
+        assert_eq!(observed.len(), 1);
+        assert_eq!(observed[0].child_asin, child_asin);
+        assert_eq!(observed[0].period_count, 2);
+
+        let input = AmazonProductMappingInput {
+            connection_id: connection.id,
+            marketplace_id: "A1PA6795UKMFR9",
+            child_asin,
+            brand: "sphagnum",
+            product_family: "Sphagnum-Moos",
+            variant: "Synthetic Sphagnum 1 kg",
+            pack_size: Some("1 kg"),
+            sku: Some("SYNTHETIC-SKU-1"),
+            evidence_source: "operator_confirmed",
+            enabled: true,
+            confirmed_by,
+        };
+        let (first, first_inserted) = store_product_mapping_revision(&pool, &input).await.unwrap();
+        let (same, same_inserted) = store_product_mapping_revision(&pool, &input).await.unwrap();
+        assert!(first_inserted);
+        assert!(!same_inserted);
+        assert_eq!(first.id, same.id);
+        assert_eq!(first.revision, 1);
+
+        let revised_input = AmazonProductMappingInput {
+            variant: "Synthetic Sphagnum Chile 1 kg",
+            evidence_source: "mantle_wiki",
+            ..input.clone()
+        };
+        let (revised, revised_inserted) = store_product_mapping_revision(&pool, &revised_input)
+            .await
+            .unwrap();
+        assert!(revised_inserted);
+        assert_eq!(revised.revision, 2);
+        assert_ne!(revised.id, first.id);
+
+        let coverage = product_mapping_coverage(&pool).await.unwrap();
+        assert_eq!(coverage.observed_products, 1);
+        assert_eq!(coverage.mapped_products, 1);
+        assert_eq!(coverage.enabled_mapped_products, 1);
+        let strategy_rows = recent_product_strategy_metrics(&pool, 13, 24)
+            .await
+            .unwrap();
+        assert_eq!(strategy_rows.len(), 8);
+        assert!(strategy_rows
+            .iter()
+            .all(|row| row.mapping_id == revised.id
+                && row.variant == "Synthetic Sphagnum Chile 1 kg"));
+
+        let audit: Value = sqlx::query_scalar(
+            "SELECT details FROM administrative_audit_log
+             WHERE action = 'amazon.product_mapping_revised' AND target_id = $1",
+        )
+        .bind(revised.id.to_string())
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        let audit_text = audit.to_string();
+        assert!(!audit_text.contains(child_asin));
+        assert!(!audit_text.contains("SYNTHETIC-SKU-1"));
+        assert!(sqlx::query(
+            "UPDATE amazon_product_mapping_revisions SET enabled = false WHERE id = $1",
+        )
+        .bind(revised.id)
+        .execute(&pool)
+        .await
+        .is_err());
+        assert!(
+            sqlx::query("DELETE FROM amazon_product_mapping_revisions WHERE id = $1")
+                .bind(revised.id)
+                .execute(&pool)
+                .await
+                .is_err()
+        );
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn ai_strategy_assessment_is_idempotent_immutable_and_metadata_only(pool: PgPool) {
+        let created_by: Uuid = sqlx::query_scalar(
+            "INSERT INTO users (username, password_hash, role)
+             VALUES ('synthetic-ai-admin', 'synthetic-not-a-secret', 'administrator')
+             RETURNING id",
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        let connection_id: Uuid = sqlx::query_scalar(
+            "SELECT id FROM amazon_connections WHERE seller_id = 'manual-report-import'",
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        let job_id: Uuid = sqlx::query_scalar(
+            "INSERT INTO amazon_analysis_jobs
+                 (connection_id, marketplace_id, report_type, analysis_type, status, completed_at)
+             VALUES ($1, 'SYNTHETIC-MARKETPLACE', $2, 'delta', 'completed', now())
+             RETURNING id",
+        )
+        .bind(connection_id)
+        .bind(SALES_AND_TRAFFIC)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        let analysis_id: Uuid = sqlx::query_scalar(
+            "INSERT INTO amazon_analysis_results
+                 (job_id, strategy, model_name, prompt_version, payload_sha256, result)
+             VALUES ($1, 'deterministic_rules', NULL, 'rules-v1', $2, $3)
+             RETURNING id",
+        )
+        .bind(job_id)
+        .bind("0".repeat(64))
+        .bind(json!({"facts": [{"metric": "sessions", "value": "20"}]}))
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        let result = json!({
+            "executive_summary": "Synthetic aggregate assessment",
+            "recommended_actions": [],
+        });
+        let payload_sha256 = "a".repeat(64);
+        let input = StoreAiStrategyAssessment {
+            analysis_id,
+            payload_sha256: &payload_sha256,
+            model_name: "gpt-5.6",
+            prompt_version: "mantle-amazon-weekly-strategy-v2",
+            result: &result,
+            provider_request_id_redacted: Some("0123456789ab"),
+            input_tokens: Some(100),
+            output_tokens: Some(50),
+            week_start: Some(NaiveDate::from_ymd_opt(2026, 8, 17).unwrap()),
+            previous_assessment_id: None,
+            created_by,
+        };
+        let (first, first_inserted) = store_ai_strategy_assessment(&pool, &input).await.unwrap();
+        let (second, second_inserted) = store_ai_strategy_assessment(&pool, &input).await.unwrap();
+        assert!(first_inserted);
+        assert!(!second_inserted);
+        assert_eq!(first.id, second.id);
+        assert_eq!(first.result, result);
+        assert_eq!(first.week_start, input.week_start);
+        let different_payload = "c".repeat(64);
+        let same_week_input = StoreAiStrategyAssessment {
+            analysis_id,
+            payload_sha256: &different_payload,
+            model_name: "gpt-5.6",
+            prompt_version: "mantle-amazon-weekly-strategy-v2",
+            result: &result,
+            provider_request_id_redacted: None,
+            input_tokens: Some(90),
+            output_tokens: Some(40),
+            week_start: input.week_start,
+            previous_assessment_id: None,
+            created_by,
+        };
+        let (same_week, same_week_inserted) = store_ai_strategy_assessment(&pool, &same_week_input)
+            .await
+            .unwrap();
+        assert!(!same_week_inserted);
+        assert_eq!(same_week.id, first.id);
+        assert!(
+            sqlx::query("DELETE FROM amazon_ai_strategy_assessments WHERE id = $1")
+                .bind(first.id)
+                .execute(&pool)
+                .await
+                .is_err()
+        );
+        let audit: Value = sqlx::query_scalar(
+            "SELECT details FROM administrative_audit_log
+             WHERE action = 'amazon.ai_strategy_assessed' AND target_id = $1",
+        )
+        .bind(analysis_id.to_string())
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        let audit_text = audit.to_string();
+        assert!(!audit_text.contains("executive_summary"));
+        assert!(!audit_text.contains("Synthetic aggregate assessment"));
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn strategy_history_excludes_synthetic_acceptance_analyses(pool: PgPool) {
+        let connection_id: Uuid = sqlx::query_scalar(
+            "SELECT id FROM amazon_connections WHERE seller_id = 'manual-report-import'",
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+
+        for (marketplace_id, payload_sha256) in [
+            ("A1PA6795UKMFR9", "a".repeat(64)),
+            ("SYNTHETIC-ACCEPTANCE-MARKETPLACE", "b".repeat(64)),
+        ] {
+            let job_id: Uuid = sqlx::query_scalar(
+                "INSERT INTO amazon_analysis_jobs
+                     (connection_id, marketplace_id, report_type, analysis_type, status,
+                      completed_at)
+                 VALUES ($1, $2, $3, 'delta', 'completed', now())
+                 RETURNING id",
+            )
+            .bind(connection_id)
+            .bind(marketplace_id)
+            .bind(SALES_AND_TRAFFIC)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+            sqlx::query(
+                "INSERT INTO amazon_analysis_results
+                     (job_id, strategy, model_name, prompt_version, payload_sha256, result)
+                 VALUES ($1, 'deterministic_rules', NULL, 'rules-v1', $2, $3)",
+            )
+            .bind(job_id)
+            .bind(payload_sha256)
+            .bind(json!({
+                "facts": [{"metric": "sessions", "marketplace_id": marketplace_id}],
+            }))
+            .execute(&pool)
+            .await
+            .unwrap();
+        }
+
+        let history = recent_analysis_results_for_strategy(&pool).await.unwrap();
+        assert_eq!(history.len(), 1);
+        assert_eq!(history[0].payload_sha256, "a".repeat(64));
+        assert_eq!(
+            history[0].result["facts"][0]["marketplace_id"],
+            "A1PA6795UKMFR9"
         );
     }
 }

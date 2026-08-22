@@ -14,6 +14,7 @@ const detectors = [
   ["private-key", /-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----/],
   ["aws-access-key", /\bAKIA[0-9A-Z]{16}\b/],
   ["github-token", /\bgh[pousr]_[A-Za-z0-9]{30,}\b/],
+  ["openai-api-key", /\bsk-(?:proj-)?[A-Za-z0-9_-]{20,}\b/],
   ["jwt", /\beyJ[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{20,}\b/],
 ];
 const findings = [];

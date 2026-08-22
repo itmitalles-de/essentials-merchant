@@ -3,11 +3,14 @@ mod bootstrap;
 mod config;
 mod datev;
 mod integration_auth;
+mod manual_import;
 mod marketplace;
 mod pdf_gen;
 mod pilot;
+mod provider_secrets;
 mod routes;
 mod state;
+mod strategy_ai;
 
 use std::net::SocketAddr;
 use std::sync::Arc;
@@ -44,8 +47,14 @@ async fn main() -> anyhow::Result<()> {
     }
 
     std::fs::create_dir_all(&config.pdf_storage_dir)?;
-    let marketplace_worker =
-        marketplace::MarketplaceWorker::new(Arc::new(marketplace::CompositeAmazonClient::new()?));
+    let provider_secrets = provider_secrets::ProviderSecretStore::from_env(
+        pool.clone(),
+        config.mantle_pilot_no_login,
+    )?;
+    let marketplace_worker = marketplace::MarketplaceWorker::new(Arc::new(
+        marketplace::CompositeAmazonClient::new(provider_secrets.clone())?,
+    ));
+    let strategy_ai = strategy_ai::StrategyAiClient::from_env()?;
 
     let state = AppState {
         pool,
@@ -54,6 +63,10 @@ async fn main() -> anyhow::Result<()> {
         outbox_policy: config.outbox_policy,
         pdf_storage_dir: config.pdf_storage_dir,
         marketplace_worker: marketplace_worker.clone(),
+        strategy_ai,
+        provider_secrets,
+        mantle_pilot_no_login: config.mantle_pilot_no_login,
+        pilot_admin_username: admin.username,
     };
 
     let api = Router::new()

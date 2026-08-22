@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "product": "Essentials+ Merchant",
+  "source": "https://github.com/itmitalles-de/simple-business-design-system",
+  "localCheckout": "../simple-business-design-system",
+  "commit": "8bbee92ae2b181a9fc5bf8d1cb880ba5c128954c",
+  "package": "@itmitalles-de/simple-business-design-system",
+  "version": "0.1.1",
+  "artifact": "https://github.com/itmitalles-de/simple-business-design-system/releases/download/v0.1.1/itmitalles-de-simple-business-design-system-0.1.1.tgz",
+  "documents": [
+    "docs/design-system/UI-CONTRACT.md",
+    "docs/design-system/ICON-SEMANTICS.md",
+    "docs/design-system/REFERENCE-ANALYSIS.md",
+    "docs/design-system/CONSUMER-INTEGRATION.md"
+  ],
+  "machineContract": "src/ui-contract.json",
+  "consumerMode": "release-artifact",
+  "packageActivation": "active-release-artifact"
+}

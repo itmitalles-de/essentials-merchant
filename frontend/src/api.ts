@@ -1,3 +1,5 @@
+import { isMantlePilotExperience } from "./pilot";
+
 const API_BASE = import.meta.env.VITE_API_BASE ?? "/api";
 
 const TOKEN_KEY = "erplite-token";
@@ -31,7 +33,7 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
 
   if (res.status === 401) {
     setToken(null);
-    window.location.href = "/login";
+    if (!isMantlePilotExperience()) window.location.href = "/login";
     throw new ApiError(res.status, "Nicht angemeldet");
   }
 
@@ -54,6 +56,12 @@ export const api = {
   get: <T>(path: string) => request<T>(path),
   post: <T>(path: string, body?: unknown) =>
     request<T>(path, { method: "POST", body: body ? JSON.stringify(body) : undefined }),
+  postRaw: <T>(path: string, body: BodyInit) =>
+    request<T>(path, {
+      method: "POST",
+      body,
+      headers: { "Content-Type": "application/octet-stream" },
+    }),
   postWithHeaders: <T>(path: string, body: unknown, headers: Record<string, string>) =>
     request<T>(path, {
       method: "POST",
@@ -108,17 +116,26 @@ export async function downloadMarketplaceRawReport(runId: string) {
   setTimeout(() => URL.revokeObjectURL(url), 30000);
 }
 
-export async function downloadMarketplaceAnalysis(analysisId: string) {
+export type MarketplaceAnalysisExportFormat = "json" | "markdown" | "csv";
+
+export async function downloadMarketplaceAnalysis(
+  analysisId: string,
+  format: MarketplaceAnalysisExportFormat = "json",
+) {
   const token = getToken();
-  const res = await fetch(`${API_BASE}/marketplace/analyses/${analysisId}/export`, {
-    headers: token ? { Authorization: `Bearer ${token}` } : {},
-  });
+  const res = await fetch(
+    `${API_BASE}/marketplace/analyses/${analysisId}/export?format=${encodeURIComponent(format)}`,
+    {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    },
+  );
   if (!res.ok) throw new ApiError(res.status, "Analyseexport konnte nicht geladen werden");
   const blob = await res.blob();
   const url = URL.createObjectURL(blob);
   const anchor = document.createElement("a");
   anchor.href = url;
-  anchor.download = `marketplace-analysis-${analysisId}.json`;
+  const extension = format === "markdown" ? "md" : format;
+  anchor.download = `marketplace-analysis-${analysisId}.${extension}`;
   anchor.click();
   setTimeout(() => URL.revokeObjectURL(url), 30000);
 }

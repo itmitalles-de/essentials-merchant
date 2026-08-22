@@ -16,6 +16,7 @@ pdf.workspace = true
 tokio.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+csv.workspace = true
 sqlx.workspace = true
 anyhow.workspace = true
 tracing.workspace = true
@@ -34,6 +35,8 @@ reqwest.workspace = true
 sha2.workspace = true
 hmac.workspace = true
 hex.workspace = true
+ring.workspace = true
+zeroize.workspace = true
 
 [dev-dependencies]
 tower = { version = "0.5", features = ["util"] }
